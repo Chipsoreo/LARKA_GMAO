@@ -1,0 +1,317 @@
+/*
+ * SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+ * SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+ *
+ * This file is part of Larka, proprietary software by Mickaël Larcin.
+ * All rights reserved. Use is subject to the license terms; copying,
+ * distribution, modification or reverse-engineering without the author's
+ * prior written permission is prohibited. See the LICENSE file for details.
+ */
+
+/* Larka — Assistant IA : bulle flottante, panneau de chat, messages, suggestions */
+/* ── Bulle flottante ── */
+#assistantBubble {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1a2e4a, #2b7be6);
+  color: white;
+  font-size: 26px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(43, 123, 230, .35), 0 2px 8px rgba(0,0,0,.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .2s, box-shadow .2s, opacity .2s;
+}
+#assistantBubble:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 28px rgba(43, 123, 230, .45);
+}
+#assistantBubble.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.7);
+}
+
+/* ── Panneau ── */
+#assistantPanel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9001;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  height: 560px;
+  max-height: calc(100vh - 48px);
+  background: var(--white, #fff);
+  border: 1px solid var(--gray-border, #e2e8f0);
+  border-radius: 16px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(20px) scale(.95);
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+}
+#assistantPanel.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+/* ── Header ── */
+#assistantHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #1a2e4a, #213a5c);
+  color: white;
+  flex-shrink: 0;
+}
+
+/* ── Messages ── */
+#assistantMessages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.assistant-msg {
+  display: flex;
+  max-width: 88%;
+}
+.assistant-msg-user {
+  align-self: flex-end;
+}
+.assistant-msg-bot {
+  align-self: flex-start;
+}
+
+.assistant-msg-content {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.assistant-msg-user .assistant-msg-content {
+  background: var(--blue, #2b7be6);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.assistant-msg-bot .assistant-msg-content {
+  background: var(--gray-bg, #f1f5f9);
+  color: var(--text, #1e293b);
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--gray-border, #e2e8f0);
+}
+
+/* ── Typing indicator ── */
+.assistant-typing {
+  display: flex;
+  gap: 5px;
+  padding: 4px 0;
+}
+.assistant-typing span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gray-text, #94a3b8);
+  animation: assistTyping .8s infinite;
+}
+.assistant-typing span:nth-child(2) { animation-delay: .15s; }
+.assistant-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes assistTyping {
+  0%, 60%, 100% { opacity: .3; transform: scale(.8); }
+  30%           { opacity: 1;  transform: scale(1); }
+}
+
+/* ── Input bar ── */
+#assistantInputBar {
+  padding: 12px 16px;
+  border-top: 1px solid var(--gray-border, #e2e8f0);
+  background: var(--white, #fff);
+  flex-shrink: 0;
+}
+
+#assistantSuggestions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.assistant-suggestion {
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--gray-bg, #f1f5f9);
+  color: var(--blue, #2b7be6);
+  border: 1px solid var(--blue-pale, #dbeafe);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.assistant-suggestion:hover {
+  background: var(--blue);
+  color: white;
+}
+
+#assistantInput {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--gray-border, #e2e8f0);
+  border-radius: 10px;
+  font-size: 13px;
+  background: var(--white, #fff);
+  color: var(--text, #1e293b);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+#assistantInput:focus {
+  border-color: var(--blue, #2b7be6);
+  box-shadow: 0 0 0 3px rgba(43, 123, 230, .12);
+}
+
+#assistantSendBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--blue, #2b7be6);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+#assistantSendBtn:hover {
+  background: #1d6ad4;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  #assistantPanel {
+    bottom: 0;
+    right: 0;
+    width: 100vw;
+    max-width: 100vw;
+    height: calc(100vh - 48px);
+    max-height: calc(100vh - 48px);
+    border-radius: 0;
+  }
+  #assistantPanel.open { z-index: 9999; }
+  #assistantBubble {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0));
+    right: 16px;
+    width: 48px; height: 48px; font-size: 22px;
+  }
+}
+
+/* ── Bottom nav offset (tablette) ── */
+@media (min-width: 601px) and (max-width: 800px) {
+  #assistantBubble {
+    bottom: 80px;
+  }
+  #assistantPanel:not(:fullscreen) {
+    bottom: 80px;
+    max-height: calc(100vh - 100px);
+  }
+}
+
+/* ── Dark mode ── */
+body.dark-mode #assistantPanel {
+  background: var(--navy-dark, #0f1a2b);
+  border-color: var(--gray-border);
+}
+body.dark-mode .assistant-msg-bot .assistant-msg-content {
+  background: #1a2536;
+  color: #e2e8f0;
+  border-color: #28394f;
+}
+body.dark-mode #assistantInputBar {
+  background: var(--navy-dark, #0f1a2b);
+  border-top-color: #28394f;
+}
+body.dark-mode #assistantInput {
+  background: #111c2b;
+  color: #e2e8f0;
+  border-color: #28394f;
+}
+body.dark-mode .assistant-suggestion {
+  background: #111c2b;
+  border-color: #28394f;
+}
+
+/* ── Indicateur de statut pendant streaming (tool calls en cours) ── */
+.assistant-stream-status {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  color: var(--gray, #64748b);
+  padding: 4px 8px;
+  background: rgba(43, 123, 230, 0.06);
+  border-radius: 4px;
+  border-left: 2px solid var(--blue, #2b7be6);
+  margin-bottom: 6px;
+  animation: assistantStreamStatusFade 0.2s ease-out;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "..." pendant le streaming, AVANT le premier delta texte (pour bien
+   indiquer que ça travaille toujours, même quand on voit juste les tool calls
+   passer en haut). Réutilise l'animation des dots existants. */
+.assistant-stream-typing {
+  display: flex;
+  gap: 5px;
+  padding: 4px 0;
+  margin-top: 4px;
+}
+.assistant-stream-typing span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gray-text, #94a3b8);
+  animation: assistTyping .8s infinite;
+}
+.assistant-stream-typing span:nth-child(2) { animation-delay: .15s; }
+.assistant-stream-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes assistantStreamStatusFade {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Curseur clignotant pendant la frappe streaming */
+.assistant-stream-text:not(:empty)::after {
+  content: '▍';
+  display: inline-block;
+  color: var(--blue, #2b7be6);
+  animation: assistantCaret 1s steps(2) infinite;
+  margin-left: 1px;
+  font-weight: normal;
+}
+@keyframes assistantCaret {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+body.dark-mode .assistant-stream-status {
+  background: rgba(43, 123, 230, 0.12);
+  color: #94a3b8;
+}

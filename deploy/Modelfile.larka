@@ -1,0 +1,38 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Larka — Modèle dérivé pour l'assistant (AUCUNE modification de la conf Ollama)
+#
+# Pourquoi : l'endpoint OpenAI-compatible d'Ollama (/v1/chat/completions), utilisé
+# par Larka, IGNORE les paramètres `options`/`keep_alive` envoyés par requête.
+# La fenêtre de contexte reste donc à 4096 par défaut → le prompt système + les
+# schémas d'outils + l'historique sont TRONQUÉS silencieusement, et chaque tour
+# de tool calling re-traite le contexte. Un Modelfile règle ça AU NIVEAU DU
+# MODÈLE : propre, versionnable, réversible, zéro changement du service Ollama.
+#
+# Installation :
+#   ollama list                                  # vérifier le tag exact du modèle
+#   # adapter la ligne FROM ci-dessous si besoin, puis :
+#   ollama create larka-assistant -f deploy/Modelfile.larka
+#   ollama show larka-assistant                  # vérifier num_ctx=8192 + quantization
+#
+# Puis dans Larka (Super Admin → Assistant IA) : modèle = larka-assistant
+#
+# Vérifier la quantization au passage : `ollama show` doit indiquer Q4_K_M (ou Q4_*).
+# Si c'est Q8_0 ou F16, l'inférence CPU est ~2× plus lente pour rien → re-tirer
+# le modèle en Q4 et adapter le FROM.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FROM ministral-3:3b
+
+# Fenêtre de contexte : prompt Larka + outils + historique + résultats d'outils.
+# 4096 (défaut) ne suffit pas ; 8192 tient dans ~1,5 Go de cache KV pour un 3B.
+PARAMETER num_ctx 8192
+
+# Plafond de génération : le prompt exige des réponses de 1-5 lignes.
+# Borne la durée d'un tour à ~30-60 s max sur CPU (au lieu de plusieurs minutes
+# si le modèle part en réponse fleuve).
+PARAMETER num_predict 768
+
+# Sampling factuel (redondant avec ce qu'envoie Larka, mais garantit les mêmes
+# valeurs si le modèle est testé à la main via `ollama run`).
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9

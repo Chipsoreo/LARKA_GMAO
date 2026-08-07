@@ -1,0 +1,88 @@
+{
+  "_1_role": "Larka — réglages NON sensibles. Copier en config.json puis adapter. chmod 640, propriétaire www-data. Exclu par .gitignore.",
+  "_2_secrets": "Aucun secret ni identifiant OAuth ici : tout cela vit dans .env (voir .env.example), prioritaire sur ce fichier. Une valeur, un seul endroit.",
+  "_3_principe": "Ce fichier ne contient QUE ce qui doit être décidé par vous. Toute clé absente reprend le défaut de api/config.php — et continuera d'évoluer avec l'application, ce qu'une clé recopiée ne fait pas. Les interrupteurs \"actif\" sont conservés même à false : ils sont le seul moyen de savoir qu'un module existe.",
+  "serveur": {
+    "_": "Autre clé disponible : port (défaut 8000).",
+    "host": "0.0.0.0",
+    "env": "prod"
+  },
+  "base_de_donnees": {
+    "_": "Défaut du code = sqlite. Pour PostgreSQL, driver + user suffisent : host 127.0.0.1, port 5432, dbname gmao et sslmode prefer sont déjà les défauts. Mot de passe -> .env : GMAO_DB_PASSWORD",
+    "driver": "pgsql",
+    "user": "gmao"
+  },
+  "superadmin_db": {
+    "_": "Registre multi-tenant (Super Admin + liste des tenants). Aucun défaut : à renseigner entièrement. Mot de passe -> .env : GMAO_SUPERADMIN_DB_PASSWORD",
+    "driver": "pgsql",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "dbname": "gmao_admin",
+    "user": "gmao",
+    "sslmode": "prefer"
+  },
+  "securite": {
+    "_": "À RENSEIGNER : le défaut de allowed_origin est \"*\". Sert aussi à détecter HTTPS (drapeau Secure du cookie) et à cadrer le CORS. Clé secrète -> .env : GMAO_SECRET_KEY. Autres clés : session_duree_heures (24), debug_errors (false — DEV uniquement), trusted_proxies ([127.0.0.1, ::1]), allow_remote_setup (false).",
+    "allowed_origin": "https://gmao.example.com"
+  },
+  "securite_http": {
+    "_": "Seul réglage vraiment utile en prod (défaut du code : false). N'ajoutez PAS \"csp\" : le défaut est durci ET autorise cdnjs — une CSP recopiée à la main casse l'export Excel et l'aperçu PDF. x_frame_options=\"DENY\" est de toute façon ramené à SAMEORIGIN par le code.",
+    "hsts": true
+  },
+  "logs": {
+    "_": "Défauts : actif true, dossier data/logs, niveau info, rotation 14 jours.",
+    "niveau": "warning",
+    "rotation_jours": 30
+  },
+  "sauvegardes": {
+    "_": "Désactivées par défaut dans le code. Autres clés : intervalle_minutes (360), dossier (data/backups), garder (30), compresser (true).",
+    "actif": true
+  },
+  "smtp": {
+    "_": "L'envoi s'active dès que host est renseigné (il n'existe pas de drapeau actif). Défauts : port 587, secure tls, verify_peer true. Mot de passe -> .env : GMAO_SMTP_PASSWORD",
+    "host": "",
+    "from": "noreply@gmao.example.com"
+  },
+  "microsoft_oauth": {
+    "_": "Paramétrage complet dans .env : GMAO_MICROSOFT_CLIENT_ID / _TENANT_ID / _CLIENT_SECRET / _REDIRECT_URI. URI déduite si vide : <allowed_origin>/oauth/microsoft — à déclarer à l'identique dans Azure.",
+    "actif": false
+  },
+  "google_oauth": {
+    "_": "Paramétrage complet dans .env : GMAO_GOOGLE_CLIENT_ID / _CLIENT_SECRET / _REDIRECT_URI.",
+    "actif": false
+  },
+  "plans_presence": {
+    "_": "[PHASE 2] Présence + agenda sur les plans. Exige microsoft_oauth.actif. 1) Azure > API permissions : Presence.Read.All et Calendars.Read.Shared en DÉLÉGUÉ, puis « Grant admin consent ». 2) actif:true ici. 3) IMPORTANT : chaque utilisateur doit se DÉCONNECTER/RECONNECTER via Microsoft — les scopes ne sont demandés que si ce flag est vrai AU MOMENT du login.",
+    "actif": false
+  },
+  "assistant": {
+    "_": "Assistant IA. Clé API -> .env : GMAO_ASSISTANT_API_KEY. Autres clés : fournisseur (anthropic | openai | ollama | lmstudio | vllm), model, api_url (fournisseur local), temperature (0.2), top_p (0.9).",
+    "actif": false
+  },
+  "push": {
+    "_": "Notifications web push — ACTIVÉES par défaut dans le code, coupées ici. Clé privée -> .env : GMAO_VAPID_PRIVATE_KEY ; clé publique via Configuration → Notifications (vapid_public_key). Personnalisation : notif_demande_titre / _corps / _roles. Exige un certificat TLS pleinement valide : les service workers refusent une exception navigateur.",
+    "actif": false
+  },
+  "feedback": {
+    "_": "Bouton « Faire un retour ». Destinataires : emails ([]). Nécessite smtp.host.",
+    "actif": false
+  },
+  "carbone_energie": {
+    "_": "Facteurs d'émission énergie (ADEME Base Carbone, via data.ademe.fr). Aucune clé requise : jeu de données ouvert. Clés : dataset_url, id_electricite (36651), id_gaz (38952), frontiere (« Amont + combustion » — un même identifiant porte plusieurs frontières aux valeurs très différentes), tls_verify. Désactivé = seules les valeurs de référence intégrées sont écrites.",
+    "actif": true
+  },
+  "carbone": {
+    "_": "Facteurs d'émission mobilité (ADEME — Impact CO2). Clé -> .env : GMAO_IMPACTCO2_API_KEY (facultative, gratuite : impactco2@ademe.fr). Autres clés : impactco2_url, cache_heures (24), tls_verify (true). Désactivé = Larka utilise ses valeurs de repli intégrées.",
+    "actif": false
+  },
+  "legifrance": {
+    "_": "Proxy Légifrance (PISTE/DILA). Secret -> .env : GMAO_LEGIFRANCE_CLIENT_SECRET. Autres clés : client_id, api_base_url / oauth_url (défauts = bac à sable, à remplacer par les URL officielles en production), scope (openid).",
+    "actif": false
+  },
+  "chorus_pro": {
+    "_1": "Proxy Chorus Pro. Autres clés : environnement (sandbox | production), client_id, client_secret, technical_login, technical_password, tls_verify (true).",
+    "_2": "ATTENTION — seule section dont les secrets restent EN CLAIR ici : api/routes/chorus.php relit config.json directement (cpro_cfg), ce qui contourne l'injection .env et le déchiffrement. Gardez config.json en chmod 640.",
+    "actif": false
+  },
+  "_4_non_listees": "Existent aussi, laissées à leur défaut : acces.domaine_email_autorise (restreint les comptes OAuth à un domaine), cors (inutile en mono-domaine, le défaut suit allowed_origin), session (cookie_secure auto-détecté, samesite Strict), documents (4 par catégorie, 25 Mo, pdf/png/jpeg/webp), urgences (photo_max_mo 15, video_max_mo 150 — plafonds des médias des procédures d'urgence ; pensez aussi a upload_max_filesize/post_max_size), oauth_relay (installation sans domaine public). Détail : api/config.php."
+}

@@ -1,0 +1,30 @@
+# Secrets & configuration locale — ne JAMAIS versionner
+config.json
+config.key
+tenants.json
+.env
+
+# Données d'exécution — ne pas packager ni versionner
+data/sessions/*
+data/logs/*
+data/rate_limits/*
+data/run/*
+data/backups/*
+data/oauth_states/*
+data/oauth_result_*.json
+data/sa_oauth_result_*.json
+
+# Journaux de sécurité (IP, logins, tentatives échouées) et médias des
+# procédures d'urgence : contenu du tenant, à ne JAMAIS publier.
+data/security/*
+data/urgences/*
+data/.license_accepted
+
+# Placeholders et garde-fous serveur, eux, sont versionnés
+!data/**/.gitkeep
+!data/security/.htaccess
+
+# Divers
+*.log
+*.bak
+*.orig
