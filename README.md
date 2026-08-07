@@ -57,7 +57,7 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-Cette livraison est la **version 1.0.0 (V1)** — première version stable de Larka.
+Cette livraison est la **version 1.0.0 (V1)** — première version publique de Larka, en **bêta**.
 
 | Élément | Valeur | Où |
 |---|---|---|
@@ -66,6 +66,11 @@ Cette livraison est la **version 1.0.0 (V1)** — première version stable de La
 | Service Worker | `1.0.0` | `SW_VERSION` (`sw.js`) |
 | Manifeste PWA | `1.0.0` | `manifest.webmanifest` |
 | Documentation | `1.0` | `Documentations/` |
+
+> ⚠️ **Statut : bêta.** Cette version est fonctionnelle mais n'a pas encore été
+> éprouvée en exploitation réelle sur la durée. Avant tout déploiement en
+> production : validez sur un environnement de test, et mettez en place vos
+> sauvegardes (voir la section dédiée) **avant** d'y saisir des données.
 
 > Le paramètre `?v=` d'`index.html` n'est **pas** un numéro de version : c'est un
 > horodatage de cache navigateur, régénéré automatiquement à chaque déploiement
