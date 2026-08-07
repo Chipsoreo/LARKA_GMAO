@@ -26,7 +26,7 @@ physique, pas seulement logique). Elle couvre le parc de biens et d'équipements
 interventions, les contrats, le stock, le suivi énergétique et carbone, l'archivage et les plans de bâtiments.
 
 Le projet fait des choix volontairement **sobres et robustes** : aucun framework PHP ni Composer requis,
-aucune étape de build côté frontend (JavaScript natif), deux dépendances tierces embarquées (lecture de
+aucune étape de build côté frontend (JavaScript natif), quatre composants tiers embarqués (lecture de
 codes-barres / QR, cartographie). Surface d'attaque réduite, montées de version simplifiées.
 
 > 📐 L'architecture complète (composants, réseau, sécurité, exploitation) est décrite dans le
