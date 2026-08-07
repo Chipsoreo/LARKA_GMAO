@@ -1,0 +1,304 @@
+/*
+ * SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+ * SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+ *
+ * This file is part of Larka, proprietary software by Mickaël Larcin.
+ * All rights reserved. Use is subject to the license terms; copying,
+ * distribution, modification or reverse-engineering without the author's
+ * prior written permission is prohibited. See the LICENSE file for details.
+ */
+
+/* Larka — Layout : sidebar, topbar, contenu principal, grilles */
+/* ── App shell ── */
+#app { display: none; height: 100vh; flex-direction: column; }
+#app.visible { display: flex; }
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Mode application (après connexion) ── */
+body.app-mode .river-canvas { display: none; }
+body.app-mode { background: #1a3050 !important; }
+body.app-mode .card { background: #f0f4f9; backdrop-filter: none; border: 1px solid var(--gray-border); }
+body.app-mode .stat-card { background: #e8eef6; border-color: #cdd6e4; }
+body.app-mode .topbar { background: #dce5f0; backdrop-filter: none; border-bottom: 1px solid #c5d0e0; box-shadow: var(--shadow-sm); }
+body.app-mode .sidebar { background: var(--navy-dark); backdrop-filter: none; border-right: none; box-shadow: none; }
+body.app-mode .content { background: #1a3050; }
+
+/* ── Sidebar liquid glass ── */
+.sidebar {
+  width: 240px; min-width: 240px;
+  background: rgba(10,25,60,0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-right: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.05), 4px 0 32px rgba(0,0,10,0.3);
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.1) transparent;
+}
+.sidebar-header {
+  padding: 24px 20px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.sidebar-logo { display: flex; align-items: center; gap: 10px; color: white; }
+.sidebar-logo .drop-icon { font-size: 24px; }
+.sidebar-logo .logo-text { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+.sidebar-logo .version   { font-size: 10px; color: rgba(255,255,255,.3); }
+
+/* Utilisateur connecté */
+.sidebar-user {
+  padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,.07);
+  display: flex; align-items: center; gap: 10px;
+}
+.user-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--blue); display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: white; flex-shrink: 0;
+}
+.user-name  { color: white; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-role  { color: rgba(255,255,255,.4); font-size: 11px; }
+
+/* Navigation */
+.sidebar-nav { flex: 1; padding: 12px 0; }
+.nav-section-title {
+  padding: 6px 20px 4px;
+  color: rgba(255,255,255,.25); font-size: 10px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; cursor: pointer;
+  color: rgba(255,255,255,.55); font-size: 13.5px; font-weight: 500;
+  transition: background .15s, color .15s;
+  border-left: 3px solid transparent;
+}
+.nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+.nav-item:hover {
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.85);
+  box-shadow: inset 0 0 20px rgba(100,180,255,0.06);
+}
+.nav-item.active {
+  background: rgba(43,123,230,0.25);
+  color: white;
+  border-left-color: var(--blue);
+  box-shadow: inset 0 0 30px rgba(43,123,230,0.15);
+}
+.nav-item.danger { color: rgba(231,76,60,.7); }
+.nav-item.danger:hover { background: rgba(231,76,60,.08); color: var(--red); }
+
+/* ── Zone principale ── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-bottom: 1px solid rgba(255,255,255,0.4);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 4px 20px rgba(0,0,0,0.08);
+  padding: 0 28px; height: 60px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-title { font-size: 18px; font-weight: 700; color: var(--navy); letter-spacing: -.3px; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+/* padding-bottom : réserve un dégagement en bas pour que la dernière ligne
+   (notamment la barre de pagination et ses contrôles « Page X / Y » alignés à
+   droite) ne passe pas sous la bulle flottante de l'assistant IA
+   (#assistantBubble : fixe, bottom 24px, 56px de haut → ~80px occupés en bas à
+   droite). Sur mobile, responsive.css définit son propre padding-bottom pour la
+   barre de navigation inférieure. */
+.content { flex: 1; overflow-y: auto; padding: 24px 28px 96px; position: relative; z-index: 1; }
+
+/* ── Barre d'actions de page ──────────────────────────────────────────────
+   Dernier enfant flex de .main (qui est en flex-direction:column avec
+   .content en flex:1). Elle est donc TOUJOURS visible en bas de la zone de
+   contenu, sans position:sticky ni position:fixed : pas de dépendance au
+   conteneur de défilement, pas de calcul de largeur, et un déplacement de la
+   sidebar n'a aucun effet sur elle.
+   padding-right : dégagement pour la bulle flottante de l'assistant IA
+   (#assistantBubble, fixe en bas à droite, ~80 px occupés). */
+.page-action-bar {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 12px 100px 12px 28px;
+  background: var(--card-bg, #fff);
+  border-top: 1px solid var(--gray-border);
+  box-shadow: 0 -6px 20px rgba(0,0,0,.10);
+  position: relative; z-index: 30;
+}
+.page-action-bar[hidden] { display: none; }
+.page-action-bar .page-action-info {
+  margin-right: auto; font-size: 12px; color: var(--gray-text); line-height: 1.4;
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   PRÉFÉRENCES INTERFACE — Sidebar redimensionnable
+══════════════════════════════════════════════════════════ */
+
+/* Transition fluide (désactivée pendant le drag) */
+.sidebar { transition: width .22s cubic-bezier(.4,0,.2,1), min-width .22s, height .22s, min-height .22s; }
+.sidebar.is-dragging { transition: none !important; }
+
+/* ── Mode icônes (collapsed) ── */
+.sidebar.sidebar-collapsed {
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.sidebar.sidebar-collapsed::-webkit-scrollbar { display: none; }
+.sidebar.sidebar-collapsed .sidebar-logo .logo-text,
+.sidebar.sidebar-collapsed .sidebar-logo .version,
+.sidebar.sidebar-collapsed .user-info,
+.sidebar.sidebar-collapsed .nav-section-title,
+.sidebar.sidebar-collapsed .nav-item .nav-label,
+.sidebar.sidebar-collapsed .nav-item span:not(.icon),
+.sidebar.sidebar-collapsed #btnChangePassword .nav-label,
+.sidebar.sidebar-collapsed #btnChangePassword span:not(.icon) {
+  opacity: 0; pointer-events: none; overflow: hidden; width: 0; white-space: nowrap; flex-shrink: 0;
+}
+.sidebar.sidebar-collapsed .nav-item        { justify-content: center; padding: 10px 0; }
+.sidebar.sidebar-collapsed .nav-item .icon  { font-size: 19px; width: auto; }
+.sidebar.sidebar-collapsed .sidebar-logo    { justify-content: center; }
+.sidebar.sidebar-collapsed .sidebar-header  { padding: 20px 8px; justify-content: center; }
+.sidebar.sidebar-collapsed .sidebar-user    { justify-content: center; padding: 12px 0; }
+.sidebar.sidebar-collapsed .user-avatar     { flex-shrink: 0; }
+.sidebar.sidebar-collapsed #sidebarCollapseBtn { display: none; }
+
+/* Bouton collapse dans le header */
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; }
+
+/* Bloquer la sélection de texte pendant le drag */
+body.sidebar-is-resizing,
+body.sidebar-is-resizing * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  cursor: col-resize !important;
+}
+
+/* Tooltip au survol icône quand réduit */
+.sidebar.sidebar-collapsed .nav-item { position: relative; }
+.sidebar.sidebar-collapsed .nav-item::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%; transform: translateY(-50%);
+  background: var(--navy); color: white;
+  font-size: 12px; font-weight: 600;
+  padding: 5px 10px; border-radius: 6px;
+  white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity .15s; z-index: 200;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+.sidebar.sidebar-collapsed .nav-item:hover::after { opacity: 1; }
+.layout.sidebar-right .sidebar.sidebar-collapsed .nav-item::after {
+  left: auto; right: calc(100% + 10px);
+}
+/* Bouton collapse visible côté droit en sidebar-right */
+.layout.sidebar-right .sidebar-header { flex-direction: row-reverse; }
+
+/* ── Sidebar à droite ── */
+.layout.sidebar-right { flex-direction: row-reverse; }
+.layout.sidebar-right .sidebar {
+  border-right: none;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 1px 0 0 rgba(255,255,255,0.05), -4px 0 32px rgba(0,0,10,0.3);
+}
+.layout.sidebar-right .nav-item { border-left: none; border-right: 3px solid transparent; }
+.layout.sidebar-right .nav-item.active { border-left-color: transparent; border-right-color: var(--blue); }
+
+/* ── Sidebar en haut ── */
+body.sidebar-pos-top .layout { flex-direction: column; }
+body.sidebar-pos-top .sidebar {
+  width: 100% !important; min-width: unset !important;
+  height: 56px; min-height: 56px; flex-direction: row;
+  overflow-x: auto; overflow-y: hidden;
+  border-right: none; border-bottom: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 4px 20px rgba(0,0,0,.2); order: 0; flex-shrink: 0;
+}
+body.sidebar-pos-top .sidebar-header,
+body.sidebar-pos-top .sidebar-user,
+body.sidebar-pos-top .sidebar > div:last-child { display: none; }
+body.sidebar-pos-top .sidebar-nav {
+  display: flex; flex-direction: row; padding: 0; flex: 1;
+  overflow-x: auto; scrollbar-width: none; align-items: stretch;
+}
+body.sidebar-pos-top .sidebar-nav::-webkit-scrollbar { display: none; }
+body.sidebar-pos-top .nav-section-title { display: none; }
+body.sidebar-pos-top .nav-item {
+  flex-direction: column; padding: 6px 14px; gap: 2px;
+  border-left: none; border-top: 3px solid transparent; border-bottom: none;
+  font-size: 10px; white-space: nowrap; min-width: 60px;
+  justify-content: center; align-items: center;
+}
+body.sidebar-pos-top .nav-item .icon { font-size: 17px; width: auto; }
+body.sidebar-pos-top .nav-item.active { border-top-color: var(--blue); border-left-color: transparent; }
+body.sidebar-pos-top .main { order: 1; }
+
+/* ── Sidebar en bas ── */
+body.sidebar-pos-bottom .layout { flex-direction: column; }
+body.sidebar-pos-bottom .sidebar {
+  width: 100% !important; min-width: unset !important;
+  height: 56px; min-height: 56px; flex-direction: row;
+  overflow-x: auto; overflow-y: hidden;
+  border-right: none; border-top: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.2); order: 2; flex-shrink: 0;
+}
+body.sidebar-pos-bottom .sidebar-header,
+body.sidebar-pos-bottom .sidebar-user,
+body.sidebar-pos-bottom .sidebar > div:last-child { display: none; }
+body.sidebar-pos-bottom .sidebar-nav {
+  display: flex; flex-direction: row; padding: 0; flex: 1;
+  overflow-x: auto; scrollbar-width: none; align-items: stretch;
+}
+body.sidebar-pos-bottom .sidebar-nav::-webkit-scrollbar { display: none; }
+body.sidebar-pos-bottom .nav-section-title { display: none; }
+body.sidebar-pos-bottom .nav-item {
+  flex-direction: column; padding: 6px 14px; gap: 2px;
+  border-left: none; border-bottom: 3px solid transparent;
+  font-size: 10px; white-space: nowrap; min-width: 60px;
+  justify-content: center; align-items: center;
+}
+body.sidebar-pos-bottom .nav-item .icon { font-size: 17px; width: auto; }
+body.sidebar-pos-bottom .nav-item.active { border-bottom-color: var(--blue); border-left-color: transparent; }
+body.sidebar-pos-bottom .main { order: 1; }
+
+/* ── Handle de redimensionnement ── */
+#sidebarResizeHandle {
+  position: absolute; top: 0; right: -3px;
+  width: 8px; height: 100%;
+  cursor: col-resize; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+}
+#sidebarResizeHandle:hover .resize-grip,
+#sidebarResizeHandle:active .resize-grip { background: var(--blue) !important; opacity: 1 !important; }
+
+/* ── Bouton prefs topbar — partagé entre "Interface", "Mon profil", "Feedback" ── */
+#uiPrefsBtnTopbar,
+#myProfileBtnTopbar,
+#feedbackBtnTopbar {
+  background: none; border: none; cursor: pointer;
+  padding: 6px 8px; border-radius: 8px;
+  display: flex; align-items: center; gap: 6px;
+  color: var(--navy); font-size: 13px; font-weight: 600;
+  transition: background .15s;
+}
+/* Le premier bouton visible pousse les autres à droite. Pour les Demandeurs
+   qui ont uiPrefsBtnTopbar masqué, c'est myProfileBtnTopbar qui prend le rôle
+   (via la classe .topbar-leading-btn appliquée par init.js). */
+#uiPrefsBtnTopbar,
+.topbar-leading-btn { margin-left: auto !important; }
+#uiPrefsBtnTopbar:hover,
+#myProfileBtnTopbar:hover,
+#feedbackBtnTopbar:hover { background: var(--gray-bg); }
+
+/* ── Dark mode ── */
+body.dark-mode .layout.sidebar-right .sidebar { border-color: #1e2f42; }
+body.dark-mode.sidebar-pos-top    .sidebar { border-color: #1e2f42; }
+body.dark-mode.sidebar-pos-bottom .sidebar { border-color: #1e2f42; }
+body.dark-mode #uiPrefsBtnTopbar,
+body.dark-mode #myProfileBtnTopbar,
+body.dark-mode #feedbackBtnTopbar { color: var(--text); }

@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<!--
+  SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+  SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+
+  This file is part of Larka, proprietary software by Mickaël Larcin.
+  All rights reserved. Use is subject to the license terms; copying,
+  distribution, modification or reverse-engineering without the author's
+  prior written permission is prohibited. See the LICENSE file for details.
+-->
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+
+  <title>Larka</title>
+
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Larka">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a1628">
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <link rel="stylesheet" href="css/base.css?v=202608041400">
+  <link rel="stylesheet" href="css/login.css?v=202608041400">
+  <link rel="stylesheet" href="css/layout.css?v=202608041400">
+  <link rel="stylesheet" href="css/components.css?v=202608041400">
+  <link rel="stylesheet" href="css/responsive.css?v=202608041400">
+  <link rel="stylesheet" href="css/dark-mode.css?v=202608041400">
+  <link rel="stylesheet" href="css/assistant.css?v=202608041400">
+</head>
+<body>
+
+<!-- ════════════════════════════════════
+     CANVAS RIVER BACKGROUND
+════════════════════════════════════ -->
+<canvas class="river-canvas" id="riverCanvas"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('riverCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let cssWidth = 0;
+  let cssHeight = 0;
+  let rafId = null;
+  let running = false;
+  let time = 0;
+
+  function resize() {
+    cssWidth = window.innerWidth;
+    cssHeight = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize, { passive: true });
+
+  const blobs = [
+    { x: 0.2,  y: 0.3,  r: 0.52, color: [43,123,230],  speed: { x: 0.00008, y: 0.00006 }, t: 0   },
+    { x: 0.7,  y: 0.5,  r: 0.48, color: [80,60,200],   speed: { x: 0.00007, y: 0.00009 }, t: 2   },
+    { x: 0.4,  y: 0.1,  r: 0.42, color: [26,179,148],  speed: { x: 0.00010, y: 0.00005 }, t: 4   },
+    { x: 0.15, y: 0.8,  r: 0.45, color: [100,80,220],  speed: { x: 0.00006, y: 0.00008 }, t: 1.5 },
+    { x: 0.85, y: 0.3,  r: 0.40, color: [43,123,230],  speed: { x: 0.00009, y: 0.00007 }, t: 3   },
+    { x: 0.55, y: 0.75, r: 0.44, color: [60,40,180],   speed: { x: 0.00007, y: 0.00006 }, t: 5   },
+    { x: 0.35, y: 0.5,  r: 0.38, color: [26,179,148],  speed: { x: 0.00008, y: 0.00005 }, t: 7   },
+  ];
+
+  const lights = [];
+  window.addEventListener('pointerdown', (e) => {
+    if (prefersReducedMotion) return;
+    lights.push({ x: e.clientX, y: e.clientY, r: 0, maxR: 160, alpha: 0, phase: 'in', life: 0 });
+    if (!running && !document.hidden) startLoop();
+  }, { passive: true });
+
+  function drawAll() {
+    if (!running) return;
+    // App affichée → canvas masqué par CSS (body.app-mode) : inutile d'animer.
+    if (document.body.classList.contains('app-mode')) { stopLoop(); return; }
+
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    blobs.forEach(b => {
+      const effectiveTime = prefersReducedMotion ? 0 : time;
+      const cx = (b.x + Math.sin(effectiveTime * b.speed.x * 60 + b.t) * 0.25
+                     + Math.sin(effectiveTime * b.speed.x * 37 + b.t + 1) * 0.12) * cssWidth;
+      const cy = (b.y + Math.cos(effectiveTime * b.speed.y * 60 + b.t + 0.5) * 0.22
+                     + Math.cos(effectiveTime * b.speed.y * 43 + b.t + 2) * 0.10) * cssHeight;
+      const r  = b.r * Math.min(cssWidth, cssHeight);
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0,   `rgba(${b.color[0]},${b.color[1]},${b.color[2]},0.45)`);
+      grad.addColorStop(0.4, `rgba(${b.color[0]},${b.color[1]},${b.color[2]},0.22)`);
+      grad.addColorStop(0.7, `rgba(${b.color[0]},${b.color[1]},${b.color[2]},0.08)`);
+      grad.addColorStop(1,   `rgba(${b.color[0]},${b.color[1]},${b.color[2]},0)`);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    });
+
+    if (!prefersReducedMotion) {
+      lights.forEach(l => {
+        if (l.phase === 'in') {
+          l.r     = Math.min(l.r + 4, l.maxR);
+          l.alpha = Math.min(l.alpha + 0.03, 0.55);
+          if (l.r >= l.maxR) l.phase = 'hold';
+        } else if (l.phase === 'hold') {
+          l.life++;
+          if (l.life > 60) l.phase = 'out';
+        } else {
+          l.alpha = Math.max(l.alpha - 0.012, 0);
+          l.r     = Math.min(l.r + 1, l.maxR * 1.3);
+        }
+        if (l.alpha <= 0.01) return;
+        const grad = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r);
+        grad.addColorStop(0,   `rgba(140,200,255,${l.alpha})`);
+        grad.addColorStop(0.3, `rgba(80,160,240,${l.alpha * 0.6})`);
+        grad.addColorStop(0.7, `rgba(43,123,230,${l.alpha * 0.2})`);
+        grad.addColorStop(1,   `rgba(43,123,230,0)`);
+        ctx.beginPath();
+        ctx.arc(l.x, l.y, l.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      });
+      for (let i = lights.length - 1; i >= 0; i--) {
+        if (lights[i].alpha <= 0.01 && lights[i].phase === 'out') lights.splice(i, 1);
+      }
+    }
+
+    time += 1;
+
+    if (prefersReducedMotion && lights.length === 0) {
+      stopLoop();
+      return;
+    }
+
+    rafId = requestAnimationFrame(drawAll);
+  }
+
+  function startLoop() {
+    if (running) return;
+    running = true;
+    rafId = requestAnimationFrame(drawAll);
+  }
+
+  function stopLoop() {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopLoop();
+    else if (!document.body.classList.contains('app-mode')) startLoop();
+  });
+
+  // L'animation ne sert que sur l'écran de login. Une fois connecté, le canvas
+  // est masqué (body.app-mode) mais la boucle rAF continuait de recalculer
+  // 7 dégradés radiaux à 60 fps → CPU/batterie gaspillés pendant toute la
+  // session. On stoppe à l'entrée dans l'app, on relance au logout.
+  new MutationObserver(() => {
+    if (document.body.classList.contains('app-mode')) stopLoop();
+    else if (!document.hidden) startLoop();
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+  // Hooks « branding » : recolorer et activer/désactiver le fond animé selon le
+  // thème choisi par le Super Admin (appelés depuis applyLoginBranding).
+  function _hexToRgb(h){ h=String(h||'').replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16)||0; return [(n>>16)&255,(n>>8)&255,n&255]; }
+  function _mix(a,b,t){ return [Math.round(a[0]+(b[0]-a[0])*t),Math.round(a[1]+(b[1]-a[1])*t),Math.round(a[2]+(b[2]-a[2])*t)]; }
+  window.gmaoSetRiver = function(opts){
+    opts = opts || {};
+    if (opts.accent) {
+      const base=_hexToRgb(opts.accent), white=[255,255,255], dark=[10,16,34];
+      const palette=[ base, _mix(base,white,0.28), _mix(base,dark,0.35), _mix(base,white,0.12), _mix(base,dark,0.22) ];
+      blobs.forEach((b,i)=>{ b.color = palette[i % palette.length]; });
+    }
+    if (opts.enabled === false) { canvas.style.display='none'; stopLoop(); }
+    else { canvas.style.display=''; if (!document.body.classList.contains('app-mode') && !document.hidden) startLoop(); }
+  };
+
+  if (!document.body.classList.contains('app-mode')) startLoop();
+})();
+</script>
+
+<!-- ════════════════════════════════════
+     ÉCRAN DE CONNEXION
+════════════════════════════════════ -->
+<div id="loginScreen">
+  <div id="loginFx" aria-hidden="true"></div>
+  <div class="login-card">
+    <div class="login-logo" id="loginBranding">
+      <div class="login-logo-mark"><svg viewBox="0 0 120 120" role="img" aria-label="Larka" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="120" rx="27" fill="#2B7BE6"/><g transform="translate(-9.5,5.5)"><rect x="40" y="28" width="15" height="56" rx="7" fill="#FFFFFF"/><rect x="40" y="69" width="44" height="15" rx="7" fill="#FFFFFF"/><rect x="63" y="25" width="30" height="30" rx="9" fill="#FFFFFF"/><rect x="63" y="25" width="30" height="30" rx="9" fill="#FFFFFF" transform="rotate(45 78 40)"/><circle cx="78" cy="40" r="8" fill="#2B7BE6"/></g></svg></div>
+      <h1>Larka</h1>
+      <p>GMAO</p>
+    </div>
+    <div class="login-field">
+      <label>Identifiant ou email</label>
+      <input type="text" id="loginInput" placeholder="prenom.nom@entreprise.fr" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label>Mot de passe</label>
+      <input type="password" id="passwordInput" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div id="loginError"></div>
+    <div id="tenantBadge" style="display:none;text-align:center;margin-bottom:10px"></div>
+    <button class="btn-login" onclick="doLogin()">Se connecter</button>
+    <div class="login-spinner"></div>
+    <div style="text-align:center;margin-top:8px">
+      <a href="#" onclick="showForgotPassword();return false" style="color:rgba(255,255,255,.5);font-size:12px;text-decoration:none" onmouseover="this.style.color='rgba(255,255,255,.8)'" onmouseout="this.style.color='rgba(255,255,255,.5)'">🔑 Mot de passe oublié ?</a>
+    </div>
+
+<div id="ssoButtons"></div>
+
+    <div class="login-hint">Contactez votre administrateur en cas de problème de connexion.</div>
+
+    <!-- Super Admin : accessible uniquement via ?superadmin dans l'URL -->
+  </div>
+  <!-- Mention légale en dur (auteur / copyright — cf. fichier AUTHORS). Non
+       modifiable depuis l'interface ; le CSS perso (scopé à #loginFx) ne peut
+       pas la cibler. -->
+  <!-- ▼ Lien GitHub : remplace l'URL du href ci-dessous par celle de ton dépôt. ▼ -->
+  <div id="loginLegal">© 2025-2026 Mickaël Larcin (Chipsoreo) · <a id="loginGithub" href="https://github.com/Chipsoreo/GMAO_LARKA" target="_blank" rel="noopener noreferrer">Tous droits réservés</a> · <a id="loginTerms" href="LICENSE">Conditions d'utilisation</a></div>
+  <a id="loginSupport" href="https://ko-fi.com/chipsoreo" target="_blank" rel="noopener noreferrer">♥ Soutenir le développement</a>
+</div>
+
+<!-- ════════════════════════════════════
+     APPLICATION PRINCIPALE
+════════════════════════════════════ -->
+<div id="app">
+  <div class="layout">
+
+    <nav class="sidebar">
+      <!-- Handle de redimensionnement -->
+      <div id="sidebarResizeHandle"></div>
+      <!-- Logo et bouton collapse supprimés -->
+      <div class="sidebar-user">
+        <div class="user-avatar" id="sidebarAvatar">?</div>
+        <div class="user-info">
+          <div class="user-name" id="sidebarName">—</div>
+          <div class="user-role" id="sidebarRole">—</div>
+        </div>
+      </div>
+      <div class="sidebar-nav" id="sidebarNav"></div>
+<div style="padding-bottom:12px">
+        <!-- Bouton "Changer mon mdp" retiré : redondant avec « Mon profil »
+             (icône en haut à droite), qui propose déjà le changement de mot
+             de passe pour les comptes locaux. -->
+        <div class="nav-item" onclick="toggleDarkMode()" id="btnDarkMode">
+          <span class="icon">🌙</span><span class="nav-label">Mode sombre</span>
+        </div>
+        <div class="nav-item danger" onclick="doLogout()">
+          <span class="icon">🚪</span><span class="nav-label">Déconnexion</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Overlay sidebar (tablette) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+    <!-- Barre navigation bas (mobile) -->
+    <nav class="bottom-nav" id="bottomNav"></nav>
+
+    <!-- Menu plein écran mobile -->
+    <div class="mobile-menu-overlay" id="mobileMenuOverlay"></div>
+
+    <div class="main">
+      <div class="topbar">
+        <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Menu">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="topbar-title" id="pageTitle">Tableau de bord</div>
+
+        <!-- 🎨 Préférences interface -->
+        <button id="uiPrefsBtnTopbar" onclick="openUiPrefsPanel()" title="Préférences d'interface">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/>
+          </svg>
+          <span class="hide-sm">Interface</span>
+        </button>
+
+        <!-- 👤 Mon profil — édition libre des infos perso + changement de mot de passe -->
+        <button id="myProfileBtnTopbar" onclick="openMyProfile()" title="Mon profil">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          <span class="hide-sm">Mon profil</span>
+        </button>
+
+        <!-- 💬 Feedback — Un problème ? Une suggestion ? -->
+        <button id="feedbackBtnTopbar" onclick="openFeedbackModal()" title="Un problème ? Une suggestion ?" style="display:none">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span class="hide-sm">Feedback</span>
+        </button>
+
+        <!-- 🔔 Cloche de notifications -->
+        <div id="notifBellWrap" style="display:none;position:relative">
+          <button id="notifBellBtn" onclick="toggleNotifPanel()"
+            style="position:relative;background:none;border:none;cursor:pointer;padding:6px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:background .15s"
+            onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'"
+            title="Notifications">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--navy)">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span id="notifBadge" style="display:none;position:absolute;top:2px;right:2px;background:#e74c3c;color:#fff;border-radius:10px;padding:1px 5px;font-size:10px;font-weight:700;min-width:16px;text-align:center;line-height:16px">0</span>
+          </button>
+          <div id="notifPanel" style="display:none;position:absolute;top:calc(100% + 10px);right:0;width:340px;background:var(--white, #fff);border:1px solid var(--gray-border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:9999;overflow:hidden">
+            <div style="padding:14px 16px;border-bottom:1px solid var(--gray-border);display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:700;font-size:14px">🔔 Notifications</span>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button onclick="marquerToutLu()" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:2px 6px">Tout marquer lu</button>
+                <button onclick="toggleNotifSettings()" style="background:none;border:1px solid var(--gray-border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:11px;color:var(--gray-text)" title="Paramètres">⚙️ Paramètres</button>
+              </div>
+            </div>
+            <div id="notifList" style="max-height:300px;overflow-y:auto"></div>
+            <div id="notifSettings" style="display:none;border-top:1px solid var(--gray-border);padding:14px 16px">
+              <div style="font-size:12px;font-weight:700;color:var(--gray-text);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Recevoir des notifications pour…</div>
+              <div id="notifSettingsItems" style="display:flex;flex-direction:column;gap:8px"></div>
+              <button onclick="sauvegarderPrefsNotif()" class="btn btn-primary" style="width:100%;margin-top:12px;font-size:12px">Enregistrer</button>
+            </div>
+            <div style="padding:10px 16px;border-top:1px solid var(--gray-border);text-align:center">
+              <button onclick="toggleNotifPanel()" style="font-size:12px;color:var(--gray-text);background:none;border:none;cursor:pointer">Fermer</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="topbar-actions" id="topbarActions"></div>
+      </div>
+      <div class="content" id="mainContent">
+        <div class="loading-spinner"><div class="spinner"></div></div>
+      </div>
+      <!-- Barre d'actions de page (Annuler / Enregistrer…).
+           Frère de #mainContent, donc DERNIER élément flex de .main : elle
+           occupe une vraie place dans la colonne au lieu de flotter au-dessus
+           du contenu. Elle reste visible sans dépendre de position:sticky, et
+           suit automatiquement la largeur de la zone de contenu quelle que
+           soit la position de la sidebar (gauche, droite, haut, bas).
+           Remplie via setPageActionBar(), vidée à chaque navigation. -->
+      <div class="page-action-bar" id="pageActionBar" hidden></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     MODAL ÉDITION
+════════════════════════════════════ -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalBox">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Formulaire</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="modalCancelBtn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="modalSaveBtn" onclick="saveModal()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════
+     MODAL CONFIRMATION
+════════════════════════════════════ -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="width:420px">
+    <div class="modal-header">
+      <div class="modal-title">Confirmation</div>
+      <button class="modal-close" onclick="closeConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirmMsg" style="font-size:14px;color:var(--text-mid)">Confirmer la suppression ?</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"  onclick="closeConfirm()">Annuler</button>
+      <button class="btn btn-danger" id="confirmOkBtn">Supprimer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Notifications toast -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ════════════════════════════════════
+     ANIMATION DE CONNEXION
+════════════════════════════════════ -->
+<script>
+let _animateLoginRunning = false;
+function animateLogin(callback) {
+  if (_animateLoginRunning) { callback(); return; }
+  _animateLoginRunning = true;
+  const cx = window.innerWidth  / 2;
+  const cy = window.innerHeight / 2;
+
+  const tc = document.createElement('canvas');
+  tc.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none';
+  tc.width  = window.innerWidth;
+  tc.height = window.innerHeight;
+  document.body.appendChild(tc);
+  const tctx = tc.getContext('2d');
+
+  const maxR  = Math.hypot(window.innerWidth, window.innerHeight);
+  const start = performance.now();
+  const dur   = 1500;
+
+  function frame(now) {
+    const p = Math.min((now - start) / dur, 1);
+    const e = p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2,3)/2;
+
+    tctx.clearRect(0, 0, tc.width, tc.height);
+    const r = e * maxR * 1.1;
+    const grad = tctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+grad.addColorStop(0,    `rgba(100,180,255,${0.80 * e})`);
+    grad.addColorStop(0.3,  `rgba(60,140,230,${0.70 * e})`);
+    grad.addColorStop(0.6,  `rgba(43,123,230,${0.60 * e})`);
+    grad.addColorStop(0.85, `rgba(26,179,148,${0.35 * e})`);
+    grad.addColorStop(1,    `rgba(0,0,0,0)`);
+    tctx.beginPath();
+    tctx.arc(cx, cy, r, 0, Math.PI * 2);
+    tctx.fillStyle = grad;
+    tctx.fill();
+
+    if (p < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      callback();
+      let fo = 1;
+      function fadeOut() {
+        fo -= 0.05;
+        tctx.clearRect(0, 0, tc.width, tc.height);
+        if (fo > 0) {
+          tctx.globalAlpha = fo;
+          tctx.fillStyle = 'rgba(255,255,255,0.95)';
+          tctx.fillRect(0, 0, tc.width, tc.height);
+          tctx.globalAlpha = 1;
+          requestAnimationFrame(fadeOut);
+        } else {
+          document.body.removeChild(tc);
+        }
+      }
+      setTimeout(fadeOut, 50);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+</script>
+<script>
+function toggleDarkMode() {
+  document.body.classList.toggle('dark-mode');
+  const btn = document.getElementById('btnDarkMode');
+  const on  = document.body.classList.contains('dark-mode');
+  if (btn) btn.innerHTML = `<span class="icon">${on ? '☀️' : '🌙'}</span> ${on ? 'Mode clair' : 'Mode sombre'}`;
+  localStorage.setItem('darkMode', on ? '1' : '0');
+}
+// Restaure la préférence
+if (localStorage.getItem('darkMode') === '1') {
+  document.body.classList.add('dark-mode');
+}
+</script>
+
+<!-- ════════════════════════════════════
+     SCRIPTS
+════════════════════════════════════ -->
+<!-- documents.js : utilisé transversalement (modales documents partout) -->
+<script defer src="js/pages/documents.js?v=202608041400"></script>
+
+<!-- Filtres : moteurs partagés par plusieurs pages, chargés au boot -->
+<script defer src="js/filtres/filtres-engine.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-biens.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-equipements.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-interventions.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-demandes.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-stock.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-contrats.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-gestion-materiel.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-utilisateurs.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-historique.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-energie.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-mobilite.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-bilan-carbone.js?v=202608041400"></script>
+
+<!-- ⚡ Lazy-loader : les pages js/pages/*.js sont désormais chargées à la demande
+     par navigate() via window.PageLoader.ensure(). Voir js/page-loader.js. -->
+<script defer src="js/page-loader.js?v=202608041400"></script>
+<!-- JS principal — découpé en 3 fichiers thématiques (ordre important) -->
+<script defer src="js/journal-client.js?v=202608041400"></script> <!-- Erreurs JS → journal -->
+<script defer src="js/journal-interactions.js?v=202608041400"></script> <!-- Clics/saisies (désactivé par défaut) --> <!-- Capture des erreurs JS → journal serveur -->
+<script defer src="js/api.js?v=202608041400"></script>     <!-- Client API (apiRequest, Auth, toutes les Api*) -->
+<script defer src="js/required-fields.js?v=202608041400"></script> <!-- Helpers globaux getRequiredFields/reqLabel/reqAttr (cache 30s) -->
+<script defer src="js/ui.js?v=202608041400"></script>      <!-- Helpers UI (fmt, badge, toast, modal, renderTable) -->
+<script defer src="js/components/person-autocomplete.js?v=202608041400"></script>  <!-- [PHASE 1] PersonPicker (autocomplétion + avatar) -->
+<script defer src="js/auth.js?v=202608041400"></script>    <!-- Authentification (doLogin, OAuth Google/Microsoft) -->
+<script defer src="js/profile.js?v=202608041400"></script> <!-- Modal "Mon profil" (édition libre des infos perso + MDP) -->
+<script defer src="js/feedback.js?v=202608041400"></script> <!-- Modal "Un problème ? Une suggestion ?" + envoi SMTP -->
+<!-- superadmin-auth.js : chargé à la demande par init.js uniquement sur ?superadmin -->
+<script defer src="js/ui-prefs.js?v=202608041400"></script>    <!-- Préférences interface (position sidebar, onglets) -->
+    <script defer src="js/nav.js?v=202608041400"></script>     <!-- Navigation (PAGES, navigate, buildSidebar, badge demandes) -->
+<script defer src="js/push.js?v=202608041400"></script>     <!-- Push notifications (SW, VAPID, soft-prompt) -->
+<script defer src="js/init.js?v=202608041400"></script>    <!-- Contrôleur App, initApp, helpers rôles, boot -->
+<!-- assistant.js : chargé à la demande par initApp(), uniquement si l'assistant IA est activé -->
+
+<script>
+// ── Navigation mobile ────────────────────────────────────────────────────────
+
+function _isMobileView() {
+  return window.innerWidth <= 600;
+}
+
+function _getBottomNavPages() {
+  const role = App.currentUser?.Role || '';
+  if (role === 'Demandeur') {
+    const pages = [
+      { page: 'demandes',   icon: '📝', label: 'Demandes'   },
+      { page: 'historique', icon: '📁', label: 'Historique'  },
+    ];
+    if (App._inventaireAgentActif) {
+      pages.push({ page: 'inventaire_agent', icon: '📦', label: 'Mes biens' });
+    }
+    if (App._urgencesActif) {
+      pages.push({ page: 'urgences', icon: '🚨', label: 'Urgences' });
+    }
+    return pages;
+  }
+  return [
+    { page: 'dashboard',     icon: '📊', label: 'Accueil'       },
+    { page: 'interventions', icon: '🔧', label: 'Interventions' },
+    { page: 'demandes',      icon: '📝', label: 'Demandes'      },
+    { page: 'scan',          icon: '📷', label: 'Scanner'       },
+  ];
+}
+
+function buildBottomNav() {
+  const nav = document.getElementById('bottomNav');
+  if (!nav) return;
+  const pages = _getBottomNavPages();
+  const isDemandeur = App.currentUser?.Role === 'Demandeur';
+
+  nav.innerHTML = pages.map(item => `
+    <button class="bottom-nav-item ${App.currentPage === item.page ? 'active' : ''}"
+      onclick="navigate('${item.page}'); updateBottomNav()">
+      <span class="bottom-nav-icon">${item.icon}</span>
+      <span class="bottom-nav-label">${item.label}</span>
+    </button>
+  `).join('') + `
+    <button class="bottom-nav-item" onclick="openMobileMenu()">
+      <span class="bottom-nav-icon">${isDemandeur ? '👤' : '☰'}</span>
+      <span class="bottom-nav-label">${isDemandeur ? 'Profil' : 'Menu'}</span>
+    </button>
+  `;
+}
+
+function updateBottomNav() {
+  const pages = _getBottomNavPages();
+  document.querySelectorAll('#bottomNav .bottom-nav-item').forEach((btn, i) => {
+    if (i < pages.length) {
+      btn.classList.toggle('active', pages[i].page === App.currentPage);
+    }
+  });
+}
+
+// ── Menu plein écran mobile ──────────────────────────────────────────────────
+
+function openMobileMenu() {
+  const overlay = document.getElementById('mobileMenuOverlay');
+  if (!overlay) return;
+
+  const user = App.currentUser || {};
+  const initiales = ((user.Prenom?.[0]||'') + (user.Nom?.[0]||'')).toUpperCase() || '?';
+  const role = user.Role || '';
+  const isAdmin = role === 'Admin';
+  const isGestionnaire = role === 'Gestionnaire';
+  const isDemandeur = role === 'Demandeur';
+
+  // Construire les items du menu selon le rôle
+  let items = '';
+
+  function menuItem(page, icon, label) {
+    const active = App.currentPage === page ? 'active' : '';
+    return `<div class="mobile-menu-item ${active}" onclick="mobileMenuNavigate('${page}')">
+      <span class="icon">${icon}</span>${label}</div>`;
+  }
+
+  // ── Vérifie la visibilité d'un onglet (mêmes règles que la sidebar) ──
+  function _mobileShowNav(page) {
+    // Modules désactivés au niveau tenant
+    const disabled = App._disabledModules || [];
+    if (disabled.includes(page)) return false;
+    // Urgences : Admin/Gestionnaire voient toujours, autres seulement si activé
+    if (page === 'urgences') {
+      const isManager = (role === 'Admin' || role === 'Gestionnaire');
+      if (!isManager && !App._urgencesActif) return false;
+    }
+    // Préférences utilisateur de visibilité
+    const prefs = (typeof uiPrefsGet === 'function') ? uiPrefsGet() : {};
+    const visibility = prefs.navVisibility || {};
+    if (visibility[page] === false) return false;
+    return true;
+  }
+
+  if (isDemandeur) {
+    items += '<div class="mobile-menu-section-title">Mes demandes</div>';
+    items += menuItem('demandes', '📝', 'Nouvelle demande');
+    items += menuItem('historique', '📁', 'Mes demandes passées');
+    items += '<div class="mobile-menu-section-title">Mon empreinte</div>';
+    items += menuItem('mobilite_carbone', '🚗', 'Mobilité carbone');
+    // Inventaire agent : vérifier si activé (le flag est mis par buildSidebar)
+    if (App._inventaireAgentActif) {
+      items += '<div class="mobile-menu-section-title">Inventaire</div>';
+      items += menuItem('inventaire_agent', '📦', 'Mes biens');
+    }
+    // Urgences pour Demandeur (si activé)
+    if (_mobileShowNav('urgences')) {
+      items += '<div class="mobile-menu-section-title">Sécurité</div>';
+      items += menuItem('urgences', '🚨', 'Procédures d\'urgence');
+    }
+  } else {
+    // ── Menu dynamique basé sur UI_NAV_ITEMS (mêmes items que la sidebar) ──
+    const orderedItems = (typeof getOrderedNavItems === 'function')
+      ? getOrderedNavItems()
+      : (typeof UI_NAV_ITEMS !== 'undefined' ? UI_NAV_ITEMS.slice() : []);
+
+    let lastSection = null;
+    orderedItems.forEach(function(n) {
+      if (!_mobileShowNav(n.page)) return;
+      // Section header
+      const sectionLabel = (typeof getSectionLabel === 'function') ? getSectionLabel(n.section) : n.section;
+      if (n.section !== lastSection) {
+        items += '<div class="mobile-menu-section-title">' + sectionLabel + '</div>';
+        lastSection = n.section;
+      }
+      items += menuItem(n.page, n.icon, n.label);
+    });
+
+    // Scanner (pas dans UI_NAV_ITEMS mais utile sur mobile)
+    items += '<div class="mobile-menu-section-title">Outils</div>';
+    items += menuItem('scan', '📷', 'Scanner');
+
+    // Administration (Admin et Gestionnaire)
+    if (isAdmin || isGestionnaire) {
+      items += '<div class="mobile-menu-section-title" style="color:rgba(245,166,35,.5)">Administration</div>';
+      if (isAdmin) {
+        items += menuItem('utilisateurs', '👥', 'Gestion des comptes');
+      }
+      items += menuItem('configuration', '⚙️', 'Configuration');
+    }
+  }
+
+  // Actions en bas
+  items += '<div style="margin-top:auto;padding-top:20px;border-top:1px solid rgba(255,255,255,.08)">';
+  if ((user.Provider || 'local') === 'local') {
+    items += `<div class="mobile-menu-item" onclick="closeMobileMenu();showChangePassword()">
+      <span class="icon">🔑</span>Changer mon mot de passe</div>`;
+  }
+  items += `<div class="mobile-menu-item" onclick="closeMobileMenu();toggleDarkMode()">
+    <span class="icon">🌙</span>Mode sombre</div>`;
+  items += `<div class="mobile-menu-item danger" onclick="closeMobileMenu();doLogout()">
+    <span class="icon">🚪</span>Déconnexion</div>`;
+  items += '</div>';
+
+  overlay.innerHTML = `
+    <div class="mobile-menu-header">
+      <div class="mobile-menu-user">
+        <div class="user-avatar">${user.PhotoUrl ? `<img src="${user.PhotoUrl}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : initiales}</div>
+        <div>
+          <div class="mobile-menu-user-name">${user.Prenom || ''} ${user.Nom || ''}</div>
+          <div class="mobile-menu-user-role">${role}</div>
+        </div>
+      </div>
+      <button class="mobile-menu-close" onclick="closeMobileMenu()">✕</button>
+    </div>
+    ${items}
+  `;
+
+  overlay.classList.add('active');
+  document.body.classList.add('sidebar-locked');
+}
+
+function closeMobileMenu() {
+  const overlay = document.getElementById('mobileMenuOverlay');
+  if (overlay) overlay.classList.remove('active');
+  document.body.classList.remove('sidebar-locked');
+}
+
+function mobileMenuNavigate(page) {
+  closeMobileMenu();
+  navigate(page);
+  updateBottomNav();
+}
+
+// ── Sidebar tablette (inchangée) ─────────────────────────────────────────────
+
+function toggleSidebar() {
+  // Sur mobile, ouvrir le menu plein écran à la place
+  if (_isMobileView()) {
+    openMobileMenu();
+    return;
+  }
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const isOpen  = sidebar.classList.contains('sidebar-open');
+  sidebar.classList.toggle('sidebar-open', !isOpen);
+  overlay.classList.toggle('active', !isOpen);
+  document.body.classList.toggle('sidebar-locked', !isOpen);
+}
+
+function closeSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('sidebar-open');
+  document.getElementById('sidebarOverlay')?.classList.remove('active');
+  document.body.classList.remove('sidebar-locked');
+}
+
+// Fermer sidebar après navigation sur tablette
+document.addEventListener('click', e => {
+  const navItem = e.target.closest('.nav-item');
+  if (navItem && window.innerWidth <= 900 && window.innerWidth > 600) closeSidebar();
+});
+
+// Patch navigate pour mettre à jour la bottom nav
+document.addEventListener('DOMContentLoaded', () => {
+  const origNav = window.navigate;
+  if (typeof origNav === 'function') {
+    window.navigate = function(page) {
+      if (App.currentPage === 'scan' && page !== 'scan' && typeof stopScan === 'function') {
+        stopScan();
+      }
+      origNav(page);
+      buildBottomNav();
+    };
+  }
+});
+// ════════════════════════════════════════════════════════════════════════════
+//  PERSONNALISATION DE L'ÉCRAN DE CONNEXION (logo, texte, couleurs, fond animé,
+//  CSS décoratif filtré, mention légale). Stale-while-revalidate (anti-flash).
+//  Aucune injection de HTML brut. Le CSS perso (mode « css ») est filtré côté
+//  serveur et appliqué à la couche décorative #loginFx (derrière la carte).
+// ════════════════════════════════════════════════════════════════════════════
+async function applyLoginBranding() {
+  const el = document.getElementById('loginBranding');
+  if (!el) return;
+  const defaultLogoHTML = el.innerHTML; // « Larka / GMAO » d'origine (à restaurer)
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const isHex = v => /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(v||''));
+  const ensureStyle = id => { let s=document.getElementById(id); if(!s){s=document.createElement('style');s.id=id;document.head.appendChild(s);} return s; };
+
+
+  const applyTheme = b => {
+    const st = ensureStyle('loginThemeVars');
+    const accent  = b && isHex(b.theme_accent) ? b.theme_accent : null;
+    const gradient = !!(b && b.bg_mode === 'gradient');
+    const bg1 = b && isHex(b.theme_bg1) ? b.theme_bg1 : null;
+    const bg2 = b && isHex(b.theme_bg2) ? b.theme_bg2 : null;
+    const vars = [];
+    if (accent) vars.push(`--login-accent:${accent}`);
+    if (gradient && (bg1 || bg2)) { vars.push(`--login-bg-1:${bg1||bg2}`); vars.push(`--login-bg-2:${bg2||bg1}`); }
+    st.textContent = vars.length ? `#loginScreen{${vars.join(';')}}` : '';
+    // Fond animé : conservé sauf en mode « dégradé », et recoloré selon l'accent.
+    if (typeof window.gmaoSetRiver === 'function') {
+      window.gmaoSetRiver({ enabled: !gradient, accent: accent || undefined });
+    }
+  };
+
+  const applyCustomCss = b => {
+    const st = ensureStyle('loginCustomCss');
+    const css = (b && typeof b.custom_css === 'string') ? b.custom_css.trim() : '';
+    // Injecté tel quel : filtré côté serveur (pas de url()/@import/fixed/…).
+    // Cible la couche décorative #loginFx (pointer-events:none, derrière la carte).
+    st.textContent = css;
+  };
+
+  const applyLogo = b => {
+    const mode = (b && b.mode) || 'default';
+    if (mode === 'image' && b && b.logo_image) {
+      const title = b.title || 'Larka';
+      const sub   = b.subtitle || '';
+      el.innerHTML =
+        `<div class="login-brand-logo"><img src="${esc(b.logo_image)}" alt="${esc(title)}" ` +
+        `style="max-width:240px;max-height:96px;object-fit:contain"></div>` +
+        `<h1>${esc(title)}</h1>` + (sub ? `<p>${esc(sub)}</p>` : '');
+      return;
+    }
+    el.innerHTML = defaultLogoHTML; // texte seul (Larka / GMAO)
+    if (b) {
+      const h1 = el.querySelector('h1'), p = el.querySelector('p');
+      if (h1 && b.title)    h1.textContent = b.title;
+      if (p  && b.subtitle) p.textContent  = b.subtitle;
+    }
+  };
+
+  const apply = b => {
+    // « css » : le CSS perso est prioritaire (les couleurs sont ignorées).
+    // « classic » (défaut) : couleurs / fond / animation river.
+    const cssMode = !!(b && b.custom_mode === 'css');
+    if (cssMode) { applyTheme(null); applyCustomCss(b); }
+    else         { applyCustomCss(null); applyTheme(b); }
+    applyLogo(b);
+    const sup = document.getElementById('loginSupport');
+    if (sup) sup.style.display = (b && b.kofi_enabled === false) ? 'none' : '';
+  };
+
+  // 1) Application immédiate depuis le cache local (avant le 1er paint réseau).
+  let hadCache = false;
+  try {
+    const c = JSON.parse(localStorage.getItem('gmao_login_branding') || 'null');
+    if (c && typeof c === 'object') { hadCache = true; apply(c); }
+  } catch (_) {}
+
+  // 2) Rafraîchissement réseau puis mise à jour du cache.
+  try {
+    const res  = await fetch('api/index.php?action=superadmin_branding_public', { credentials: 'include' });
+    const json = await res.json();
+    const b = (json && json.success && json.data) ? json.data : null;
+    if (b) {
+      try { localStorage.setItem('gmao_login_branding', JSON.stringify(b)); } catch (_) {}
+      apply(b);
+    }
+  } catch (_) { /* hors-ligne : on garde le cache / les valeurs par défaut */ }
+}
+document.addEventListener('DOMContentLoaded', applyLoginBranding);
+</script>
+
+<!-- Modale « Conditions d'utilisation » (ouverte depuis le lien en bas à droite) -->
+<div id="termsModal" role="dialog" aria-modal="true" aria-label="Conditions d'utilisation">
+  <div class="terms-card">
+    <div class="terms-head"><strong>Conditions d'utilisation</strong><button type="button" id="termsClose" aria-label="Fermer">&times;</button></div>
+    <pre id="termsBody">Larka — Conditions d'utilisation (résumé)
+
+Logiciel propriétaire. © 2025-2026 Mickaël Larcin — tous droits réservés.
+Ce n'est pas un logiciel libre / open source.
+
+• L'usage personnel et interne à l'organisation est gratuit.
+• Le code source est lisible : cela permet de l'auditer et de l'adapter à ses
+  besoins internes, mais ne confère aucun droit de le republier ou de le diffuser.
+• Sont interdits sans autorisation écrite de l'auteur : la reproduction au-delà
+  de l'installation, la distribution, la republication du code, la fourniture du
+  logiciel comme service à des tiers, et son usage comme données d'entraînement
+  d'une intelligence artificielle.
+• En entreprise, l'acceptation est donnée pour le compte de l'organisation, qui
+  informe, forme et supervise ses utilisateurs et répond des comptes qu'elle
+  crée et des actes de ses utilisateurs autorisés.
+• Le logiciel est fourni « en l'état », sans aucune garantie ; la responsabilité
+  de l'auteur est limitée.
+
+Texte intégral : voir le fichier LICENSE fourni avec le logiciel.</pre>
+  </div>
+</div>
+<script>
+(function () {
+  var modal = document.getElementById('termsModal');
+  var body  = document.getElementById('termsBody');
+  if (!modal || !body) return;
+  function open(e) {
+    if (e) e.preventDefault();
+    modal.classList.add('open');
+    if (!body.dataset.full) {
+      fetch('LICENSE', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+        .then(function (t) { if (t && t.length > 200) { body.textContent = t; body.dataset.full = '1'; } })
+        .catch(function () { /* on garde le résumé intégré */ });
+    }
+  }
+  function close() { modal.classList.remove('open'); }
+  var lt = document.getElementById('loginTerms'); if (lt) lt.addEventListener('click', open);
+  var tc = document.getElementById('termsClose'); if (tc) tc.addEventListener('click', close);
+  modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+})();
+</script>
+</body>
+</html>
