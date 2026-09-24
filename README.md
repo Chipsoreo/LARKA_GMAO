@@ -102,16 +102,101 @@ sans y exécuter la moindre ligne de code tiers.
 - **Documentation v2** : manuels Gestionnaire, SuperAdmin (journal d'audit, mises à jour), Visionneur &
   Utilisateur (repères « Concerne : »), DAT et référence du format déclaratif — police et charte communes.
 
+**Sécurité — six défauts d'autorisation des modules, corrigés**
+
+Un module déclare ses rôles page par page et ses actions vue par vue ; ce vocabulaire n'était appliqué qu'à
+*supprimer* et *exporter*. Chaque cas a été reproduit sur un module livré avant d'être corrigé :
+
+| Ce qui était possible | Corrigé par |
+|---|---|
+| **Écriture sans contrôle** : `dp_enregistrer` ne vérifiait ni rôle, ni action, ni champ — un agent pouvait remplir un champ que son écran n'affiche pas (« Décision : validé ») | La saisie est bornée aux champs que l'écran expose ; les autres sont écartés et la tentative est tracée |
+| **Modification d'autrui** sur une page qui ne déclare pas *modifier* | `creer` et `modifier` exigent une page, ou un ancrage formulaire, ouverts au rôle |
+| **Lecture d'un jeu réservé** en changeant son nom dans la requête | `dp_lister`, `dp_exporter`, `dp_ancrage`, `dp_cibles`, `dp_suggestions` exigent une page ouverte à l'appelant |
+| **Réglages du module** modifiables sans être gestionnaire (`dp_definir_reglages`) | Liste close d'actions d'administration, réservées au gestionnaire |
+| **Fichiers d'un module** listés et téléchargés par n'importe quel compte | Les quatre routes passent par la garde de l'exécution d'une action |
+| **Cloisonnement des tables** : `larka.recharge` réputé propriétaire des tables de `larka.recharge-x` | L'installation refuse un identifiant qui empiète sur un module déjà installé |
+
+L'épreuve `outils/epreuves/test-autorisations.php` (31 contrôles) garde ces portes fermées et vire au rouge si une
+correction est retirée. *Limite connue, assumée :* un rôle autorisé à *supprimer* sur une page peut supprimer toutes
+les fiches du jeu, pas seulement les siennes — le format n'a pas de notion de propriétaire d'une ligne.
+
+**Sécurité — durcissement**
+
+- `session.cookie_samesite` borné à `Strict` ou `Lax` : pour les téléversements (dispensés du contrôle de
+  Content-Type), SameSite est la seule barrière CSRF. Toute autre valeur est refusée, journalisée, repliée sur `Strict`.
+- Liste des dispenses de Content-Type complétée (`ext_fichier_importer`, `urgences_media_upload`), qui échouaient
+  en 403 sans explication.
+- `proc_open` réintègre `disable_functions` dans le pool PHP-FPM (le processus isolé qui le justifiait n'existe plus).
+- nginx refuse `/extensions/` en entier ; mêmes règles dans `router.php`, qui refuse aussi `outils/` et `Documentations/`.
+- XXE : `LIBXML_NONET` posé explicitement sur les importateurs de plans (SVG, KML, GPX).
+- `deploy/larka-extensions-durcir.sh` retiré (compte système pour un processus disparu).
+- `./start.sh prod` est bloquant : les épreuves rapides tournent avant tout déploiement et le refusent (code 60) si
+  une protection ne répond plus ; `--sans-epreuves` pour l'urgence.
+
 **Corrections**
 
-- Les onglets **Biens, Équipements et Stock** pouvaient disparaître du menu (préférences d'affichage).
-- L'assistant ne savait pas répondre à « combien de biens ? ».
-- L'assistant interprétait mal certaines demandes (« poignée » comprise comme « poignet ») et mettait le lieu
-  dans le titre au lieu des champs prévus.
-- L'assistant demandait d'« être plus précis » au lieu de chercher une correspondance approchée.
+*Base de données*
+- Les tables de plans n'étaient créées qu'à la première visite de l'écran Plans (import, restauration, inventaire
+  échouaient sur une base neuve) : créées par la migration (`SCHEMA_VERSION` 8 → 9).
+- Un réglage de liste vide s'auto-effaçait (« champ obligatoire » décoché au rechargement) : calcul remonté au
+  serveur, application en un seul `UPDATE`.
+
+*Sauvegardes — le chapitre le plus important*
+- **Une sauvegarde SQL n'était pas une sauvegarde** : le dump excluait `Utilisateurs` et `PushSubscriptions` — après
+  une perte de disque, plus personne pour se connecter.
+- Six familles de fichiers n'étaient pas sauvegardées (plans, fonds d'écran, modules, thèmes et langues, médias
+  d'urgence, configuration des modules) : un `-fichiers.tar.gz` accompagne désormais le `.sql.gz`.
+- Cette archive ne se faisait presque jamais (`exec`/`shell_exec` désactivés par le pool livré → « tar absent ») :
+  elle passe par PharData, intégré à PHP ; `tar` ne sert plus que de secours.
+- Un commentaire en tête d'un bloc faisait sauter l'ordre SQL suivant à la restauration.
+
+*Plans — fuite entre clients*
+- `data/plans` était partagé entre tous les clients (« voir les images de fond » montrait les plans des autres, et
+  deux clients pouvaient s'écraser à la même seconde) : un dossier par client, un fragment aléatoire dans le nom, repli
+  sur l'ancien emplacement pour les plans existants.
+- Le sélecteur de fichier annonçait « SVG », refusé par le serveur.
+
+*Rôles et permissions*
+- Le Super Administrateur recevait un 403 sur le journal d'audit, pourtant déplacé dans son écran.
+- La cloche était muette pour les demandeurs : nouveau type « Réponses à mes demandes », types filtrés par rôle.
+- Le bouton « Interface » était masqué aux demandeurs.
+
+*Panneau Interface*
+- Bloc « onglets et sections » refusé aux demandeurs ; préférences d'un rôle qui écrasaient celles d'un autre sur un
+  navigateur partagé (cloisonnées par rôle) ; libellés de la mauvaise barre ; entrées en double ; les onglets
+  **Biens, Équipements et Stock** pouvaient disparaître du menu.
+
+*Assistant*
+- Ne savait pas répondre à « combien de biens ? » ; comprenait « poignée » comme « poignet » et mettait le lieu dans
+  le titre ; demandait d'« être plus précis » au lieu de chercher une correspondance approchée.
+
+*Cache navigateur et version*
+- Les `?v=` d'index.html étaient figés au 4 août : des corrections livrées n'atteignaient jamais les postes.
+  `outils/bump-version.php` s'en charge et refuse un numéro de version écrit en dur dans le code.
 - La version affichée était codée en dur dans `api/config.php` ; elle vient désormais de `version.json`.
+
+*Exploitation*
+- `./start.sh install` sortait en erreur sans message sur toute machine sans `config.json` (la première installation).
+- Le port était lu dans la mauvaise section de `config.json` (tentative d'écoute sur 5432).
+- Le garde-fou « vous êtes en production » se déclenchait à tort dès que `config.json` portait `env: prod`.
+- Faux négatifs du contrôle de santé derrière un tunnel.
+- `start`, `stop` et `restart` ne pilotent plus la production (`prod-start` / `prod-stop` / `prod-restart`).
 - Avertissement PHP 8.4 (paramètre implicitement nullable) dans la sauvegarde Super Admin.
-- Service Worker : icône de notification alignée sur `icon.png`.
+
+*Divers*
+- Kilométrage annuel affiché dans les déclarations de mobilité · champs obligatoires mélangés entre sous-onglets de
+  Configuration · modal « Nouvelle demande » à moitié vide · titres de section collés au bloc précédent · mode sombre
+  et thèmes superposés · une dizaine d'accès `window.X` vers des liaisons `const`/`let` qui échouaient en silence ·
+  icône de notification alignée sur `icon.png`.
+
+**Ménage**
+
+- Une quinzaine de fonctions sans appelant retirées (détectées par la nouvelle épreuve des liaisons globales).
+- `scripts/` devient `outils/`, et n'est plus déployé (comme `Documentations/`) : la carte de ce contre quoi Larka se
+  défend n'a pas à voyager avec le produit.
+- Règles de déploiement périmées retirées (`/sdk/`, `/securite/`, page d'épreuve supprimée).
+- Renvois documentaires réparés (référence Word en retard d'une version, manuel d'auteur pointant vers un fichier absent).
+- Le lien du pied de page de connexion pointait vers `Chipsoreo/GMAO_LARKA`.
 
 > ⚠️ **Statut : bêta.** Cette version est fonctionnelle mais n'a pas encore été
 > éprouvée en exploitation réelle sur la durée. Avant tout déploiement en
