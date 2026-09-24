@@ -1,0 +1,329 @@
+/* SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+ * SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Points d'accroche de l'apparence
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Un module de thème pose des variables CSS. Encore faut-il que le produit les
+ * LISE : jusqu'ici il ne le faisait pas. Les couleurs du fond, du menu, des
+ * cartes et de l'en-tête étaient écrites en dur dans layout.css, et poser
+ * « --sidebar-bg » ne changeait rien — le thème semblait à moitié appliqué,
+ * sans que rien ne le signale.
+ *
+ * Ce fichier déclare les variables et les branche, en dernier pour l'emporter
+ * sur les règles existantes. Les valeurs par défaut reprennent exactement
+ * l'apparence d'origine : sans thème installé, rien ne bouge.
+ *
+ * Chargé APRÈS les autres feuilles — voir index.html.
+ */
+
+:root {
+  /* Fond de l'application */
+  --body-bg:            #12294a;
+  --body-image:         none;
+  --body-image-size:    cover;
+  --body-image-repeat:  no-repeat;
+  --body-overlay:       rgba(0,0,0,0);
+
+  /* Menu latéral */
+  --sidebar-bg:         rgba(10,25,60,0.45);
+  --sidebar-text:       rgba(255,255,255,0.85);
+  --sidebar-active:     var(--blue);
+  --sidebar-width:      240px;
+  --sidebar-shadow:     none;
+
+  /* En-tête */
+  --topbar-bg:          rgba(255,255,255,0.65);
+  --topbar-height:      62px;
+  --topbar-border:      1px solid rgba(255,255,255,0.4);
+
+  /* Cartes et champs */
+  --card-shadow:        var(--shadow-sm);
+  --card-border:        1px solid var(--gray-border);
+  --input-border:       1px solid var(--gray-border);
+  --border-width:       1px;
+  --radius-btn:         6px;
+
+  /* Typographie */
+  --font:               system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-title:         var(--font);
+  --font-weight-title:  700;
+  --font-size:          14px;
+  --font-size-title:    20px;
+  --font-size-small:    12px;
+
+  /* Densité */
+  --row-height:         38px;
+  --gap:                12px;
+
+  /* Boutons */
+  --btn-bg:             var(--blue);
+  --btn-text:           #ffffff;
+
+  /* Larka nomme ses couleurs d'état « --teal » et « --orange ». Un thème
+     parle de succès et d'alerte : on fait le pont ici plutôt que d'imposer
+     le vocabulaire interne du produit aux auteurs de thèmes. */
+  --green:              var(--teal);
+}
+
+/* ── Branchements ────────────────────────────────────────────────────────
+ *
+ * RIEN n'est forcé tant qu'aucun thème n'est choisi.
+ *
+ * La première version appliquait ces règles en permanence, avec « !important »
+ * et des valeurs par défaut claires. En mode sombre, le bandeau du haut
+ * redevenait blanc : une régression visible sur tous les écrans, causée par un
+ * fichier censé ne rien changer par défaut.
+ *
+ * Les variables restent déclarées ci-dessus — un module de thème les lit — mais
+ * elles ne pilotent l'affichage que sous « body[data-theme] », c'est-à-dire
+ * quand l'utilisateur a explicitement choisi un habillage.
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Thème actif : il l'emporte sur le mode sombre
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * dark-mode.css écrit ses couleurs en dur, avec plus de cent « !important ».
+ * Un thème posé en variables ne pouvait donc rien changer tant que le mode
+ * sombre était actif : l'écran restait bleu, la case « Thème Papier » cochée,
+ * et rien n'expliquait l'écart.
+ *
+ * Le corps porte « data-theme » dès qu'un thème est choisi. Les règles
+ * ci-dessous sont alors plus spécifiques que celles du mode sombre, et
+ * reprennent la main — sans le désactiver : un thème clair choisi
+ * volontairement doit s'afficher clair, mode sombre ou non.
+ */
+body[data-theme] {
+  background-color: var(--body-bg) !important;
+  color: var(--text) !important;
+}
+body[data-theme] .layout   { background: var(--body-bg) !important; }
+body[data-theme] .content  { background: transparent !important; }
+body[data-theme] .sidebar  { background: var(--sidebar-bg) !important;
+                             color: var(--sidebar-text) !important;
+                             border-color: var(--gray-border) !important; }
+body[data-theme] .sidebar a,
+body[data-theme] .sidebar .nav-item { color: var(--sidebar-text) !important; }
+body[data-theme] .topbar   { background: var(--topbar-bg) !important;
+                             border-color: var(--gray-border) !important; }
+body[data-theme] .card,
+body[data-theme] .stat-card { background: var(--white) !important;
+                              border-color: var(--gray-border) !important;
+                              color: var(--text) !important; }
+body[data-theme] .table th { background: var(--gray-bg) !important;
+                             color: var(--text) !important; }
+body[data-theme] .table td { color: var(--text) !important; }
+body[data-theme] .form-control,
+body[data-theme] input, body[data-theme] select, body[data-theme] textarea {
+  background: var(--white) !important;
+  color: var(--text) !important;
+  border-color: var(--gray-border) !important;
+}
+body[data-theme] .btn-primary { background: var(--btn-bg) !important;
+                                color: var(--btn-text) !important;
+                                border-color: var(--btn-bg) !important; }
+body[data-theme] .section-label,
+body[data-theme] .form-label { color: var(--gray-text) !important; }
+
+/* Typographie et densité : elles aussi réservées au thème actif. */
+body[data-theme] {
+  font-family: var(--font);
+  font-size: var(--font-size);
+}
+body[data-theme] .sidebar {
+  width: var(--sidebar-width) !important;
+  min-width: var(--sidebar-width) !important;
+}
+body[data-theme] .topbar { min-height: var(--topbar-height); }
+body[data-theme] h1, body[data-theme] h2, body[data-theme] h3,
+body[data-theme] .page-title {
+  font-family: var(--font-title);
+  font-weight: var(--font-weight-title);
+}
+body[data-theme] h1, body[data-theme] .page-title { font-size: var(--font-size-title); }
+body[data-theme] .text-small, body[data-theme] .form-label { font-size: var(--font-size-small); }
+body[data-theme] .table td, body[data-theme] .table th { height: var(--row-height); }
+body[data-theme] .card-body { padding: calc(var(--gap) * 1.2); }
+body[data-theme] .btn { border-radius: var(--radius-btn); }
+body[data-theme] .card, body[data-theme] .form-control,
+body[data-theme] input, body[data-theme] select, body[data-theme] textarea {
+  border-width: var(--border-width);
+}
+
+/* ── Variables de base qu'aucun thème ne pouvait atteindre ──────────────────
+
+   Le CSS s'appuie sur des variables que le vocabulaire ne publie pas :
+   « --gray-bg » (25 usages) porte le fond des boutons secondaires, des zones
+   grisées et des en-têtes de tableau. Elle gardait donc sa valeur d'origine —
+   un gris très clair — quel que soit le thème : d'où des boutons blafards sur
+   un thème sombre, sans que rien dans la déclaration du thème permette d'y
+   remédier.
+
+   On les DÉRIVE ici de celles que le thème pilote vraiment. L'auteur d'un thème
+   n'a rien de plus à déclarer, et l'incohérence disparaît pour tous les thèmes
+   d'un coup — présents comme futurs.
+
+   « color-mix » est disponible sur tous les navigateurs visés ; le second
+   argument sert de repli si la fonction manque. */
+body[data-theme] {
+  --gray-bg:    color-mix(in srgb, var(--text) 7%, var(--white));
+  --blue-pale:  color-mix(in srgb, var(--blue) 12%, var(--white));
+  --red-light:  color-mix(in srgb, var(--red) 14%, var(--white));
+  --navy-dark:  color-mix(in srgb, var(--navy) 80%, #000);
+  --radius-sm:  calc(var(--radius) * 0.7);
+  --shadow-sm:  var(--card-shadow);
+  --shadow:     var(--card-shadow);
+}
+
+/* ── Image de fond ──────────────────────────────────────────────────────────
+
+   ⚠️ ELLE N'EST PLUS POSÉE SUR « body ».
+   Trois feuilles se disputaient ce fond : base.css pose « background: #0d1f3c »,
+   layout.css « body.app-mode { background: … !important } », et le raccourci
+   « background » réinitialise background-image au passage. Ajouter un
+   « !important » de plus revenait à surenchérir dans une bataille de priorités
+   qu'une prochaine règle relancerait.
+
+   L'image vit donc sur la COUCHE DÉDIÉE qui servait déjà au voile : un
+   pseudo-élément fixe, plein écran, que rien ne peut recouvrir puisqu'il ne
+   dépend d'aucune propriété partagée. La pile est explicite :
+
+     fond du body (couleur)  →  ::before : image puis voile  →  contenu (z-index 1)
+
+   Le voile est le PREMIER calque de background-image, donc celui du dessus ;
+   l'image est le second. C'est ainsi qu'on superpose une teinte à une image
+   sans second élément : un dégradé d'une seule couleur fait un aplat.
+
+   « pointer-events: none » laisse tous les clics passer au travers. */
+body[data-theme]::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--body-overlay, transparent), var(--body-overlay, transparent)),
+    var(--body-image, none);
+  background-size: auto, var(--body-image-size, cover);
+  background-repeat: repeat, var(--body-image-repeat, no-repeat);
+  background-position: center, center;
+  background-attachment: fixed, fixed;
+}
+
+/* Couleurs d'état, réservées au thème également. */
+body[data-theme] .chip-ok, body[data-theme] .text-success { color: var(--green) !important; }
+body[data-theme] .chip-warn, body[data-theme] .text-warning { color: var(--orange) !important; }
+
+
+/* Ombres, cadres et élément de menu actif.
+ *
+ * Ces six variables étaient déclarées au vocabulaire et lues nulle part : le
+ * scopage sous « body[data-theme] » avait emporté leurs règles avec les
+ * autres. Un auteur de thème réglait l'ombre des cartes et ne voyait rien
+ * changer — le défaut le plus décourageant qui soit. */
+body[data-theme] .card,
+body[data-theme] .stat-card   { box-shadow: var(--card-shadow); }
+body[data-theme] .sidebar     { box-shadow: var(--sidebar-shadow); }
+body[data-theme] .card        { border: var(--card-border) !important; }
+body[data-theme] .form-control,
+body[data-theme] input, body[data-theme] select, body[data-theme] textarea {
+  border: var(--input-border) !important;
+}
+body[data-theme] .topbar      { border-bottom: var(--topbar-border) !important; }
+body[data-theme] .sidebar .nav-item.active,
+body[data-theme] .sidebar a.active { background: var(--sidebar-active) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Éléments que les thèmes n'atteignaient pas
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Les feuilles de base posent des couleurs EN DUR, pensées pour l'apparence
+   d'origine — claire. Les règles ci-dessus en couvrent l'essentiel (fond,
+   cartes, menu, en-tête), mais une poignée d'éléments leur échappait : bordures
+   de statistiques, boutons de danger, notifications, badges, conteneur de plan.
+
+   Sur un thème sombre comme Ardoise, ils restaient clairs : une bordure blafarde
+   autour d'une tuile sombre, une notification blanche au milieu de la nuit. Ce
+   sont ces détails qui donnent l'impression que « le thème est cassé » alors que
+   le gros de la page est juste.
+
+   Chaque règle rebranche l'élément sur une variable du vocabulaire, pour qu'un
+   thème le pilote comme le reste.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* La bordure suivait la couleur claire d'origine, seul le fond était repris. */
+body[data-theme] .stat-card {
+  border-color: var(--card-border, var(--gray-border)) !important;
+}
+
+/* Notifications : fond figé, illisible sur un thème sombre. On garde la
+   couleur de statut sur le liseré — c'est elle qui porte le sens — et on rend
+   le fond au thème. */
+body[data-theme] .toast {
+  background: var(--white) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--gray-border) !important;
+}
+body[data-theme] .toast.success { border-left: 4px solid var(--green) !important; }
+body[data-theme] .toast.warning { border-left: 4px solid var(--orange) !important; }
+body[data-theme] .toast.error   { border-left: 4px solid var(--red) !important; }
+
+/* Le rouge du bouton de danger reste rouge : il avertit. Seul son texte est
+   recalculé, pour rester lisible quelle que soit la teinte du thème. */
+body[data-theme] .btn-danger {
+  background: var(--red) !important;
+  color: var(--btn-text, #fff) !important;
+  border-color: var(--red) !important;
+}
+
+body[data-theme] .badge-purple {
+  background: var(--blue) !important;
+  color: var(--btn-text, #fff) !important;
+}
+
+/* Fond du plan : un aplat clair derrière un plan sombre saute aux yeux. */
+body[data-theme] #planMapContainer {
+  background: var(--body-bg) !important;
+}
+
+body[data-theme] #assistantSendBtn {
+  background: var(--btn-bg, var(--blue)) !important;
+  color: var(--btn-text, #fff) !important;
+}
+
+/* Champs de saisie : le fond blanc d'origine survivait au thème, ce qui donnait
+   des rectangles éclatants dans un formulaire sombre. */
+body[data-theme] .form-control,
+body[data-theme] input[type="text"],
+body[data-theme] input[type="number"],
+body[data-theme] input[type="date"],
+body[data-theme] select,
+body[data-theme] textarea {
+  background: var(--white) !important;
+  color: var(--text) !important;
+  border-color: var(--input-border, var(--gray-border)) !important;
+}
+
+/* ── Pastilles de couleur ────────────────────────────────────────────────────
+   <input type="color"> se dessine par le NAVIGATEUR : fond clair par défaut,
+   pastille en retrait, bordure épaisse. Sur un thème sombre, on voyait donc un
+   rectangle blanc à côté de « #0f172a » — l'inverse de la couleur annoncée.
+
+   On fait remplir toute la surface par la couleur elle-même : la pastille dit
+   alors ce qu'elle vaut, quel que soit le thème. Les deux préfixes couvrent les
+   moteurs WebKit/Blink et Gecko ; sans eux, la règle n'a aucun effet. */
+body[data-theme] input[type="color"] {
+  background: transparent !important;
+  border: 1px solid var(--input-border, var(--gray-border)) !important;
+  padding: 2px !important;
+  cursor: pointer;
+}
+body[data-theme] input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+body[data-theme] input[type="color"]::-webkit-color-swatch {
+  border: none; border-radius: 4px;
+}
+body[data-theme] input[type="color"]::-moz-color-swatch {
+  border: none; border-radius: 4px;
+}

@@ -855,9 +855,8 @@ async function _autoCalcMontantHT(conso) {
   } catch(e) { console.error('_autoCalcMontantHT:', e); }
 }
 
-// Legacy alias
-async function calcConsommationAuto() { calcFromIndex(); }
-function calcCarboneAuto() {} // Plus de calcul auto carbone
+
+ // Plus de calcul auto carbone
 
 // ── Toggle simple / avancée ───────────────────────────────────────────────────
 function toggleAdvancedReleve() {
@@ -929,14 +928,6 @@ function calcDetailPlages() {
   }
 }
 
-function calcConsommation() {
-  const debut = parseFloat(document.getElementById('f_indexDebut')?.value);
-  const fin   = parseFloat(document.getElementById('f_indexFin')?.value);
-  if (!isNaN(debut) && !isNaN(fin) && fin >= debut) {
-    const el = document.getElementById('f_consommation');
-    if (el) el.value = (fin - debut).toFixed(2);
-  }
-}
 
 function toggleReleveFields() {
   const t    = document.getElementById('f_typeSaisie')?.value;
@@ -1173,8 +1164,6 @@ function calcChauffage() {
     if (elMontant) elMontant.value = totalTTC.toFixed(2);
   }
 }
-
-
 
 
 // ── Multi-compteur : saisie de sous-compteurs ───────────────────────────────
@@ -1592,10 +1581,6 @@ function removeLigneFacture(btn) {
   calcLignesFacture();
 }
 
-// Legacy aliases (au cas où des appels anciens subsisteraient)
-function calcLignesCalcul() { calcLignesFacture(); }
-function addLigneCalcul() { addLigneFacture(); }
-function removeLigneCalcul(btn) { removeLigneFacture(btn); }
 
 // ── Carbone auto Électricité + Gaz — utilise le facteur stocké pour l'année ──
 async function calcCarboneElec() {

@@ -1,0 +1,202 @@
+{
+  "identifiant": "larka.demo-image",
+  "format": "declaratif/1",
+  "nom": "Démonstration : images",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Éprouve la chaîne complète d'une image dans un module : livrée dans le paquet, extraite à l'installation, servie par une route qui vérifie les octets, et affichée dans l'écran.",
+  "logo": "assets/marguerite.jpg",
+  "donnees": {
+    "especes": {
+      "libelle": "Espèce",
+      "libelle_pluriel": "Espèces",
+      "champs": {
+        "nom_commun": {
+          "type": "texte",
+          "libelle": "Nom commun",
+          "obligatoire": true,
+          "max": 80
+        },
+        "nom_latin": {
+          "type": "texte",
+          "libelle": "Nom latin",
+          "max": 80,
+          "exemple": "Leucanthemum vulgare"
+        },
+        "famille": {
+          "type": "choix",
+          "libelle": "Famille",
+          "valeurs": [
+            "Astéracées",
+            "Rosacées",
+            "Lamiacées",
+            "Autre"
+          ],
+          "defaut": "Astéracées"
+        },
+        "floraison": {
+          "type": "choix",
+          "libelle": "Floraison",
+          "valeurs": [
+            "Printemps",
+            "Été",
+            "Automne",
+            "Hiver"
+          ],
+          "defaut": "Été"
+        },
+        "hauteur_cm": {
+          "type": "entier",
+          "libelle": "Hauteur",
+          "unite": "cm",
+          "min": 1,
+          "max": 500
+        },
+        "observee_le": {
+          "type": "date",
+          "libelle": "Observée le",
+          "defaut": "{{today}}",
+          "max_date": "today"
+        },
+        "remarques": {
+          "type": "texte_long",
+          "libelle": "Remarques",
+          "max": 800
+        }
+      }
+    }
+  },
+  "pages": [
+    {
+      "cle": "especes",
+      "titre": "Herbier",
+      "icone": "flower",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "especes",
+        "colonnes": [
+          "nom_commun",
+          "nom_latin",
+          "famille",
+          "floraison",
+          "observee_le"
+        ],
+        "recherche": [
+          "nom_commun",
+          "nom_latin"
+        ],
+        "filtres": [
+          {
+            "champ": "famille"
+          },
+          {
+            "champ": "floraison"
+          }
+        ],
+        "tri": {
+          "nom_commun": "ASC"
+        },
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 12,
+          "espacement": "large",
+          "responsive": [
+            {
+              "sous": "telephone",
+              "colonnes": 1
+            }
+          ],
+          "composants": [
+            {
+              "image": "assets/marguerite.jpg",
+              "description": "Marguerite commune en fleur",
+              "x": 1,
+              "y": 1,
+              "largeur": 4,
+              "hauteur": 2,
+              "cadrage": "couvrir",
+              "hauteur_min_px": 180
+            },
+            {
+              "section": "Identification",
+              "style": "carte",
+              "couleur": "emeraude",
+              "x": 5,
+              "y": 1,
+              "largeur": 8,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "nom_commun",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 7
+                },
+                {
+                  "champ": "nom_latin",
+                  "x": 8,
+                  "y": 1,
+                  "largeur": 5
+                },
+                {
+                  "champ": "famille",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 6
+                },
+                {
+                  "champ": "floraison",
+                  "x": 7,
+                  "y": 2,
+                  "largeur": 6
+                }
+              ]
+            },
+            {
+              "section": "Observation",
+              "style": "panneau",
+              "x": 5,
+              "y": 2,
+              "largeur": 8,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "observee_le",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 5
+                },
+                {
+                  "champ": "hauteur_cm",
+                  "x": 6,
+                  "y": 1,
+                  "largeur": 4,
+                  "alignement_h": "droite"
+                },
+                {
+                  "champ": "remarques",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12,
+                  "taille": "grande"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "api_min": "1.1"
+}

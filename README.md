@@ -4,8 +4,9 @@
 
 **Plateforme web _multi-tenant_ de gestion de maintenance.**
 Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans build, installable en PWA.
+**Extensible par des modules qui ne contiennent aucun code.**
 
-[![Version](https://img.shields.io/badge/version-1.0.0%20(V1)-0a1628.svg)](Documentations/)
+[![Version](https://img.shields.io/badge/version-2.0.0%20(V2)-0a1628.svg)](Documentations/)
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir%20le%20projet-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chipsoreo)
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
@@ -13,6 +14,7 @@ Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans
 [![Frontend](https://img.shields.io/badge/frontend-Vanilla%20JS%20(no%20build)-F7DF1E.svg?logo=javascript&logoColor=black)](#stack-technique)
 [![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8.svg)](#)
 [![Multi-tenant](https://img.shields.io/badge/architecture-multi--tenant-0a1628.svg)](#architecture)
+[![Modules](https://img.shields.io/badge/modules-d%C3%A9claratifs%20(sans%20code)-16a34a.svg)](#modules-déclaratifs-étendre-larka-sans-code)
 
 </div>
 
@@ -57,15 +59,59 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-Cette livraison est la **version 1.0.0 (V1)** — première version publique de Larka, en **bêta**.
+Cette livraison est la **version 2.0.0 — V.Beta 2.0.0**. Elle ajoute à la V1 une couche
+d'extension complète : des **modules déclaratifs**, qui étendent l'application
+sans y exécuter la moindre ligne de code tiers.
 
 | Élément | Valeur | Où |
 |---|---|---|
-| Version applicative | `1.0.0` | `LARKA_VERSION` (`api/config.php`) — source de vérité |
-| Libellé commercial | `V1` | `LARKA_VERSION_LABEL` |
-| Service Worker | `1.0.0` | `SW_VERSION` (`sw.js`) |
-| Manifeste PWA | `1.0.0` | `manifest.webmanifest` |
-| Documentation | `1.0` | `Documentations/` |
+| Version applicative | `2.0.0` | `version.json` — source unique, lue par `api/Version.php` |
+| Libellé affiché | `V.Beta 2.0.0` | `LARKA_VERSION_LABEL`, bas de la page de connexion |
+| Service Worker | `2.0.0` | `SW_VERSION` (`sw.js`) |
+| Manifeste PWA | `2.0.0` | `manifest.webmanifest` |
+| Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.3`) |
+| Documentation | manuels v2.0 | `Documentations/` |
+
+### 📝 Notes de version — V.Beta 2.0.0
+
+**Ajouts**
+
+- **Assistant IA plus rapide et moins coûteux** : conçu pour tourner sur CPU sans GPU (API native d'Ollama,
+  invite stable mise en cache, réponse affichée au fil de l'eau, bouton ■ pour l'arrêter, durée affichée) ;
+  mise en cache de l'invite chez Anthropic ; **Google Gemini** ajouté aux fournisseurs (Anthropic, OpenAI,
+  Mistral, local).
+- **Assistant plus malin** : recherche tolérante aux fautes et aux approximations (« où est l'extincteur 2 du
+  centre technique »), comptages (« combien de biens ? »), prise en compte des **modules installés ou non**,
+  liens cliquables vers les fiches et les plans.
+- **Assistant pour les demandeurs** : il rédige un titre court, range le bâtiment, l'étage et le bureau dans les
+  bons champs, puis ouvre le formulaire de demande pré-rempli à valider.
+- **Mises à jour automatiques** : détection d'une nouvelle version (GitHub Releases ou manifeste), installation
+  **validée à la main**, empreinte SHA-256 et signature Ed25519, sauvegarde avant installation et retour
+  arrière ; **aucune donnée supprimée** (`data/`, `config.json`, `.env` jamais touchés). Outils :
+  `api/outils/mise-a-jour.php`, `outils/publier-version.php`.
+- **Version affichée sur la page de connexion** (« V.Beta 2.0.0 »), lue dans `version.json`.
+- **SharePoint devient une option** : demandé au premier lancement (`./start.sh`, `deploy/install.sh
+  --sharepoint on|off`), modifiable par `./start.sh sharepoint on|off`, la console ou *Configuration → Serveur*.
+  Sans SharePoint, les documents sont stockés dans Larka et la connexion Microsoft ne demande plus l'accès aux
+  fichiers.
+- **Certbot devient une option** : certificat existant (`--cert … --key …`), `--no-certbot`, ou TLS en amont
+  (`--behind-proxy`).
+- **Nouveau logo** : `icon.png` (remplace `apple-touch-icon.png`, l'ancienne adresse reste servie),
+  `favicon.svg`, `icon-512.png`.
+- **Modules en plusieurs fichiers JSON** (`$ref` vers `parties/*.json`) documentés dans la référence du format.
+- **Documentation v2** : manuels Gestionnaire, SuperAdmin (journal d'audit, mises à jour), Visionneur &
+  Utilisateur (repères « Concerne : »), DAT et référence du format déclaratif — police et charte communes.
+
+**Corrections**
+
+- Les onglets **Biens, Équipements et Stock** pouvaient disparaître du menu (préférences d'affichage).
+- L'assistant ne savait pas répondre à « combien de biens ? ».
+- L'assistant interprétait mal certaines demandes (« poignée » comprise comme « poignet ») et mettait le lieu
+  dans le titre au lieu des champs prévus.
+- L'assistant demandait d'« être plus précis » au lieu de chercher une correspondance approchée.
+- La version affichée était codée en dur dans `api/config.php` ; elle vient désormais de `version.json`.
+- Avertissement PHP 8.4 (paramètre implicitement nullable) dans la sauvegarde Super Admin.
+- Service Worker : icône de notification alignée sur `icon.png`.
 
 > ⚠️ **Statut : bêta.** Cette version est fonctionnelle mais n'a pas encore été
 > éprouvée en exploitation réelle sur la durée. Avant tout déploiement en
@@ -94,9 +140,11 @@ Cette livraison est la **version 1.0.0 (V1)** — première version publique de 
 - 🇫🇷 **Connecteurs réglementaires** — Légifrance et Chorus Pro via la plateforme PISTE ; SharePoint/OneDrive.
 - 🚨 **Procédures d'urgence** — fiches de conduite à tenir, avec photos et vidéos servies sous contrôle d'accès.
 - 🧭 **Annuaire cartographié** — localiser une personne ou un service sur un plan d'étage (consentement individuel).
-- 🤖 **Assistant conversationnel** — questions en langage naturel sur les données du tenant. IA **locale** (Ollama/LM Studio,
-  aucune donnée ne sort du serveur) ou fournisseur distant.
+- 🤖 **Assistant conversationnel** — questions en langage naturel sur les données du tenant et de ses modules installés.
+  IA **locale** (Ollama/LM Studio, aucune donnée ne sort du serveur, optimisée pour CPU) ou fournisseur distant
+  (Anthropic, OpenAI, Mistral, Google Gemini).
 - 🔔 **Notifications push** (Web Push natif, RFC 8030/8291/8292).
+- 🧩 **Modules déclaratifs** — ajouter un registre métier, un formulaire de demande, un thème ou une traduction en déposant un fichier `.larka`. Aucun code n'est exécuté ; voir la section dédiée.
 
 **Technique**
 
@@ -105,8 +153,110 @@ Cette livraison est la **version 1.0.0 (V1)** — première version publique de 
 - 📱 **PWA** installable (poste et mobile), notifications push iOS 16.4+ en mode écran d'accueil.
 - ⚡ **Chargement paresseux** du frontend (lazy-loading) avec préchargement intelligent selon le rôle.
 - 🎨 **Écran de connexion personnalisable** par le super-administrateur (couleurs, fond animé, CSS filtré — voir plus bas).
+- 🧪 **11 suites d'épreuves automatisées** (456 contrôles), exécutées avant chaque mise en production, qui refusent le déploiement si une protection tombe.
 
+---
 
+## 🧩 Modules déclaratifs — étendre Larka sans code
+
+Un module Larka est un **fichier JSON** qui *décrit* des données et des écrans.
+Larka le lit et dessine lui-même l'interface. Il n'y a ni PHP, ni JavaScript,
+ni CSS d'auteur : rien à isoler, rien à auditer ligne à ligne, rien qui puisse
+s'exécuter.
+
+```json
+{
+  "identifiant": "mairie.cles",
+  "format": "declaratif/1",
+  "nom": "Registre des clés",
+  "donnees": {
+    "cles": { "libelle": "Clé", "champs": {
+      "numero":     { "type": "texte", "libelle": "N°", "obligatoire": true },
+      "detenteur":  { "type": "texte", "libelle": "Détenteur" },
+      "equipement": { "type": "lien",  "libelle": "Équipement", "vers": "equipements" }
+    } }
+  },
+  "pages": [ {
+    "cle": "cles", "titre": "Clés", "roles": ["Gestionnaire", "Admin"],
+    "vue": { "type": "liste", "source": "cles",
+             "colonnes": ["numero", "detenteur", "equipement"],
+             "actions":  ["creer", "modifier", "supprimer", "exporter"] }
+  } ]
+}
+```
+
+C'est le choix de fond : **un catalogue fermé plutôt qu'un bac à sable**. Un mot
+absent du vocabulaire est refusé à l'installation — jamais ignoré en silence,
+jamais cherché ailleurs. Analyser du code tiers pour décider s'il est inoffensif
+est un problème qu'on perd ; ne jamais en accepter est un problème qu'on n'a pas.
+
+### Ce que le vocabulaire sait exprimer
+
+| | |
+|---|---|
+| **15 types de champ** | texte, texte long, entier, décimal, pourcentage, note, durée, date, horodatage, heure, booléen, choix, choix multiple, couleur, lien |
+| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… vérifiés à l'écriture |
+| **91 fonctions de formule** | champs calculés, qui n'atteignent jamais PHP |
+| **33 opérateurs de condition** | une grammaire unique, partagée par l'affichage conditionnel, le surlignage et les filtres |
+| **5 ancrages** | compteur et jauge au tableau de bord, liste liée sur une fiche, marqueurs sur un plan, formulaire de demande |
+| **Mise en page** | grille de 1 à 24 colonnes, sections en carte ou panneau, images, responsive par palier |
+| **Habillage** | thèmes et packs de langue, choisis par chaque utilisateur |
+
+### Les permissions sont **déduites**, jamais réclamées
+
+Un auteur ne demande rien. Larka lit sa déclaration, en déduit ce qu'elle exige,
+et présente la liste à l'administrateur — en français, avec un niveau de risque.
+Personne ne peut obtenir un accès dont sa déclaration n'a pas l'usage.
+
+À l'exécution, ce que le module déclare fait **frontière** : le jeu de données
+qu'un rôle peut lire, les actions qu'il peut faire, et jusqu'aux champs qu'il
+peut remplir sont ceux de l'écran qui lui est ouvert — vérifié côté serveur, à
+chaque appel.
+
+### Ce qui est livré
+
+`extensions/` contient **7 modules**, 2 thèmes et 2 packs de langue prêts à
+installer : registre de clés, contrôles réglementaires, habilitations, annuaire
+de prestataires, réservation de bornes de recharge, démonstration d'images et
+moteur d'habillage. Ils servent autant d'exemples que d'outils.
+
+### Écrire le sien
+
+```bash
+php api/extensions/outils/construire-paquet.php --nouveau acme.mon-module
+php outils/verifier-module.php extensions/modules/acme.mon-module --detail
+php api/extensions/outils/construire-paquet.php extensions/modules/acme.mon-module
+```
+
+Le vérificateur valide la déclaration contre le **schéma réel du serveur** et
+annonce ce qu'elle produira. Aucune base n'est nécessaire, rien n'est exécuté.
+
+> 📜 **Votre module vous appartient.** Écrire un `.larka` n'est pas modifier
+> Larka : c'est produire un fichier de données que Larka lit. Vous n'avez donc
+> aucune autorisation à demander, vous en êtes seul titulaire, et vous le
+> diffusez sous la licence de votre choix — y compris commercialement
+> ([`LICENSE`](LICENSE), §5 bis).
+
+- **Référence du format** : [`Documentations/FORMAT-DECLARATIF-REFERENCE.md`](Documentations/FORMAT-DECLARATIF-REFERENCE.md)
+  — spécification écrite à la main, complétée par les catalogues extraits du
+  code ; une épreuve vérifie que les deux ne divergent pas.
+- **Exemples** : [`Documentations/exemples-declaratifs/`](Documentations/exemples-declaratifs/)
+  — 9 modules complets, du registre le plus simple à l'interface entièrement
+  mise en page, revalidés à chaque passage de la suite d'épreuves.
+
+### Activation
+
+La couche est **inerte par défaut**. Dans `config.json` :
+
+```json
+"extensions": { "actif": true }
+```
+
+Tant qu'elle vaut `false`, aucun dossier n'est ouvert et aucun module n'est
+chargé, quels que soient les réglages des clients. Une fois active, les modules
+s'installent un par un depuis l'écran **Modules**, capacité par capacité.
+
+---
 
 ## 🧱 Stack technique
 
@@ -120,7 +270,7 @@ Cette livraison est la **version 1.0.0 (V1)** — première version publique de 
 | Serveur web | Nginx (reverse proxy, TLS, fichiers statiques) | ≥ 1.18 |
 | Base de données | PostgreSQL (une base par tenant) | ≥ 14 |
 | BDD (repli admin) | SQLite / MariaDB | — |
-| TLS | Let's Encrypt (Certbot) | — |
+| TLS | Let's Encrypt (Certbot) — optionnel | — |
 | OS | Ubuntu / Debian | 22.04+ / 12+ |
 
 ---
@@ -192,9 +342,17 @@ make up PORT=9000 HOST=0.0.0.0
 sudo ./start.sh prod --domain gmao.monentreprise.fr
 ```
 
-Met en place PostgreSQL, **PHP-FPM**, **Nginx**, un certificat **HTTPS Let's Encrypt**, les tâches **cron**
-(renouvellement TLS, rotation des logs, nettoyage des sessions), et génère un `.env` (secrets, `chmod 600`)
-+ un `config.json` (sans secret) adaptés au domaine.
+Met en place PostgreSQL, **PHP-FPM**, **Nginx** en HTTPS, les tâches **cron** (rotation des logs, nettoyage
+des sessions), et génère un `.env` (secrets, `chmod 600`) + un `config.json` (sans secret) adaptés au domaine.
+
+Le certificat est obtenu par défaut avec **Certbot (Let's Encrypt)**, renouvelé automatiquement. Certbot est une
+**option** :
+
+```bash
+sudo ./start.sh prod --domain gmao.interne.fr --cert /etc/ssl/gmao/fullchain.pem --key /etc/ssl/gmao/privkey.pem
+sudo ./start.sh prod --domain gmao.interne.fr --no-certbot      # certificat placé ensuite à la main
+sudo ./start.sh prod --domain gmao.exemple.fr --behind-proxy    # TLS terminé en amont (proxy, tunnel)
+```
 
 Pour un déploiement autonome plus léger (serveur PHP intégré géré par systemd, sans Nginx, p. ex. derrière
 un reverse-proxy existant) :
@@ -244,6 +402,10 @@ Les fichiers générés (`.env`, `config.json`) sont exclus par le [`.gitignore`
 - **Durcissement web** : CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy ; liste blanche des points d'entrée PHP (anti-webshell) ; fonctions système désactivées au niveau PHP-FPM.
 - **Anti-CSRF** (`Content-Type: application/json` sur les mutations), **anti-bruteforce** (limitation par IP et par compte), **requêtes paramétrées** (anti-injection SQL), **échappement HTML** systématique côté client.
 - **Journal de sécurité** structuré au format JSONL (`data/security/audit.log`).
+- **Modules sans code** : un module ne peut pas exécuter de PHP, de JavaScript ni de CSS — le format ne sait pas les exprimer, et l'extraction d'un paquet n'écrit que ce que le format définit. Un fichier de code présent dans une archive n'est pas refusé : il n'est simplement **jamais écrit sur le disque**.
+- **Médiation des accès aux données** : un module ne transmet jamais de SQL. Il décrit une intention (`SELECT`, table, colonnes, conditions) ; le cœur vérifie chaque élément contre le schéma introspecté, puis **construit lui-même** la requête. Tables système inaccessibles, colonnes de secret refusées, écriture interdite hors de ses propres tables.
+- **Surveillance comportementale** : volume, fréquence, nombre de tables distinctes et refus accumulés sur une fenêtre glissante. Dix refus suspendent le module.
+- **Épreuves bloquantes avant déploiement** : `./start.sh prod` refuse de livrer (code 60) si une protection ne répond plus.
 
 ---
 
@@ -256,10 +418,21 @@ pointent vers des fichiers absents.
 | Périmètre | Contenu | Criticité |
 |---|---|---|
 | Bases PostgreSQL | `gmao_admin` + une base par tenant | **Critique** |
-| Fichiers | `data/` (documents, `data/urgences/`, logs) | **Critique** |
+| Fichiers | `data/plans`, `data/fonds`, `data/extensions`, `data/thematiques`, `data/urgences`, `extensions/config` | **Critique** |
 | Secrets | `.env`, `config.key` | **Critique** — à part, chiffré, en coffre |
 | Configuration | `config.json` | Importante |
 | Certificats TLS | `/etc/letsencrypt/` | Reconstituable (réémission) |
+
+> ⚠️ **Une sauvegarde complète, c'est DEUX fichiers.** Depuis la 2.0.0, la
+> sauvegarde produit un `.sql.gz` **et** un `-fichiers.tar.gz` au même
+> horodatage. Restaurer l'un sans l'autre rend une base complète et des plans
+> sans image. L'archive de fichiers est construite avec `PharData`, intégré à
+> PHP : elle ne dépend d'aucune commande système, et fonctionne donc sur un pool
+> PHP-FPM durci.
+
+> ⚠️ **Une sauvegarde n'est pas un export.** Le `.sql.gz` de sauvegarde contient
+> les comptes utilisateurs ; le restaurer sur un autre client écrase les siens.
+> L'export entre clients, lui, les exclut — c'est une opération différente.
 
 > Le mécanisme applicatif (`data/backups`, 10 générations) est **désactivé à la livraison**. Fréquence,
 > externalisation et **test de restauration** relèvent de l'exploitant.
@@ -284,12 +457,26 @@ pointent vers des fichiers absents.
 
 L'assistant répond en langage naturel sur les données du tenant. Il n'accède **jamais** directement à la base :
 il passe par un catalogue d'outils exécutés côté serveur (`search`, `compter`, `get_fiche`, `qui_est`,
-`localiser`, `alertes`, `search_sharepoint`…), **avec les droits de l'utilisateur connecté**.
+`localiser`, `alertes`, `module`, `search_sharepoint`…), **avec les droits de l'utilisateur connecté**.
 
 | Mode | Fournisseurs | Sortie de données | Clé d'API |
 |---|---|---|---|
-| **Local** _(recommandé)_ | Ollama, LM Studio | **Aucune** — tout reste sur le serveur | non requise |
-| Distant | Anthropic, OpenAI, Mistral | Les extraits envoyés au modèle quittent le SI | `GMAO_ASSISTANT_API_KEY` |
+| **Local** _(recommandé)_ | Ollama, LM Studio, llama.cpp | **Aucune** — tout reste sur le serveur | non requise |
+| Distant | Anthropic, OpenAI, Mistral, Google Gemini, Copilot | Les extraits envoyés au modèle quittent le SI | `GMAO_ASSISTANT_API_KEY` |
+
+Modèles par défaut (champ « Modèle » vide) : les plus rapides et économiques de chaque fournisseur —
+`claude-haiku-4-5`, `gpt-4o-mini`, `mistral-small-latest`, `gemini-3.1-flash-lite`, `ministral-3:3b` (Ollama).
+
+**Rapidité et coût.** Le prompt système et la liste d'outils sont **identiques d'une question à l'autre** : Ollama
+les garde en cache KV (une question ne coûte que ses propres tokens), et les API distantes les facturent au tarif
+« cache » (Anthropic : `cache_control` posé automatiquement ; OpenAI / Gemini / Mistral : cache implicite). Les
+résultats d'outils sont compactés, et sur un modèle local la **pré-recherche** évite en général un aller-retour
+complet. Le panneau **préchauffe** le modèle local à son ouverture, affiche la réponse en direct, et le bouton ■
+arrête la génération (le CPU est libéré aussitôt). Sous chaque réponse, une ligne discrète indique durée et tok/s.
+
+**Modules complémentaires.** Les modules installés, actifs et accordés au rôle de l'utilisateur sont interrogeables
+par l'assistant (outil `module`, recherche globale comprise). Un module non installé ou désactivé est signalé comme
+tel au gestionnaire, jamais inventé. Le demandeur se voit proposer les écrans de modules qui lui sont ouverts.
 
 Inférence locale — réglages fournis (drop-in systemd) :
 
@@ -297,8 +484,14 @@ Inférence locale — réglages fournis (drop-in systemd) :
 sudo mkdir -p /etc/systemd/system/ollama.service.d
 sudo cp deploy/ollama-larka.conf /etc/systemd/system/ollama.service.d/larka.conf
 sudo systemctl daemon-reload && sudo systemctl restart ollama
-ollama create larka -f deploy/Modelfile.larka
+ollama pull ministral-3:3b                                   # ou qwen2.5:3b, llama3.2:3b
+ollama create larka-assistant -f deploy/Modelfile.larka      # facultatif (fige les réglages)
 ```
+
+Larka utilise l'API native d'Ollama (`/api/chat`) : la fenêtre de contexte (`num_ctx`), le plafond de génération et
+`keep_alive` sont réellement appliqués — une URL `…/v1/chat/completions` déjà configurée est convertie
+automatiquement. Sur CPU, visez un modèle **3B quantifié Q4** ; les modèles « à réflexion » (qwen3, deepseek-r1)
+sont nettement plus lents — réglage *Réflexion des modèles locaux* → *Désactivée* dans la configuration.
 
 > ⚠️ **CPU.** Une génération locale consomme durablement les cœurs disponibles : sur la même machine que
 > l'application, elle dégrade les temps de réponse. Le réglage livré limite volontairement l'inférence à
@@ -311,11 +504,47 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ---
 
+## ⬆️ Mises à jour
+
+La version installée est dans `version.json` (affichée sur la page de connexion : « V.Beta 2.0.0 »).
+
+**Détection automatique, installation validée.** Larka vérifie la source des versions (GitHub Releases de
+`mises_a_jour.depot`, ou un manifeste `latest.json`) au plus toutes les 12 h. Quand une version plus récente existe,
+un bandeau la propose à l'administrateur du serveur (Super Admin ; Admin/Gestionnaire en mono-tenant), qui lit les
+nouveautés et coche une confirmation avant d'installer. Aussi : *Configuration → Version et mises à jour*.
+
+**Les données ne sont jamais touchées** : `data/` (base SQLite, plans, médias, modules installés, sauvegardes),
+`config.json`, `.env` et les réglages de modules existants restent tels quels ; aucun fichier n'est supprimé.
+Avant d'écrire, les fichiers remplacés (et la base SQLite) sont sauvegardés dans `data/maj/sauvegardes/` ; une erreur en
+cours d'installation restaure automatiquement la version précédente, et l'historique permet de revenir en arrière.
+
+**Intégrité** : HTTPS uniquement, empreinte SHA-256 obligatoire, et signature Ed25519 exigée dès qu'une
+`cle_publique` est configurée (recommandé).
+
+```bash
+# Éditeur — une fois : paire de clés (la publique va dans mises_a_jour.cle_publique)
+php outils/publier-version.php --generer-cles
+# Éditeur — à chaque version : version.json, ?v=, zip, .sha256, .sig, latest.json
+php outils/publier-version.php --version 2.0.3 --canal Beta --notes notes.md
+gh release create v2.0.3 dist/LARKA_GMAO-2.0.3.zip dist/LARKA_GMAO-2.0.3.zip.sha256 dist/LARKA_GMAO-2.0.3.zip.sig --notes-file notes.md --prerelease
+
+# Serveur — sans interface (ou si les fichiers ne sont pas inscriptibles par PHP)
+sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --verifier
+sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --installer
+```
+
+---
+
 ## 🧪 Diagnostic & dépannage
 
 `start.sh` signale les échecs avec un code **`GMAO-Exx`** (également le code de sortie : `echo $?`).
 `./start.sh doctor` teste PHP, les extensions, PostgreSQL, la configuration et le démarrage au boot, et annote
 chaque problème. `./start.sh doctor --fix` répare en plus ce qui peut l'être automatiquement.
+
+`./start.sh epreuves` (ou `make epreuves`) vérifie les protections du moteur de
+modules. Elles tournent aussi **automatiquement avant chaque `./start.sh prod`**,
+qui refuse de déployer si l'une d'elles tombe — une vérification qu'il faut
+penser à lancer n'est jamais lancée.
 
 | Code | Cause probable | Correction |
 |---|---|---|
@@ -347,7 +576,7 @@ Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 larka/
 ├── index.html              Coquille SPA / PWA (porte le ?v= des assets)
 ├── manifest.webmanifest    Métadonnées PWA
-├── sw.js                   Service Worker (push) — v1.0.0
+├── sw.js                   Service Worker (push) — v2.0.0
 ├── router.php              Routeur du serveur PHP intégré (dev / autonome)
 ├── start.sh  Makefile      Lanceur unifié + raccourcis
 ├── .env.example            Modèle de secrets      config.example.json  Modèle de config
@@ -362,19 +591,80 @@ larka/
 │   ├── UrgencesAcl.php     ACL des procédures d'urgence
 │   ├── Journal.php         Journal d'activité métier
 │   ├── AssistantTools.php  Outils de l'assistant IA
-│   └── routes/             21 modules (auth, inventaire, maintenance, urgences, assistant, …)
-├── js/                     Frontend : cœur + 31 pages + 13 filtres (lazy-loadés)
+│   ├── routes/             23 modules (auth, inventaire, maintenance, urgences, assistant, …)
+│   └── extensions/         Couche des modules déclaratifs
+│       ├── Registre.php    Installation, activation, rôles accordés, exécution
+│       ├── Manifeste.php   Chargement et validation d'une déclaration
+│       ├── Paquet.php      Format .larka : vérification, extraction, installation
+│       ├── declaratif/     Schema · Moteur · Expression (91 fn) · Condition (33 op)
+│       ├── securite/       Médiation des requêtes, politique de données, surveillance
+│       └── outils/         construire-paquet.php (fabrique un .larka)
+├── js/                     Frontend : cœur + 33 pages + filtres (lazy-loadés)
+│   ├── declaratif.js       Rendu des écrans décrits par un module
+│   ├── extensions.js       Chargement des modules côté client
 │   └── vendor/             ZXing (QR) · Leaflet (cartes)
-├── css/                    7 feuilles de style + polices WOFF2 embarquées
+├── css/                    10 feuilles de style + polices WOFF2 embarquées
 ├── oauth/                  Callbacks OAuth (microsoft.php, google.php)
-├── scripts/                Utilitaires de maintenance
+├── extensions/             Modules livrés : modules/ · themes/ · langues/ · config/
+├── outils/                 Développement uniquement — NON déployé
+│   ├── verifier-module.php Valide une déclaration contre le schéma du serveur
+│   ├── epreuves/           11 suites, 456 contrôles (voir epreuves/README.md)
+│   ├── langues/            Extraction et vérification des traductions
+│   └── maintenance/        Outils ponctuels
 ├── deploy/                 install.sh · nginx.conf · php-fpm-gmao.conf · gmao.service
 │                           ollama-larka.conf · Modelfile.larka   (assistant IA local)
-├── Documentations/         DAT + manuels utilisateurs (.docx)
+├── Documentations/         DAT + manuels (.docx) + référence du format déclaratif
+│                           + 9 modules d'exemple vérifiés
 ├── licenses/               Textes des licences tierces (Apache-2.0, OFL-1.1, MIT, BSD)
 └── data/                   Runtime hors web : backups, logs, sessions, security,
-                            urgences (médias), run (PID)
+                            urgences (médias), extensions (modules installés), run (PID)
 ```
+
+---
+
+## 🐙 Publier sur GitHub
+
+Dépôt : <https://github.com/Chipsoreo/LARKA_GMAO>. `config.json`, `.env` et les données d'exécution sont
+exclus par `.gitignore` : ils ne partent jamais sur GitHub.
+
+**Premier envoi** (dépôt GitHub vide) :
+
+```bash
+cd LARKA_GMAO-2.0.0
+git init
+git add .
+git commit -m "Larka V.Beta 2.0.0"
+git branch -M main
+git remote add origin https://github.com/Chipsoreo/LARKA_GMAO.git
+git push -u origin main
+```
+
+**Dépôt qui contient déjà une version** : on remplace son contenu, l'historique est conservé.
+
+```bash
+git clone https://github.com/Chipsoreo/LARKA_GMAO.git
+cd LARKA_GMAO
+rsync -a --delete --exclude .git ../LARKA_GMAO-2.0.0/ ./     # contenu de l'archive, sans toucher à .git
+git add -A
+git commit -m "Larka V.Beta 2.0.0"
+git push
+```
+
+**Release** (c'est elle que les serveurs détectent pour la mise à jour automatique). `notes.md` : reprenez les
+notes de version ci-dessus.
+
+```bash
+# paquet + empreinte (+ signature si une clé a été générée), puis release en « pré-version » (bêta)
+# (--reconstruire : 2.0.0 est déjà la version inscrite dans version.json ; inutile pour les suivantes)
+php outils/publier-version.php --version 2.0.0 --canal Beta --notes notes.md --reconstruire
+git commit -am "Publication 2.0.0" && git push      # l'outil rafraîchit le ?v= d'index.html
+gh release create v2.0.0 dist/LARKA_GMAO-2.0.0.zip dist/LARKA_GMAO-2.0.0.zip.sha256 \
+    --title "Larka V.Beta 2.0.0" --notes-file notes.md --prerelease
+# (ajouter dist/LARKA_GMAO-2.0.0.zip.sig si le paquet est signé ; gh crée l'étiquette v2.0.0)
+```
+
+Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.0.0`, joindre le `.zip`
+et le `.sha256` (et le `.sig`), cocher *Set as a pre-release*.
 
 ---
 
@@ -384,8 +674,19 @@ Les contributions sont les bienvenues. Quelques points utiles :
 
 - Lancez `./start.sh doctor` avant d'ouvrir une issue d'installation.
 - Avant un commit : `php -l` sur les fichiers PHP modifiés et `node --check` sur les fichiers JS.
-- Conservez les **en-têtes de licence SPDX** ; pour les (ré)appliquer : `bash scripts/add-license-headers.sh`.
-- Toute **modification** du logiciel requiert l'**autorisation écrite préalable** de l'auteur (voir [`LICENSE`](LICENSE), §5).
+- Avant une livraison : `bash outils/epreuves/toutes.sh` (456 contrôles, quelques
+  secondes ; quatre suites demandent une base, SQLite suffit). `./start.sh prod`
+  lance les plus rapides tout seul et **refuse de déployer** si l'une échoue.
+- En ajoutant une primitive au format déclaratif, nourrissez
+  `outils/epreuves/test-fonctionnalites.php` : sans cela la déclaration passe,
+  l'écran s'affiche, et la fonctionnalité manque — sans rien pour le signaler.
+- Conservez les **en-têtes de licence SPDX** ; pour les (ré)appliquer : `bash outils/maintenance/add-license-headers.sh`.
+- **Modifier le logiciel pour vos propres besoins est autorisé** et ne demande
+  aucune démarche préalable ([`LICENSE`](LICENSE), §5.1 et §5.7). C'est en
+  **diffuser** une version modifiée qui requiert l'accord écrit de l'auteur (§5.4).
+- **Écrire un module ne demande rien du tout.** Un `.larka` n'est pas une
+  modification du logiciel : c'est votre œuvre, vous en êtes propriétaire, et
+  vous le publiez sous la licence de votre choix (§5 bis).
 
 ---
 
@@ -394,6 +695,18 @@ Les contributions sont les bienvenues. Quelques points utiles :
 Larka est un **logiciel propriétaire**. © 2025-2026 Mickaël Larcin (« Chipsoreo ») — **Tous droits réservés**.
 Son utilisation est régie par la **Licence d'utilisation Larka** (identifiant SPDX `LicenseRef-Larka-Proprietary`) ;
 voir le fichier [`LICENSE`](LICENSE).
+
+**Ce que vous pouvez faire, sans rien demander :** installer et utiliser Larka
+gratuitement, pour vos besoins propres, que vous soyez une administration, une
+collectivité, une entreprise ou une association (§3.2) · l'adapter à votre
+organisation (§5.1) · écrire et publier vos propres modules, qui vous
+appartiennent (§5 bis) · l'héberger pour les membres de votre groupement ou de
+votre groupe, sans marge (§4.7).
+
+**Ce qui demande l'accord écrit de l'auteur :** redistribuer le logiciel,
+diffuser une version modifiée, le republier ailleurs, ou le proposer comme
+service à des tiers. Et dans tous les cas, **Larka reste gratuit** : il ne peut
+être vendu par personne, sous aucune forme.
 
 > ⚠️ Ce n'est **pas** un logiciel libre / open source.
 >

@@ -44,11 +44,15 @@ async function renderSuperAdmin() {
       <button class="btn" onclick="saShowSettings()" style="display:flex;align-items:center;gap:6px">
         ⚙️ Paramètres
       </button>
+      <button class="btn" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.verifier()" style="display:flex;align-items:center;gap:6px" title="Vérifier si une nouvelle version de Larka est disponible">
+        ⬆️ Mises à jour
+      </button>
     </div>
     <div id="saTenantsGrid" style="display:grid;gap:16px">
       ${_saSkeletonHtml()}
     </div>`;
 
+  if (typeof LarkaMaj !== 'undefined') LarkaMaj.demarrer();
   await saRefresh();
 }
 
@@ -720,18 +724,6 @@ async function saTestDb() {
   }
 }
 
-async function saSwitchTenant(key) {
-  try {
-    const res = await fetch('api/index.php?action=superadmin_switch_tenant', {
-      method: 'POST', headers: {'Content-Type':'application/json'}, credentials: 'include',
-      body: JSON.stringify({ key })
-    });
-    const json = await res.json();
-    if (!json.success) { toast(json.error, 'error'); return; }
-    toast('Basculé sur : ' + key, 'success');
-    await saRefresh();
-  } catch(e) { toast('Erreur.', 'error'); }
-}
 
 async function saEnterGmao(key) {
   try {
@@ -1751,7 +1743,9 @@ async function saShowTenantModules(tenantKey) {
   try {
     const res = await fetch('api/index.php?action=superadmin_tenant_modules&key=' + encodeURIComponent(tenantKey), { credentials: 'include' });
     const j = await res.json();
-    if (j.success) disabled = j.data.disabled || [];
+    if (j.success) {
+      disabled   = j.data.disabled || [];
+    }
   } catch (e) { toast('Erreur de chargement : ' + e.message, 'error'); return; }
 
   // 2. Construire l'UI
@@ -1772,6 +1766,7 @@ async function saShowTenantModules(tenantKey) {
   });
   html += '</div>';
 
+
   openModal('🧩 Modules du tenant', html, async () => {
     const cbs = document.querySelectorAll('.sa-module-cb');
     const newDisabled = [];
@@ -1791,6 +1786,20 @@ async function saShowTenantModules(tenantKey) {
     }
   }, '💾 Enregistrer');
 }
+
+/**
+ * Section « Modules communautaires » du modal tenant.
+ *
+ * Visuellement DISTINCTE de la grille ci-dessus, et c'est délibéré : cocher un
+ * module Larka masque un écran que nous avons écrit ; cocher un module externe
+ * autorise du code tiers à s'exécuter chez ce client, avec les permissions
+ * qu'il a réclamées. Le jour où les deux listes se ressemblent, on affecte du
+ * code tiers à un client aussi distraitement qu'on masque un onglet.
+ *
+ * Rien n'est coché par défaut : la liste est en opt-in côté serveur, un nouveau
+ * tenant part donc sans aucune extension.
+ */
+
 
 function _saModulesAll(enable) {
   document.querySelectorAll('.sa-module-cb').forEach(cb => { cb.checked = enable; });

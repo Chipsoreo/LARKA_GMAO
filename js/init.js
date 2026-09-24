@@ -379,6 +379,14 @@ function initApp(user, isSessionRestore = false) {
     window._currentUser = user;
     await buildSidebarWithVisibility(user);
 
+    // Extensions communautaires : charge les pages et scripts autorisés pour ce
+    // rôle. Volontairement non bloquant — une extension en panne ne doit jamais
+    // empêcher Larka de démarrer.
+    if (typeof LarkaExtensions !== 'undefined') {
+      LarkaExtensions.initialiser().catch(e =>
+        console.warn('Extensions non chargées :', e));
+    }
+
     // Appliquer les préférences d'interface (position, taille sidebar)
     if (typeof applyUiPrefs === 'function') applyUiPrefs();
     if (typeof initSidebarResize === 'function') initSidebarResize();
@@ -393,9 +401,17 @@ function initApp(user, isSessionRestore = false) {
     _injectSuperAdminButton();
 
     if (user.Role === 'Demandeur') {
-      // Masquer les éléments inutiles pour le demandeur
+      // ⚠️ LE BOUTON « INTERFACE » ÉTAIT MASQUÉ ICI.
+      //
+      // J'avais ouvert le contenu du panneau aux demandeurs sans voir que le
+      // bouton qui l'ouvre leur était retiré au démarrage. Le réglage existait,
+      // fonctionnait, et restait hors d'atteinte.
+      //
+      // Un demandeur a une barre lui aussi, plus courte mais tout aussi
+      // personnelle : position, couleurs, ordre de ses onglets, affichage des
+      // notes. Rien là-dedans ne lui est « inutile ».
       const prefsBtn = document.getElementById('uiPrefsBtnTopbar');
-      if (prefsBtn) prefsBtn.style.display = 'none';
+      if (prefsBtn) prefsBtn.style.display = '';
       // Afficher la cloche pour les demandeurs (notifications push)
       // On la rend visible et on ajoute un bouton push si supporté
       const bellWrap2 = document.getElementById('notifBellWrap');
@@ -419,6 +435,12 @@ function initApp(user, isSessionRestore = false) {
 
     if (typeof buildBottomNav === 'function') buildBottomNav();
 
+    // Mises à jour : détection automatique pour l'administrateur du serveur
+    // (le serveur vérifie les droits ; installation toujours validée à la main).
+    if (typeof LarkaMaj !== 'undefined' && ['Admin', 'Gestionnaire'].includes(App.currentUser?.Role)) {
+      setTimeout(() => LarkaMaj.demarrer(), 3000);
+    }
+
     // Initialiser l'assistant IA — uniquement s'il est activé pour ce tenant.
     // On fait d'abord le check de statut léger (api.js, déjà chargé), puis on
     // ne télécharge le module assistant.js (~53 Ko) que si nécessaire. Les
@@ -427,6 +449,7 @@ function initApp(user, isSessionRestore = false) {
       apiRequest('assistant_status').then(function (status) {
         if (status && status.actif) {
           window._assistantProvider = status.fournisseur || '';
+          window._assistantStatus = status;
           return window.PageLoader.ensure('assistant').then(function () {
             if (typeof initAssistant === 'function') initAssistant();
           });
@@ -457,16 +480,6 @@ function initApp(user, isSessionRestore = false) {
   }
 }
 
-// ── Bannière info temporaire ──────────────────────────────────────────────────
-function showInfoBanner(msg) {
-  const c = document.getElementById('mainContent');
-  if (!c || c.querySelector('.info-banner')) return;
-  const b = document.createElement('div');
-  b.className = 'info-banner';
-  b.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:14px 18px;margin-bottom:20px;color:#856404;font-size:14px;';
-  b.innerHTML = `⏳ ${msg}`;
-  c.prepend(b);
-}
 
 // ── Utilitaire HTML d'erreur ──────────────────────────────────────────────────
 function errorHtml(msg) {
@@ -489,7 +502,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // on ne le télécharge qu'ici, à la demande, puis on démarre son flux.
   if (location.search.indexOf('superadmin') !== -1) {
     var saScript = document.createElement('script');
-    saScript.src = 'js/superadmin-auth.js?v=11';
+    /**
+   * ⚠️ « ?v=11 » ÉTAIT FIGÉ DANS LE CODE.
+   *
+   * Ce fichier est chargé à la demande, donc il n'apparaît pas dans index.html
+   * et le script de bump ne le voyait pas. Sa version n'avait pas bougé depuis
+   * longtemps : toute correction du Super Admin restait dans le cache du
+   * navigateur, exactement le piège dans lequel nous sommes déjà tombés pour
+   * l'ensemble des ressources.
+   *
+   * On reprend la version d'une ressource d'index.html, que le bump met à jour.
+   * Un seul numéro pour tout le monde, et plus rien à penser.
+   */
+  const versionApp = (document.querySelector('script[src*="?v="]')?.src || '')
+    .replace(/^.*\?v=/, '') || Date.now();
+  saScript.src = 'js/superadmin-auth.js?v=' + versionApp;
     saScript.onload = function () {
       if (typeof checkSuperAdminSession === 'function') checkSuperAdminSession();
     };

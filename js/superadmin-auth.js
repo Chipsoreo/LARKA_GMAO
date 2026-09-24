@@ -26,18 +26,6 @@ function isSuperAdminMode() {
   return window.location.search.includes('superadmin');
 }
 
-// ── Afficher le lien "Accès Super Admin" sur le login normal ──────────────────
-async function showSuperAdminLink() {
-  try {
-    const res = await fetch('api/index.php?action=superadmin_status');
-    let json;
-    try { json = await res.json(); } catch(_) { return; }
-    if (json && json.success && json.data?.has_superadmin) {
-      const container = document.getElementById('superadminLink');
-      if (container) container.style.display = '';
-    }
-  } catch(_) {}
-}
 
 // ── Page de connexion Super Admin ─────────────────────────────────────────────
 function showSuperAdminLogin() {
@@ -391,6 +379,14 @@ function initSuperAdminApp(saUser) {
     </div>
     <div class="nav-item" data-page="superadmin_logs" onclick="saSuperAdminLogs()">
       <span class="icon">📊</span><span class="nav-label">Monitoring</span>
+    </div>
+    <!-- Le journal d'audit était rangé sous « Administration », à côté de
+         Configuration et Extensions. Or ce n'est pas un réglage : c'est la
+         trace de ce que TOUT LE MONDE a fait, y compris les administrateurs.
+         Le laisser à portée de ceux qu'il surveille lui ôte une part de sa
+         raison d'être. Il rejoint la Super Administration. -->
+    <div class="nav-item" data-page="journal" onclick="navigate('journal')">
+      <span class="icon">📜</span><span class="nav-label">Journal d'audit</span>
     </div>
     <div class="nav-item" data-page="superadmin_serveur" onclick="saShowServerConfig()">
       <span class="icon">🖥️</span><span class="nav-label">Config serveur</span>

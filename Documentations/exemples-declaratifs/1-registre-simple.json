@@ -1,0 +1,37 @@
+{
+  "identifiant": "acme.cles-simple",
+  "format": "declaratif/1",
+  "nom": "Trousseau",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Le plus petit pack utile : un registre, une recherche, un formulaire.",
+
+  "donnees": {
+    "cles": {
+      "libelle": "Clé",
+      "champs": {
+        "numero":     { "type": "texte", "libelle": "Numéro",
+                        "obligatoire": true, "unique": true, "max": 40 },
+        "nomination": { "type": "texte", "libelle": "Désignation", "obligatoire": true },
+        "detenteur":  { "type": "texte", "libelle": "Détenteur" }
+      }
+    }
+  },
+
+  "pages": [
+    {
+      "cle": "trousseau",
+      "titre": "Trousseau",
+      "icone": "key",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "liste",
+        "source": "cles",
+        "colonnes": ["numero", "nomination", "detenteur"],
+        "recherche": ["numero", "nomination", "detenteur"],
+        "tri": { "numero": "ASC" },
+        "actions": ["creer", "modifier", "supprimer", "exporter"]
+      }
+    }
+  ]
+}

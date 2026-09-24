@@ -50,9 +50,65 @@ const UI_NAV_ITEMS = [
   { page:'chorus',           label:'Chorus Pro',       icon:'🏛️', section:'République'   },
 ];
 
+/**
+ * Clés dont le contenu DÉPEND DU RÔLE, et qui doivent donc être cloisonnées.
+ *
+ * ⚠️ TOUT ÉTAIT STOCKÉ SOUS UNE SEULE CLÉ, « gmao_ui_prefs ».
+ *
+ * L'ordre des onglets, leur visibilité et leur section décrivent une barre
+ * précise. Or celle d'un gestionnaire et celle d'un demandeur n'ont ni les
+ * mêmes entrées ni les mêmes clés. Quand les deux partagent un navigateur — ou
+ * qu'un même compte change de rôle — le second écrasait l'ordre du premier avec
+ * sa propre liste, plus courte : les onglets manquants repartaient en vrac à la
+ * fin, et les sections se perdaient.
+ *
+ * Ce qui ne dépend pas du rôle — position de la barre, couleurs, densité,
+ * affichage des notes — reste commun : on ne veut pas que régler sa couleur
+ * deux fois soit le prix de la correction.
+ */
+var UI_PREFS_PAR_ROLE = ['navOrder', 'navVisibility', 'itemSections', 'sectionRenames'];
+
+/** Rôle courant, ou 'anonyme' avant connexion. */
+function _uiPrefsRole() {
+  try {
+    // « typeof » et non « window.App » : ce fichier est chargé avant que App
+    // n'existe, et l'épreuve des liaisons globales le signale à juste titre —
+    // un accès direct lèverait une ReferenceError au premier appel.
+    return (typeof App !== 'undefined' && App && App.currentUser
+            && App.currentUser.Role) || 'anonyme';
+  } catch (_) { return 'anonyme'; }
+}
+
 function uiPrefsGet() {
   try {
     var p = JSON.parse(localStorage.getItem(UI_PREFS_KEY)) || {};
+
+    // Les clés cloisonnées vivent sous « parRole[<rôle>] ». On les remonte au
+    // niveau attendu par le reste du fichier, qui n'a pas à connaître ce
+    // découpage.
+    var role = _uiPrefsRole();
+
+    // ── Reprise de l'ancienne forme ──────────────────────────────────────
+    // Avant le cloisonnement, ces clés vivaient à la racine. On les attribue
+    // au rôle courant la première fois qu'il ouvre l'application : sans cela
+    // chacun retrouverait une barre par défaut et croirait ses réglages perdus.
+    // Le rôle qui se connecte en premier hérite — c'est arbitraire, mais c'est
+    // aussi le plus probable : dans la majorité des cas, un navigateur n'a servi
+    // qu'à une personne.
+    if (!p.parRole && UI_PREFS_PAR_ROLE.some(function (k) { return p[k] !== undefined; })) {
+      p.parRole = {};
+      p.parRole[role] = {};
+      UI_PREFS_PAR_ROLE.forEach(function (k) {
+        if (p[k] !== undefined) { p.parRole[role][k] = p[k]; delete p[k]; }
+      });
+      try { localStorage.setItem(UI_PREFS_KEY, JSON.stringify(p)); } catch (_) {}
+    }
+
+    var parRole = (p.parRole && p.parRole[role]) || {};
+    UI_PREFS_PAR_ROLE.forEach(function (k) {
+      if (parRole[k] !== undefined) p[k] = parRole[k];
+      else delete p[k];       // rien pour ce rôle : ordre par défaut, pas celui d'un autre
+    });
     // ── Migration automatique : 'comptabilite' → 'gestion_materiel' ──
     // Les anciennes préfs utilisateurs peuvent contenir l'ancienne clé.
     // On la remplace silencieusement pour qu'ils ne perdent pas leur menu.
@@ -79,9 +135,28 @@ function uiPrefsGet() {
   } catch(e) { return {}; }
 }
 function uiPrefsSet(patch) {
-  var p = uiPrefsGet(); Object.assign(p, patch);
-  localStorage.setItem(UI_PREFS_KEY, JSON.stringify(p)); return p;
+  var role = _uiPrefsRole();
+  var brut = {};
+  try { brut = JSON.parse(localStorage.getItem(UI_PREFS_KEY)) || {}; } catch (_) {}
+
+  brut.parRole = brut.parRole || {};
+  brut.parRole[role] = brut.parRole[role] || {};
+
+  Object.keys(patch).forEach(function (k) {
+    if (UI_PREFS_PAR_ROLE.indexOf(k) !== -1) {
+      // Cloisonné : n'écrase que la barre de CE rôle.
+      if (patch[k] === undefined) delete brut.parRole[role][k];
+      else brut.parRole[role][k] = patch[k];
+      delete brut[k];          // on retire l'ancienne valeur commune
+    } else {
+      brut[k] = patch[k];      // commun à tous les rôles
+    }
+  });
+
+  localStorage.setItem(UI_PREFS_KEY, JSON.stringify(brut));
+  return uiPrefsGet();
 }
+
 
 // ── Ordre des items du menu ──────────────────────────────────────────────────
 // Retourne la liste UI_NAV_ITEMS dans l'ordre voulu par l'utilisateur :
@@ -90,6 +165,79 @@ function uiPrefsSet(patch) {
 //    (utile quand on ajoute un module : il n'est pas perdu)
 //  - une page de navOrder qui n'existe plus est ignorée
 //  - chaque item peut être réaffecté à une autre section via uiPrefs.itemSections
+/**
+ * Entrées apportées par les modules, à traiter comme les autres.
+ *
+ * ⚠️ ON LES LIT DANS LA BARRE, ON NE LES RECALCULE PLUS.
+ *
+ * La première version reconstruisait la clé de chaque page à partir de
+ * l'identifiant du module et de l'ordre de ses pages. Deux calculs pour une
+ * même clé, à deux endroits : dès que l'un changeait — un rôle qui filtre les
+ * pages, un ordre différent — les clés divergeaient et l'entrée apparaissait
+ * DEUX FOIS, dont une sans libellé ni icône, puisque rien ne lui correspondait.
+ *
+ * La barre affichée porte déjà la bonne clé, le bon libellé et la bonne icône :
+ * c'est elle qui fait foi. Une seule source, donc plus de divergence possible.
+ */
+/**
+ * Entrées lues dans la barre, quelle qu'en soit l'origine.
+ *
+ * @param {string} selecteur  restreint aux entrées de module si besoin
+ */
+/**
+ * Entrées que la barre écrit EN DUR, hors de la liste réordonnable.
+ *
+ * ⚠️ LES LISTER DANS LE PANNEAU LES DUPLIQUAIT DANS LA BARRE.
+ * nav.js ajoute la section « Administration » après avoir rendu les entrées
+ * configurables. En la reprenant dans le panneau, on l'enregistrait dans
+ * « navOrder » : elle était alors rendue une première fois avec les autres,
+ * puis une seconde par le bloc en dur. D'où deux « Administration », deux
+ * « Configuration », deux « Extensions ».
+ *
+ * Ces entrées ne se réordonnent pas : elles restent en bas, c'est leur place.
+ */
+var UI_PAGES_FIXES = ['configuration', 'extensions', 'journal', 'superadmin'];
+
+function _navItemsDeLaBarre(selecteur) {
+  var out = [];
+  document.querySelectorAll(selecteur).forEach(function (n) {
+    var page = n.dataset.page;
+    if (!page || UI_PAGES_FIXES.indexOf(page) !== -1) return;
+    var icone = (n.querySelector('.icon') || {}).textContent || '';
+    var label = (n.querySelector('.nav-label') || {}).textContent || page;
+    // La section est celle du titre qui précède l'entrée dans la barre : c'est
+    // le regroupement que l'utilisateur a sous les yeux.
+    var titre = n.previousElementSibling;
+    while (titre && !titre.classList.contains('nav-section-title')) {
+      titre = titre.previousElementSibling;
+    }
+    out.push({
+      page: page,
+      icon: (icone || '•').trim(),
+      label: label.trim(),
+      section: titre ? titre.textContent.trim() : 'Principal',
+    });
+  });
+  return out;
+}
+
+function _navItemsExtensions() {
+  var out = [];
+  document.querySelectorAll('#sidebarNav [data-ext-nav][data-page]').forEach(function (n) {
+    var page = n.dataset.page;
+    if (!page) return;
+    var icone = (n.querySelector('.icon') || {}).textContent || '🧩';
+    var label = (n.querySelector('.nav-label') || {}).textContent || page;
+    out.push({
+      page: page,
+      icon: icone.trim(),
+      label: label.trim(),
+      section: 'Modules communautaires',
+    });
+  });
+  return out;
+}
+
 function getOrderedNavItems() {
   var prefs = uiPrefsGet();
   var stored = prefs.navOrder;
@@ -99,15 +247,91 @@ function getOrderedNavItems() {
     var s = itemSections[n.page];
     return s ? Object.assign({}, n, { section: s }) : n;
   }
-  if (!Array.isArray(stored) || !stored.length) return UI_NAV_ITEMS.map(withSection);
+  // Dédoublonnage à la source : un module dont l'entrée porte la même clé
+  // qu'un écran du cœur, ou listé deux fois, ne doit produire qu'une ligne.
+  /**
+   * ⚠️ « UI_NAV_ITEMS » NE DÉCRIT QUE LA BARRE DES GESTIONNAIRES.
+   *
+   * Celle d'un demandeur est construite ailleurs, avec ses propres clés et ses
+   * propres libellés : « mobilite » là où la liste dit « mobilite_carbone ».
+   * Le panneau affichait donc des noms qui ne correspondaient à rien de ce
+   * qu'il voyait, et des réglages sans effet.
+   *
+   * La barre réellement affichée fait foi. On ne garde « UI_NAV_ITEMS » que
+   * pour les entrées qu'elle décrit mieux — libellés soignés, sections
+   * pensées — et la barre comble le reste.
+   */
+  var deLaBarre = _navItemsDeLaBarre('#sidebarNav [data-page]');
+  var parPage = {};
+  UI_NAV_ITEMS.forEach(function (n) { parPage[n.page] = n; });
+
+  var TOUS = [];
+  var dejaVu = {};
+  (deLaBarre.length ? deLaBarre : UI_NAV_ITEMS).forEach(function (n) {
+    if (!n || !n.page || dejaVu[n.page]) return;
+    dejaVu[n.page] = true;
+
+    // ⚠️ ON PRENAIT L'ENTRÉE DE « UI_NAV_ITEMS » EN ENTIER, SECTION COMPRISE.
+    //
+    // Un demandeur voyait donc « Demandes » rangé dans GESTION, « Ma mobilité »
+    // dans FLUIDES et « Historique » dans SÉCURITÉ — les sections de la barre
+    // d'un gestionnaire. Sa propre barre dit « Mes demandes », « Mon empreinte »,
+    // « Sécurité ». Le panneau décrivait une navigation qui n'était pas la
+    // sienne.
+    //
+    // La barre affichée fait foi pour le libellé ET la section : ce sont les
+    // mots qu'il a sous les yeux. On ne complète depuis UI_NAV_ITEMS que l'icône
+    // lorsqu'elle manque, car elle, au moins, ne dépend pas du rôle.
+    var connu = parPage[n.page];
+    TOUS.push({
+      page: n.page,
+      label: n.label,
+      icon: n.icon && n.icon !== '•' ? n.icon : ((connu && connu.icon) || '•'),
+      section: n.section,
+    });
+  });
+  // ⚠️ UNE ENTRÉE MASQUÉE DISPARAISSAIT POUR DE BON.
+  //
+  // La liste est lue dans la barre affichée. Or la barre n'affiche pas ce que
+  // l'utilisateur a masqué (ou ce que l'hébergeur a coupé) : Biens,
+  // Équipements et Stock, masqués une fois, sortaient donc de la liste — de la
+  // barre ET du panneau de préférences. Plus aucune case pour les réafficher,
+  // et le réglage « masqué », lui, restait enregistré. Ils ne revenaient plus.
+  //
+  // Pour les rôles dont la barre est décrite par UI_NAV_ITEMS (tous sauf le
+  // demandeur, qui a la sienne), on complète donc avec les entrées du cœur
+  // absentes de la barre, à leur place dans leur section. Leur affichage reste
+  // décidé par showNav() (préférence, modules coupés) : on ne force rien, on
+  // rend seulement la case à nouveau accessible.
+  var _role = (typeof App !== 'undefined' && App.currentUser && App.currentUser.Role) || '';
+  if (_role && _role !== 'Demandeur') {
+    UI_NAV_ITEMS.forEach(function (n) {
+      if (!n || !n.page || dejaVu[n.page] || UI_PAGES_FIXES.indexOf(n.page) !== -1) return;
+      dejaVu[n.page] = true;
+      var item = { page: n.page, label: n.label, icon: n.icon || '•', section: n.section };
+      var pos = -1;
+      for (var i = TOUS.length - 1; i >= 0; i--) { if (TOUS[i].section === n.section) { pos = i; break; } }
+      if (pos === -1) {
+        // Section absente de la barre : on la place selon l'ordre de UI_NAV_ITEMS.
+        var rang = UI_NAV_ITEMS.indexOf(n);
+        pos = TOUS.length - 1;
+        for (var j = 0; j < TOUS.length; j++) {
+          var r = UI_NAV_ITEMS.findIndex(function (u) { return u.page === TOUS[j].page; });
+          if (r > rang) { pos = j - 1; break; }
+        }
+      }
+      TOUS.splice(pos + 1, 0, item);
+    });
+  }
+  if (!Array.isArray(stored) || !stored.length) return TOUS.map(withSection);
   var byPage = {};
-  UI_NAV_ITEMS.forEach(function(n) { byPage[n.page] = n; });
+  TOUS.forEach(function(n) { byPage[n.page] = n; });
   var seen = {};
   var out = [];
   stored.forEach(function(page) {
     if (byPage[page] && !seen[page]) { out.push(withSection(byPage[page])); seen[page] = true; }
   });
-  UI_NAV_ITEMS.forEach(function(n) { if (!seen[n.page]) out.push(withSection(n)); });
+  TOUS.forEach(function(n) { if (!seen[n.page]) out.push(withSection(n)); });
   return out;
 }
 
@@ -144,7 +368,8 @@ function setItemSection(page, sectionKey) {
   var prefs = uiPrefsGet();
   var itemSections = prefs.itemSections || {};
   // Si on remet à la section d'origine, on supprime l'override pour rester propre
-  var orig = UI_NAV_ITEMS.find(function(n) { return n.page === page; });
+  var orig = UI_NAV_ITEMS.concat(_navItemsExtensions())
+    .find(function(n) { return n.page === page; });
   if (orig && orig.section === sectionKey) delete itemSections[page];
   else itemSections[page] = sectionKey;
   uiPrefsSet({ itemSections: itemSections });
@@ -379,7 +604,19 @@ function openUiPrefsPanel() {
   h += '</div></div>'; // fin position
 
   // Onglets visibles + ORDRE + SECTIONS PERSO — masqué pour les demandeurs
-  if (!isDemandeur) {
+  /**
+   * ⚠️ CE BLOC ÉTAIT REFUSÉ AUX DEMANDEURS.
+   *
+   * Ils ne pouvaient donc ni masquer un onglet, ni le déplacer, ni le ranger
+   * ailleurs — alors qu'ils ont eux aussi une barre, plus courte mais tout
+   * aussi personnelle. On leur réservait le choix de la position et des
+   * couleurs, et on leur retirait le seul réglage qui touche leur travail.
+   *
+   * On l'ouvre, en ne listant que les entrées qu'ils ONT vraiment : proposer de
+   * masquer « Stock » à quelqu'un qui n'y a pas accès serait un réglage sans
+   * effet, et un réglage sans effet finit par faire douter de tous les autres.
+   */
+  {
     h += '<div style="padding:14px 18px">';
     h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
     h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text)">Onglets, ordre &amp; sections</div>';
@@ -388,6 +625,16 @@ function openUiPrefsPanel() {
     h += '<div style="font-size:11px;color:var(--gray-text);margin-bottom:10px;line-height:1.4">Cochez pour afficher. Glissez <span style="color:var(--blue);font-weight:700">⠿</span> pour réordonner ou changer de section. Cliquez sur un nom de section pour le renommer.</div>';
 
     var ordered = (typeof getOrderedNavItems === 'function') ? getOrderedNavItems() : UI_NAV_ITEMS.slice();
+    // La barre affichée fait foi : elle a déjà appliqué les rôles, les droits
+    // de lecture et les modules désactivés par le tenant. La recomposer ici
+    // reviendrait à réimplémenter cette règle, avec le risque d'en diverger.
+    var presentes = {};
+    document.querySelectorAll('#sidebarNav [data-page]').forEach(function (n) {
+      presentes[n.dataset.page] = true;
+    });
+    if (Object.keys(presentes).length) {
+      ordered = ordered.filter(function (n) { return presentes[n.page]; });
+    }
     var renderedSections = {};
     h += '<div id="navOrderList" ondragover="event.preventDefault()" style="display:flex;flex-direction:column;gap:0">';
     ordered.forEach(function(n) {
@@ -414,7 +661,9 @@ function openUiPrefsPanel() {
         +  ' ondrop="_navDrop(event,\''+n.page+'\')"'
         +  ' style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:grab;border:1px solid var(--gray-border);border-radius:6px;background:var(--white);margin-bottom:4px;transition:background .1s,border-color .1s,transform .15s">';
       h += '<span title="Glisser pour réordonner ou changer de section" style="color:var(--gray-text);font-size:14px;cursor:grab;user-select:none;line-height:1">⠿</span>';
-      h += '<input type="checkbox" id="uipref_'+n.page+'" '+(v?'checked':'')+' onchange="_onNavChipChange(this,\''+n.page+'\')" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer;flex-shrink:0">';
+      // « data-page » : l'enregistrement lit les cases AFFICHÉES plutôt qu'une
+      // liste écrite à la main, sans quoi les entrées des modules sont ignorées.
+      h += '<input type="checkbox" data-page="'+n.page+'" id="uipref_'+n.page+'" '+(v?'checked':'')+' onchange="_onNavChipChange(this,\''+n.page+'\')" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer;flex-shrink:0">';
       h += '<span style="font-size:14px;width:20px;text-align:center">'+n.icon+'</span>';
       h += '<span style="font-size:13px;color:var(--text);flex:1">'+n.label+'</span>';
       h += '</div>';
@@ -466,6 +715,63 @@ function openUiPrefsPanel() {
     h += '</div>';
   }
 
+  // ── Thème et langue : choix PERSONNEL parmi les modules installés ───────
+  //
+  // La section n'apparaît que si un module d'habillage ou de langue est
+  // installé : proposer un choix vide serait une promesse creuse.
+  try {
+    var themes = (typeof LarkaExtensions !== 'undefined'
+                  && LarkaExtensions.themesDisponibles) ? LarkaExtensions.themesDisponibles() : [];
+    var langues = (typeof LarkaExtensions !== 'undefined'
+                  && LarkaExtensions.languesDisponibles) ? LarkaExtensions.languesDisponibles() : [];
+
+    if (themes.length || langues.length) {
+      h += '<div style="padding:14px 18px;border-bottom:1px solid var(--gray-border)">';
+      h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
+         + 'letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">'
+         + '🧩 Modules d\'habillage</div>';
+
+      if (themes.length) {
+        h += '<div style="display:flex;align-items:center;justify-content:space-between;'
+           + 'gap:10px;margin-bottom:8px"><span style="font-size:12px;color:var(--gray-text)">'
+           + 'Thème</span><span style="flex:0 0 150px">'
+           + '<select onchange="uiPrefsSet({theme_module:this.value});'
+           + 'LarkaExtensions.appliquerHabillage()" '
+           + 'style="width:100%;box-sizing:border-box;font-size:12px;padding:4px 6px;'
+           + 'border:1px solid var(--gray-border);border-radius:6px;background:var(--white);'
+           + 'color:var(--navy)">'
+           + '<option value="">Aucun (thème Larka)</option>'
+           + themes.map(function (t) {
+               return '<option value="' + t.identifiant + '"'
+                    + (prefs.theme_module === t.identifiant ? ' selected' : '')
+                    + '>' + t.nom + '</option>';
+             }).join('')
+           + '</select></span></div>';
+      }
+
+      if (langues.length) {
+        h += '<div style="display:flex;align-items:center;justify-content:space-between;'
+           + 'gap:10px;margin-bottom:8px"><span style="font-size:12px;color:var(--gray-text)">'
+           + 'Langue</span><span style="flex:0 0 150px">'
+           + '<select onchange="uiPrefsSet({langue:this.value});location.reload()" '
+           + 'style="width:100%;box-sizing:border-box;font-size:12px;padding:4px 6px;'
+           + 'border:1px solid var(--gray-border);border-radius:6px;background:var(--white);'
+           + 'color:var(--navy)">'
+           + '<option value="fr">Français</option>'
+           + langues.map(function (l) {
+               return '<option value="' + l.code + '"'
+                    + (prefs.langue === l.code ? ' selected' : '')
+                    + '>' + l.code + ' — ' + l.nom + '</option>';
+             }).join('')
+           + '</select></span></div>';
+      }
+
+      h += '<div style="font-size:11px;color:var(--gray-text);margin-top:4px">'
+         + 'Ces choix ne concernent que vous.</div>';
+      h += '</div>';
+    }
+  } catch (e) { /* couche extensions absente : pas de section */ }
+
   panel.innerHTML = h;
   document.body.appendChild(panel);
   if (typeof _updateNavVisCounter === 'function') _updateNavVisCounter();
@@ -475,6 +781,17 @@ function openUiPrefsPanel() {
 /** Toggle préférence surbrillance assistant. Stocke dans localStorage. */
 function _toggleAssistantHighlight(cb) {
   localStorage.setItem('assistant_highlight_enabled', cb.checked ? 'true' : 'false');
+}
+
+/**
+ * Réaffiche la page courante après un changement d'apparence.
+ * Un réglage qui ne se voit qu'au rechargement laisse croire qu'il n'a pas
+ * été pris en compte.
+ */
+function uiPrefsRafraichir() {
+  try {
+    if (typeof navigate === 'function' && App && App.currentPage) navigate(App.currentPage);
+  } catch (e) { /* la page se rafraîchira au prochain passage */ }
 }
 
 function closeUiPrefsPanel() {
@@ -534,11 +851,15 @@ function _onNavChipChange(cb, page) {
 function _updateNavVisCounter() {
   var counter = document.getElementById('navVisCounter');
   if (!counter) return;
-  var checked = 0, total = UI_NAV_ITEMS.length;
-  UI_NAV_ITEMS.forEach(function(n) {
-    var el = document.getElementById('uipref_'+n.page);
-    if (el && el.checked) checked++;
-  });
+  // Les modules comptent : afficher « 12 sur 15 » alors que dix-huit entrées
+  // sont listées ferait douter du reste du panneau.
+  // On compte les cases RÉELLEMENT affichées, au lieu de parcourir une liste
+  // écrite à la main : le panneau ne montre que les entrées de l'utilisateur,
+  // et un compteur « 12 / 15 » sous une liste de sept ferait douter du reste.
+  var boites = document.querySelectorAll('#navOrderList input[type="checkbox"]');
+  var total = boites.length;
+  var checked = 0;
+  boites.forEach(function (el) { if (el.checked) checked++; });
   counter.textContent = checked + ' / ' + total + ' visibles';
 }
 
@@ -558,18 +879,34 @@ function _toggleNavSection(sec, btn) {
 
 function _saveNavVis() {
   var v = {};
-  UI_NAV_ITEMS.forEach(function(n) { var el=document.getElementById('uipref_'+n.page); if(el) v[n.page]=el.checked; });
+  // ⚠️ ON PARCOURAIT « UI_NAV_ITEMS », PAS LES CASES AFFICHÉES.
+  // Les entrées apportées par les modules n'y figurent pas : leur case était
+  // dessinée, cochée, et son état jeté à l'enregistrement. On lit donc les
+  // cases réellement présentes, quelle que soit l'origine de l'entrée.
+  document.querySelectorAll('#navOrderList input[type="checkbox"][data-page]')
+    .forEach(function (el) { v[el.dataset.page] = el.checked; });
+
   // Lire l'ordre courant des lignes du DOM (le drag-and-drop a pu les déplacer).
+  //
+  // ⚠️ DÉDOUBLONNÉ. Sans cela, une ligne présente deux fois dans la liste —
+  // pour quelque raison que ce soit — était enregistrée deux fois, puis
+  // redessinée deux fois au rendu suivant, puis quatre. Un déplacement
+  // multipliait l'entrée au lieu de la bouger.
   var order = [];
+  var vus = {};
   var rows = document.querySelectorAll('#navOrderList [data-page]');
-  rows.forEach(function(r) { order.push(r.getAttribute('data-page')); });
+  rows.forEach(function (r) {
+    var p = r.getAttribute('data-page');
+    if (p && !vus[p]) { order.push(p); vus[p] = true; }
+  });
   // Lire aussi la section actuelle de chaque item — si elle diffère de la section
   // d'origine définie dans UI_NAV_ITEMS, c'est qu'on l'a réaffectée par drag.
   var itemSections = {};
   rows.forEach(function(r) {
     var page = r.getAttribute('data-page');
     var sec  = r.getAttribute('data-section');
-    var orig = UI_NAV_ITEMS.find(function(n) { return n.page === page; });
+    var orig = UI_NAV_ITEMS.concat(_navItemsExtensions())
+    .find(function(n) { return n.page === page; });
     if (orig && sec && sec !== orig.section) itemSections[page] = sec;
   });
   uiPrefsSet({
@@ -583,12 +920,22 @@ function _saveNavVis() {
 }
 
 function _resetNavVis() {
-  UI_NAV_ITEMS.forEach(function(n) {
-    var el = document.getElementById('uipref_'+n.page);
-    if (el) el.checked = true;
+  // ⚠️ ON PARCOURAIT ENCORE « UI_NAV_ITEMS ».
+  // Troisième endroit après l'enregistrement et le compteur : les entrées des
+  // modules et celles d'un demandeur n'y figurent pas, leurs cases restaient
+  // donc décochées après un « tout réinitialiser ». Un bouton qui réinitialise
+  // presque tout est plus trompeur qu'un bouton absent.
+  document.querySelectorAll('#navOrderList input[type="checkbox"][data-page]')
+    .forEach(function (el) { el.checked = true; });
+
+  // ⚠️ « navVisibility » N'ÉTAIT PAS EFFACÉ.
+  // Les cases repassaient à cochées à l'écran, mais la préférence enregistrée
+  // gardait les pages masquées : au rechargement suivant, elles disparaissaient
+  // de nouveau. On rétablit les quatre clés ensemble.
+  uiPrefsSet({
+    navOrder: undefined, navVisibility: {},
+    itemSections: {}, sectionRenames: {},
   });
-  // Effacer aussi l'ordre et les réaffectations de section
-  uiPrefsSet({ navOrder: undefined, itemSections: {}, sectionRenames: {} });
   // Recharger le panneau pour refléter visuellement la réinitialisation
   closeUiPrefsPanel();
   openUiPrefsPanel();

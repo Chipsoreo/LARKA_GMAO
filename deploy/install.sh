@@ -11,17 +11,30 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # Usage : sudo bash install.sh [--domain gmao.example.com] [--db-password MOT_DE_PASSE]
+#                             [--cert fullchain.pem --key privkey.pem | --no-certbot | --behind-proxy]
+#
+# Certificat TLS — Certbot est une OPTION (utilisée par défaut) :
+#   (défaut)             Let's Encrypt via Certbot, renouvellement automatique
+#   --cert F --key K     certificat existant (PKI interne, certificat acheté) : pas de Certbot
+#   --no-certbot         aucun Certbot : placez vous-même le certificat, ou adaptez
+#                        ssl_certificate* dans /etc/nginx/sites-available/gmao
+#   --behind-proxy       TLS terminé en amont (reverse-proxy, tunnel) : Nginx en HTTP local
+#
+# SharePoint — option, demandée à l'installation si elle n'est pas fixée :
+#   --sharepoint on|off  liens vers des fichiers SharePoint/OneDrive (exige la connexion
+#                        Microsoft). off : documents stockés dans Larka uniquement.
+#                        Modifiable ensuite : ./start.sh sharepoint on|off
 #
 # Ce script installe :
 #   - PostgreSQL 16
 #   - PHP 8.3 + PHP-FPM + extensions requises
-#   - Nginx avec HTTPS (Let's Encrypt)
+#   - Nginx avec HTTPS (certificat Let's Encrypt en option)
 #   - Larka dans /var/www/gmao
 #
 # Prérequis :
 #   - Ubuntu 22.04 / 24.04 ou Debian 12+
 #   - Accès root (sudo)
-#   - Un nom de domaine pointant vers le serveur (pour Let's Encrypt)
+#   - Un nom de domaine pointant vers le serveur (requis seulement pour Let's Encrypt)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -75,6 +88,10 @@ DB_NAME="gmao"
 DB_ADMIN_NAME="gmao_admin"
 BEHIND_PROXY=0          # 1 = derrière reverse-proxy / tunnel : HTTP local, TLS géré en amont, pas de Let's Encrypt
 HTTP_PORT=80            # port HTTP local servi par Nginx (ce que le tunnel/proxy contacte)
+USE_CERTBOT=1           # 0 = pas de Let's Encrypt (--cert/--key, --no-certbot ou --behind-proxy)
+SSL_CERT=""             # --cert : chaîne complète du certificat existant (PEM)
+SSL_KEY=""              # --key  : clé privée correspondante (PEM)
+SP_CHOICE=""            # --sharepoint on|off (vide : demandé, ou conservé si déjà réglé)
 PHP_VERSION=$(php -v 2>/dev/null | head -1 | grep -oP '\d+\.\d+' || echo "8.3")
 
 while [[ $# -gt 0 ]]; do
@@ -84,6 +101,10 @@ while [[ $# -gt 0 ]]; do
         --install-dir) INSTALL_DIR="$2"; shift 2 ;;
         --behind-proxy|--tunnel|--no-tls) BEHIND_PROXY=1; shift ;;
         --http-port)   HTTP_PORT="$2"; shift 2 ;;
+        --cert)        SSL_CERT="$2"; USE_CERTBOT=0; shift 2 ;;
+        --key)         SSL_KEY="$2";  USE_CERTBOT=0; shift 2 ;;
+        --no-certbot)  USE_CERTBOT=0; shift ;;
+        --sharepoint)  SP_CHOICE="$2"; shift 2 ;;
         *) shift ;;
     esac
 done
@@ -103,6 +124,19 @@ if [[ "$BEHIND_PROXY" != "1" && "$DOMAIN" == *.trycloudflare.com ]]; then
     warn "Domaine *.trycloudflare.com détecté → mode reverse-proxy/tunnel activé (pas de Let's Encrypt)."
     warn "  Vérifiez que le tunnel pointe vers http://127.0.0.1:${HTTP_PORT}."
 fi
+
+# Certbot n'a pas de sens derrière un proxy (TLS en amont). Un certificat fourni
+# doit être complet (chaîne + clé) et lisible dès maintenant, plutôt qu'au
+# premier « nginx -t » où l'erreur serait bien moins parlante.
+[[ "$BEHIND_PROXY" == "1" ]] && USE_CERTBOT=0
+if [[ -n "$SSL_CERT" || -n "$SSL_KEY" ]]; then
+    [[ -n "$SSL_CERT" && -n "$SSL_KEY" ]] || err "--cert et --key vont ensemble (chaîne du certificat + clé privée)."
+    [[ -r "$SSL_CERT" ]] || err "Certificat illisible : $SSL_CERT"
+    [[ -r "$SSL_KEY"  ]] || err "Clé privée illisible : $SSL_KEY"
+    SSL_CERT=$(readlink -f "$SSL_CERT"); SSL_KEY=$(readlink -f "$SSL_KEY")
+fi
+SSL_CERT_NGINX="${SSL_CERT:-/etc/letsencrypt/live/${DOMAIN}/fullchain.pem}"
+SSL_KEY_NGINX="${SSL_KEY:-/etc/letsencrypt/live/${DOMAIN}/privkey.pem}"
 
 if [[ -z "$DB_PASSWORD" ]]; then
     # Réutiliser le mot de passe d'un .env déjà présent pour rester cohérent avec
@@ -133,6 +167,32 @@ fi
 
 SECRET_KEY=$(openssl rand -hex 32)
 
+# ── SharePoint : choix fait une fois, à l'installation ──────────────────────
+# Déjà réglé dans un config.json conservé → on ne redemande pas.
+case "${SP_CHOICE,,}" in
+    on|oui|o|yes|y|true|1)   SP_ACTIF=true ;;
+    off|non|n|no|false|0)    SP_ACTIF=false ;;
+    "")
+        SP_ACTIF=""
+        if [[ -f "${INSTALL_DIR}/config.json" ]] && command -v php >/dev/null 2>&1; then
+            SP_ACTIF=$(php -r '$c=json_decode(@file_get_contents($argv[1]),true); if (isset($c["sharepoint"]["actif"])) echo $c["sharepoint"]["actif"] ? "true" : "false";' "${INSTALL_DIR}/config.json" 2>/dev/null || true)
+        fi
+        if [[ -z "$SP_ACTIF" ]]; then
+            if [[ -t 0 ]]; then
+                echo ""
+                echo "  Documents : faut-il pouvoir lier des fichiers SharePoint / OneDrive aux fiches ?"
+                echo "    • Non (recommandé si vous n'utilisez pas Microsoft 365) : documents stockés dans Larka."
+                echo "    • Oui : exige la connexion Microsoft ; les utilisateurs autoriseront l'accès à leurs fichiers."
+                read -p "  Activer SharePoint ? [o/N] " -n 1 -r; echo ""
+                [[ $REPLY =~ ^[OoYy]$ ]] && SP_ACTIF=true || SP_ACTIF=false
+            else
+                SP_ACTIF=false
+                info "SharePoint désactivé par défaut (mode non interactif). Pour l'activer : --sharepoint on"
+            fi
+        fi ;;
+    *) err "--sharepoint attend on ou off (reçu : ${SP_CHOICE})." ;;
+esac
+
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "  Larka — Installation production"
@@ -143,8 +203,17 @@ echo "  Base de donnée: PostgreSQL ($DB_NAME / $DB_ADMIN_NAME)"
 echo "  Utilisateur DB: $DB_USER"
 if [[ "$BEHIND_PROXY" == "1" ]]; then
   echo "  Réseau        : derrière reverse-proxy/tunnel — Nginx HTTP :$HTTP_PORT (TLS en amont)"
+elif [[ "$USE_CERTBOT" == "1" ]]; then
+  echo "  Réseau        : Nginx + HTTPS Let's Encrypt (Certbot)"
+elif [[ -n "$SSL_CERT" ]]; then
+  echo "  Réseau        : Nginx + HTTPS — certificat fourni ($SSL_CERT)"
 else
-  echo "  Réseau        : Nginx + HTTPS Let's Encrypt"
+  echo "  Réseau        : Nginx + HTTPS — sans Certbot (certificat attendu : $SSL_CERT_NGINX)"
+fi
+if [[ "$SP_ACTIF" == "true" ]]; then
+  echo "  SharePoint    : activé (avec la connexion Microsoft)"
+else
+  echo "  SharePoint    : désactivé — documents stockés dans Larka"
 fi
 echo "═══════════════════════════════════════════════════════════"
 echo ""
@@ -166,7 +235,7 @@ _need_install=""
 [[ "$_HAS_PG" == "0" ]]      && _need_install="${_need_install} PostgreSQL"
 [[ "$_HAS_PHP" == "0" ]]     && _need_install="${_need_install} PHP-${PHP_VERSION}"
 [[ "$_HAS_NGINX" == "0" ]]   && _need_install="${_need_install} Nginx"
-[[ "$_HAS_CERTBOT" == "0" ]] && _need_install="${_need_install} Certbot"
+[[ "$_HAS_CERTBOT" == "0" && "$USE_CERTBOT" == "1" ]] && _need_install="${_need_install} Certbot"
 
 if [[ -n "$_need_install" ]]; then
     echo ""
@@ -208,7 +277,7 @@ if [[ -n "$_need_install" ]]; then
             apt-get install -y -qq nginx
         fi
 
-        if [[ "$_HAS_CERTBOT" == "0" ]]; then
+        if [[ "$_HAS_CERTBOT" == "0" && "$USE_CERTBOT" == "1" ]]; then
             info "Installation de Certbot..."
             apt-get install -y -qq certbot python3-certbot-nginx 2>/dev/null || true
         fi
@@ -256,23 +325,43 @@ ok "PostgreSQL configuré (bases: ${DB_NAME}, ${DB_ADMIN_NAME})."
 info "Déploiement dans ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}"
 
+# ── Ce qui ne part PAS en production ─────────────────────────────────────────
+#
+# Une seule liste, partagée par rsync et par tar. Elles étaient écrites deux
+# fois : ajouter une exclusion d'un côté et l'oublier de l'autre livrait le
+# dossier sur toutes les machines sans rsync, sans que personne le remarque.
+#
+# Les outils de développement — outils/ et Documentations/ — ne servent à rien sur un serveur en production et n'ont aucune raison d'y être.
+# Les bloquer par nginx ne suffisait pas : un fichier refusé reste un fichier
+# livré. « outils/epreuves/ » décrit surtout, épreuve par épreuve, tout ce
+# contre quoi Larka se défend — c'est-à-dire par où l'attaquer. Cette carte n'a
+# pas à voyager avec le produit.
+#
+# Ils restent dans le dépôt : c'est là qu'ils servent.
+EXCLUSIONS=(
+    'deploy' '.git' 'data/sessions' 'data/logs/*.log' '*.pem' 'config.json'
+    '.env' 'Caddyfile' 'start.bat' 'demarrer.sh'
+    'outils' 'Documentations'
+    '.github' 'tests' '*.md.bak'
+)
+
 # Copier les fichiers (depuis le répertoire du script)
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ -f "${SCRIPT_DIR}/index.html" ]]; then
     if command -v rsync >/dev/null 2>&1; then
-        rsync -a --exclude='deploy' --exclude='.git' --exclude='data/sessions' \
-              --exclude='data/logs/*.log' --exclude='*.pem' --exclude='config.json' \
-              --exclude='.env' \
-              --exclude='Caddyfile' --exclude='start.bat' --exclude='demarrer.sh' \
-              "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
+        RSYNC_ARGS=()
+        for e in "${EXCLUSIONS[@]}"; do RSYNC_ARGS+=(--exclude="$e"); done
+        rsync -a "${RSYNC_ARGS[@]}" "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
     else
-        # Repli sans rsync (tar est toujours présent) : mêmes exclusions, permissions préservées
-        tar -C "${SCRIPT_DIR}" \
-            --exclude='./deploy' --exclude='./.git' --exclude='./data/sessions' \
-            --exclude='./data/logs/*.log' --exclude='*.pem' --exclude='./config.json' \
-            --exclude='./.env' --exclude='./Caddyfile' --exclude='./start.bat' \
-            --exclude='./demarrer.sh' \
-            -cf - . | tar -C "${INSTALL_DIR}" -xpf -
+        # Repli sans rsync (tar est toujours présent) : MÊMES exclusions,
+        # permissions préservées. Le préfixe « ./ » est ce qu'attend tar.
+        TAR_ARGS=()
+        for e in "${EXCLUSIONS[@]}"; do
+            [[ "$e" == \** ]] && TAR_ARGS+=(--exclude="$e") \
+                              || TAR_ARGS+=(--exclude="./$e")
+        done
+        tar -C "${SCRIPT_DIR}" "${TAR_ARGS[@]}" -cf - . \
+            | tar -C "${INSTALL_DIR}" -xpf -
     fi
 else
     warn "Fichiers source non trouvés dans ${SCRIPT_DIR}. Copiez les fichiers manuellement."
@@ -388,6 +477,7 @@ if [[ ! -f "${INSTALL_DIR}/config.json" ]]; then
         "client_secret": "",
         "redirect_uri": "https://${DOMAIN}/oauth/microsoft"
     },
+    "sharepoint": { "actif": ${SP_ACTIF} },
     "google_oauth": {
         "actif": false,
         "client_id": "",
@@ -396,12 +486,21 @@ if [[ ! -f "${INSTALL_DIR}/config.json" ]]; then
     },
     "acces": { "domaine_email_autorise": "" },
     "smtp": { "actif": false, "host": "", "port": 587, "secure": "tls", "username": "", "password": "", "from": "noreply@${DOMAIN}", "from_name": "Larka" },
-    "push": { "actif": false, "vapid_public_key": "", "vapid_private_pem": "", "vapid_subject": "mailto:admin@${DOMAIN}" }
+    "push": { "actif": false, "vapid_public_key": "", "vapid_private_pem": "", "vapid_subject": "mailto:admin@${DOMAIN}" },
+    "extensions": { "actif": false }
 }
 EOCFG
     ok "config.json généré."
 else
     warn "config.json existant conservé."
+    # Seul le choix SharePoint y est reporté (demandé ou passé par --sharepoint).
+    if command -v php >/dev/null 2>&1; then
+        php -r '$f=$argv[1]; $c=json_decode(file_get_contents($f),true); if (!is_array($c)) exit(0);
+                $v=$argv[2]==="true"; if (($c["sharepoint"]["actif"] ?? null) === $v) exit(0);
+                $c["sharepoint"]=["actif"=>$v];
+                file_put_contents($f, json_encode($c, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n");' \
+            "${INSTALL_DIR}/config.json" "$SP_ACTIF" && info "SharePoint : ${SP_ACTIF} (config.json)."
+    fi
 fi
 
 # ── Permissions ─────────────────────────────────────────────────────────────
@@ -529,8 +628,8 @@ server {
     listen 443 ssl http2;
     server_name ${DOMAIN};
 
-    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_certificate     ${SSL_CERT_NGINX};
+    ssl_certificate_key ${SSL_KEY_NGINX};
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -581,7 +680,16 @@ ln -sf /etc/nginx/sites-available/gmao /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
 # ── Certificat SSL ──────────────────────────────────────────────────────────
-if [[ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
+if [[ "$USE_CERTBOT" != "1" ]]; then
+    if [[ -n "$SSL_CERT" ]]; then
+        ok "Certificat fourni : ${SSL_CERT} (Certbot non utilisé)."
+    else
+        warn "Certbot désactivé : placez le certificat et la clé aux emplacements suivants"
+        warn "  (ou adaptez ssl_certificate* dans /etc/nginx/sites-available/gmao) :"
+        warn "  ${SSL_CERT_NGINX}"
+        warn "  ${SSL_KEY_NGINX}"
+    fi
+elif [[ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
     info "Obtention du certificat SSL Let's Encrypt..."
     # D'abord, démarrer Nginx en HTTP only pour le challenge
     # Créer une config temporaire HTTP-only
@@ -642,6 +750,7 @@ fi
 info "Configuration du cron..."
 _CERTBOT_CRON='0 3 * * * root certbot renew --quiet --post-hook "systemctl reload nginx"'
 [[ "$BEHIND_PROXY" == "1" ]] && _CERTBOT_CRON='# (TLS géré en amont : renouvellement certbot non requis)'
+[[ "$BEHIND_PROXY" != "1" && "$USE_CERTBOT" != "1" ]] && _CERTBOT_CRON='# (Certbot non utilisé : renouveler le certificat fourni selon sa propre procédure)'
 cat > /etc/cron.d/gmao <<EOCRON
 # Renouvellement certificat SSL (uniquement si TLS géré localement)
 ${_CERTBOT_CRON}

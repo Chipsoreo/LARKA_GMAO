@@ -23,7 +23,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-const SW_VERSION = '1.0.0';
+const SW_VERSION = '2.0.0';
 
 // ── Événement push reçu ──────────────────────────────────────────────────────
 self.addEventListener('push', event => {
@@ -57,8 +57,8 @@ self.addEventListener('push', event => {
 
   const options = {
     body:    data.body || '',
-    icon:    data.icon || '/apple-touch-icon.png',
-    badge:   data.badge || '/apple-touch-icon.png',
+    icon:    data.icon || '/icon.png',
+    badge:   data.badge || '/icon.png',
     tag:     data.tag || 'gmao-' + Date.now(),
     data:    data.data || {},
     vibrate: data.vibrate || [200, 100, 200],
@@ -80,7 +80,7 @@ self.addEventListener('push', event => {
         console.error('[SW] showNotification failed, trying fallback:', err);
         return self.registration.showNotification('Larka', {
           body: 'Nouvelle notification',
-          icon: '/apple-touch-icon.png',
+          icon: '/icon.png',
           tag: 'gmao-fallback-' + Date.now(),
         });
       })

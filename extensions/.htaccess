@@ -1,0 +1,24 @@
+# Larka — dossier des extensions communautaires.
+#
+# Les fichiers .php d'une extension ne doivent JAMAIS être atteignables par une
+# URL : ils sont conçus pour être appelés par le Registre, avec un Contexte, et
+# n'ont aucune des protections d'api/index.php (authentification, CSRF, rôles).
+# Un appel direct à extensions/x.y/serveur/main.php exécuterait du code tiers
+# sans le moindre contrôle.
+#
+# Seuls les fichiers client (.js, .css) et les images sont servis.
+#
+# ⚠️ Ce fichier ne sert que sous Apache. Sous nginx, la règle équivalente est
+# dans deploy/nginx.conf ; sous le serveur PHP de développement, dans router.php.
+# Vérifiez que votre serveur applique bien l'une des trois.
+
+<FilesMatch "\.(php|phtml|phps|inc|json|md|log|sql|sqlite3?|env)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(js|css|png|jpe?g|gif|svg|webp|woff2?)$">
+    Require all granted
+</FilesMatch>
+
+Options -Indexes -ExecCGI
+php_flag engine off

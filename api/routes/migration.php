@@ -77,6 +77,32 @@ if ($action === 'db_migrate') {
     $srcPdo = null;
     try {
         $srcPdo = _mig_makeSrcPdo();
+
+        // ── Tables des modules ───────────────────────────────────────────
+        //
+        // Les modules déclaratifs rangent leurs données dans de VRAIES tables
+        // (ext_<identifiant>_<jeu>). Les sauvegardes les reprennent, puisqu'elles
+        // énumèrent le schéma — mais la migration entre moteurs travaillait sur
+        // une liste écrite en dur. On migrait donc de SQLite vers PostgreSQL et
+        // les registres des modules restaient derrière, sans un mot.
+        //
+        // Ajoutées en FIN de liste : elles ne dépendent d'aucune autre table, et
+        // l'ordre du cœur reste inchangé.
+        try {
+            $pilote = $srcPdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+            $req = match ($pilote) {
+                'sqlite' => "SELECT name FROM sqlite_master WHERE type='table' "
+                          . "AND name LIKE 'ext@_%' ESCAPE '@'",
+                'pgsql'  => "SELECT tablename AS name FROM pg_tables "
+                          . "WHERE schemaname='public' AND tablename LIKE 'ext@_%' ESCAPE '@'",
+                default  => "SHOW TABLES LIKE 'ext@_%'",
+            };
+            foreach ($srcPdo->query($req)->fetchAll(PDO::FETCH_COLUMN) as $t) {
+                if (!in_array((string)$t, $TABLES, true)) $TABLES[] = (string)$t;
+            }
+        } catch (\Throwable $e) {
+            // Base sans module : rien à ajouter.
+        }
     } catch (\Exception $e) {
         if ($savedAt && file_exists($savedAt)) unlink($savedAt);
         json_error('Connexion source impossible : ' . $e->getMessage(), 500);

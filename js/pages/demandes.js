@@ -248,6 +248,12 @@ function _renderDemandes(c, data, isManager, notesHtml, intervParDemande = {}) {
 
   c.innerHTML = html;
   App.restoreFilters();
+
+  // ⚠️ PLUS D'ONGLET EN HAUT DE L'ÉCRAN.
+  // Un module qui apporte un TYPE DE DEMANDE se présente dans « Nouvelle
+  // demande », entre Technique et Archive — pas dans une barre d'onglets
+  // au-dessus de la liste. Deux entrées pour la même chose donnaient deux
+  // interfaces concurrentes, dont une reprenait celle du gestionnaire.
 }
 
 // ── Détection doublons ──────────────────────────────────────────────────────────
@@ -285,12 +291,22 @@ async function nouvelleDemande() {
           style="flex:1;padding:10px 16px;border:none;background:var(--blue);color:white;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
           🔧 Technique
         </button>
+        <!-- Les modules s'insèrent ICI, entre Technique et Archive.
+             Un agent qui veut réserver une borne ouvre « Nouvelle demande » :
+             c'est là qu'il choisit ce qu'il demande, pas dans un menu
+             latéral qu'il n'a pas. -->
+        <span id="tabs_modules"></span>
         <button type="button" id="tab_archive"
           onclick="switchTypeDemande('Archive')"
           style="flex:1;padding:10px 16px;border:none;background:transparent;color:var(--gray-text);font-size:13px;font-weight:400;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
           🗄️ Archive
         </button>
       </div>
+
+      <!-- Le formulaire du module vient ICI, à la place des champs du cœur.
+           Deux zones sœurs : on montre l'une ou l'autre, jamais les deux. -->
+      <div id="zone_module" style="display:none"></div>
+      <div id="zone_coeur">
       <input type="hidden" id="f_typeLocalisation" value="Technique">
     </div>
 
@@ -379,7 +395,7 @@ async function nouvelleDemande() {
       </div>
     </div>
 
-    <div class="form-group span-2" id="bloc_urgence">
+    <div class="form-group" id="bloc_urgence">
       <label class="form-label">Urgence</label>
       <select class="form-control" id="f_urgence">
         <option value="Basse">Basse</option>
@@ -421,7 +437,21 @@ async function nouvelleDemande() {
       <div id="photosPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
       <div style="font-size:11px;color:var(--gray-text);margin-top:4px">Formats acceptés : JPG, PNG, GIF — max ${_demMaxPhotos} photos</div>
     </div>
+  </div>
   </div>`, async () => {
+    // ── Type apporté par un module : c'est lui qui enregistre ────────────
+    // Le bouton « Envoyer » est le même pour les trois types ; seule la
+    // destination change. Un second bouton propre au module ferait de lui un
+    // cas à part, ce qu'il n'est pas.
+    if (_moduleDemandeActif && _moduleDemandeActif.enregistrer) {
+      try {
+        await _moduleDemandeActif.enregistrer();
+        toast('Demande envoyée !', 'success');
+        closeModal(); renderDemandes();
+      } catch (e) { toast(e.message, 'error'); }
+      return;
+    }
+
     const typeLocalisation = document.getElementById('f_typeLocalisation')?.value || 'Technique';
     const isArchive = typeLocalisation === 'Archive';
 
@@ -487,6 +517,11 @@ async function nouvelleDemande() {
       closeModal(); renderDemandes();
     } catch(e) { toast(e.message, 'error'); }
   }, 'Envoyer');
+
+  // Les boutons des modules sont ajoutés APRÈS l'ouverture : « tabs_modules »
+  // n'existe dans le DOM qu'une fois le modal monté.
+  _moduleDemandeActif = null;   // un modal rouvert repart sur « Technique »
+  _tabsModulesDemande();
 }
 
 function togglePourAutrui() {
@@ -496,7 +531,126 @@ function togglePourAutrui() {
 }
 
 // ── Basculement onglet Technique / Archive dans la nouvelle demande ───────────
+/**
+ * Ajoute un TYPE DE DEMANDE par module, entre « Technique » et « Archive ».
+ *
+ * ⚠️ CE BOUTON RENVOYAIT AILLEURS. IL FALLAIT QU'IL RESTE ICI.
+ * La première version fermait le modal et ouvrait l'écran du module. Le
+ * demandeur changeait donc de contexte pour une chose qui est un type de
+ * demande parmi trois — et se retrouvait devant l'interface du gestionnaire.
+ *
+ * Le formulaire du module s'affiche maintenant DANS ce modal, à la place des
+ * champs du cœur, exactement comme bascule « Archive ». Mêmes champs au même
+ * endroit, un seul bouton d'envoi.
+ */
+let _moduleDemandeActif = null;      // { ext, anc, enregistrer } ou null
+
+function _tabsModulesDemande() {
+  const hote = document.getElementById('tabs_modules');
+  if (!hote || typeof LarkaExtensions === 'undefined' || !LarkaExtensions.liste) return;
+  const mods = LarkaExtensions.liste()
+    .map(e => ({ ext: e, anc: (e.ancrages || []).find(a => a.emplacement === 'demandes.type' && a.type === 'formulaire' && a.page) }))
+    .filter(x => x.anc);
+  if (!mods.length) return;
+
+  mods.forEach((m) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = `tab_mod_${m.ext.identifiant.replace(/[^a-z0-9]/g, '_')}`;
+    b.dataset.moduleType = m.ext.identifiant;
+    b.style.cssText = 'flex:1;padding:10px 16px;border:none;background:transparent;'
+      + 'color:var(--gray-text);font-size:13px;cursor:pointer;display:flex;'
+      + 'align-items:center;justify-content:center;gap:6px';
+    b.textContent = `${m.anc.icone || '🧩'} ${m.anc.libelle || m.ext.nom}`;
+    b.addEventListener('click', () => switchTypeDemande(m.ext.identifiant));
+    hote.appendChild(b);
+  });
+}
+
+/** Le type demandé est-il celui d'un module ? Rend le module, ou null. */
+function _moduleDeType(type) {
+  if (typeof LarkaExtensions === 'undefined' || !LarkaExtensions.liste) return null;
+  const e = LarkaExtensions.liste().find(x => x.identifiant === type);
+  if (!e) return null;
+  const anc = (e.ancrages || []).find(a => a.emplacement === 'demandes.type' && a.type === 'formulaire' && a.page);
+  return anc ? { ext: e, anc } : null;
+}
+
 function switchTypeDemande(type) {
+  // ── Type apporté par un module ───────────────────────────────────────
+  const mod = _moduleDeType(type);
+  const zone = document.getElementById('zone_module');
+
+  document.querySelectorAll('[data-module-type]').forEach((b) => {
+    const a = b.dataset.moduleType === type;
+    b.style.background = a ? 'var(--blue)' : 'transparent';
+    b.style.color      = a ? 'white' : 'var(--gray-text)';
+    b.style.fontWeight = a ? '700' : '400';
+  });
+
+  if (mod) {
+    // ⚠️ ON MASQUE PAR STRUCTURE, PAS PAR UN CONTENEUR INJECTÉ.
+    // La première version enveloppait les champs du cœur dans un <div> ajouté
+    // au gabarit. Une accolade de travers et l'enveloppe se refermait trop
+    // tôt : une partie des champs restait dehors, donc visible. On voyait le
+    // formulaire du module ET « Titre », « Description », « Bâtiment ».
+    //
+    // On masque maintenant tous les frères de la zone du module, sauf la barre
+    // d'onglets. Aucune dépendance à un balisage que la prochaine retouche
+    // déplacera.
+    if (zone && zone.parentNode) {
+      [...zone.parentNode.children].forEach((n) => {
+        if (n === zone || n.contains(document.getElementById('tabs_modules'))) return;
+        n.dataset.masqueModule = '1';
+        n.style.display = 'none';
+      });
+    }
+    if (zone) {
+      zone.style.display = '';
+      _moduleDemandeActif = { ...mod, enregistrer: null };
+      let f = LarkaDeclaratif.formulaireIntegre(mod.ext.identifiant, mod.anc.page, zone);
+
+      // ⚠️ LE FORMULAIRE N'EXISTE QU'APRÈS UN PREMIER RENDU DE SA PAGE.
+      // C'est en dessinant sa page qu'un module publie son formulaire. Un
+      // demandeur qui ouvre « Nouvelle demande » sans être passé par l'écran du
+      // module ne trouvait donc rien — ou pire, le formulaire d'une AUTRE page
+      // du même module, rendue entre-temps.
+      //
+      // On dessine donc la page une fois, dans un conteneur invisible, pour
+      // qu'elle se publie. Coûteux une seule fois par session, et invisible.
+      if (!f) {
+        const amorce = document.createElement('div');
+        amorce.style.display = 'none';
+        document.body.appendChild(amorce);
+        try {
+          LarkaExtensions.rendrePage(mod.ext.identifiant, mod.anc.page, amorce);
+          f = LarkaDeclaratif.formulaireIntegre(mod.ext.identifiant, mod.anc.page, zone);
+        } catch (e) { /* le module reste muet : message ci-dessous */ }
+        amorce.remove();
+      }
+
+      if (f) { _moduleDemandeActif.enregistrer = f; }
+      else {
+        zone.innerHTML = '<div style="padding:16px;color:var(--gray-text);font-size:13px">'
+          + 'Ce module n\'a pas pu afficher son formulaire. Ouvrez son écran depuis le menu.</div>';
+      }
+    }
+    ['tab_technique', 'tab_archive'].forEach((id) => {
+      const t = document.getElementById(id);
+      if (t) { t.style.background = 'transparent'; t.style.color = 'var(--gray-text)';
+               t.style.fontWeight = '400'; }
+    });
+    return;
+  }
+
+  _moduleDemandeActif = null;
+  if (zone) { zone.style.display = 'none'; zone.innerHTML = ''; }
+  // On rend leur place aux champs du cœur : seuls ceux que l'on a masqués.
+  document.querySelectorAll('[data-masque-module]').forEach((n) => {
+    n.style.display = '';
+    delete n.dataset.masqueModule;
+  });
+
   document.getElementById('f_typeLocalisation').value = type;
   const isArchive = type === 'Archive';
 

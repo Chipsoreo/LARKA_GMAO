@@ -173,21 +173,7 @@ function listLabelHtml(labelText, items) {
   return `${labelText}${isCatOblig ? ' <span class="req">*</span>' : ''}`;
 }
 
-// ── Pending documents (avant sauvegarde) ──────────────────────────────────────
-function handlePendingDocs(input, key) {
-  if (!window['_pendingDocs_' + key]) window['_pendingDocs_' + key] = [];
-  const files = Array.from(input.files);
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1];
-      window['_pendingDocs_' + key].push({ name: file.name, mime: file.type, data: base64 });
-      renderPendingDocsPreview(key);
-    };
-    reader.readAsDataURL(file);
-  });
-  input.value = '';
-}
+
 function renderPendingDocsPreview(key) {
   const el = document.getElementById('pendingDocsPreview_' + key);
   if (!el) return;
@@ -312,8 +298,8 @@ function renderTable({
           <div onclick="_exportData('pdf','all')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">📕 PDF — toutes les données (${data.length})</div>
         </div>
       </div>` : ''}
-      <div style="flex:1"></div>
       ${extraButtons || ''}
+      <div style="flex:1"></div>
       ${addBtnFn && canEdit ? `<button class="btn btn-primary" onclick="${addBtnFn}(0)">+ Nouveau</button>` : ''}
     </div>`;
 
@@ -1075,15 +1061,6 @@ function smartTextMatch(haystack, needle) {
 window.smartTextMatch = smartTextMatch;
 window._normalizeSearch = _normalizeSearch;
 
-/**
- * Définit le contenu textuel d'un élément en respectant les retours à la ligne.
- * Aucune injection HTML possible — préférer ça à innerHTML pour les messages
- * d'erreur, les noms d'utilisateur, et tout ce qui vient d'un input ou de l'API.
- */
-function setText(el, text) {
-  if (!el) return;
-  el.textContent = text == null ? '' : String(text);
-}
 
 /**
  * Affiche un message d'erreur sûr dans un élément. Préfère textContent à

@@ -56,6 +56,55 @@ if ($action === 'plans_set_personne') {
 }
 
 // ── Upload image de fond d'étage ──────────────────────────────────────────────
+/**
+ * Dossier des images de plan, PROPRE À CHAQUE CLIENT.
+ *
+ * ⚠️ « data/plans » était écrit en dur à sept endroits, sans isolation.
+ * Deux conséquences sur une installation multi-tenant :
+ *   • « Voir les images de fond » listait le dossier entier — un client voyait
+ *     donc les plans de tous les autres ;
+ *   • les noms suivent le motif « plan_<etageId>_<horodatage> », et les
+ *     identifiants d'étage recommencent à 1 dans chaque base. Deux clients
+ *     pouvaient produire le même nom à la même seconde et s'écraser l'un l'autre.
+ *
+ * Chaque route recalculait par ailleurs le chemin de son côté : c'est ainsi
+ * qu'elles finissent par diverger. Il n'y a plus qu'une fonction.
+ */
+function plans_dossier(): string
+{
+    require_once __DIR__ . '/../extensions/Paquet.php';
+    $d = dirname(__DIR__, 2) . '/data/plans' . ExtPaquet::sousCheminTenant();
+    if (!is_dir($d)) @mkdir($d, 0750, true);
+    return $d;
+}
+
+/**
+ * Résout un nom de fichier vers un chemin réel, ou null.
+ *
+ * Cherche d'abord chez le client, PUIS à l'ancien emplacement commun. Ce repli
+ * n'est pas une facilité : les fiches d'étage existantes portent en base un
+ * chemin « data/plans/x.png » écrit avant l'isolation. Sans lui, tous les plans
+ * déjà en service disparaîtraient à la mise à jour.
+ *
+ * Le nom est confronté à realpath dans les deux cas : il ne peut désigner que
+ * l'un de ces deux dossiers, jamais remonter ailleurs.
+ */
+function plans_fichier(string $nom): ?string
+{
+    $nom = basename($nom);
+    if ($nom === '' || str_contains($nom, '..')) return null;
+
+    foreach ([plans_dossier(), dirname(__DIR__, 2) . '/data/plans'] as $base) {
+        $reelBase = realpath($base);
+        if ($reelBase === false) continue;
+        $reel = realpath($reelBase . '/' . $nom);
+        if ($reel !== false && str_starts_with($reel, $reelBase) && is_file($reel)) {
+            return $reel;
+        }
+    }
+    return null;
+}
+
 if ($action === 'plans_upload_fond') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
     if ($method !== 'POST') json_error('Méthode non supportée', 405);
@@ -94,10 +143,13 @@ if ($action === 'plans_upload_fond') {
         json_error('Format non supporté (formats acceptés : PNG, JPG, GIF, WebP, PDF).');
     }
 
-    $dir = __DIR__ . '/../../data/plans';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    $dir = plans_dossier();
 
-    $filename = 'plan_' . $etageId . '_' . time() . '.' . $ext;
+    // Un fragment aléatoire en plus de l'horodatage : deux téléversements dans
+    // la même seconde sur le même étage produisaient le même nom, et le second
+    // écrasait le premier sans rien dire.
+    $filename = 'plan_' . $etageId . '_' . time() . '_'
+              . bin2hex(random_bytes(3)) . '.' . $ext;
     $dest = $dir . '/' . $filename;
     if (!move_uploaded_file($file['tmp_name'], $dest)) json_error('Erreur upload');
 
@@ -111,7 +163,9 @@ if ($action === 'plans_upload_fond') {
 // PlanEtage pour identifier les liens existants.
 if ($action === 'plans_list_files') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
-    $dir = realpath(__DIR__ . '/../../data/plans');
+    // Le dossier du CLIENT seulement : lister le dossier commun montrerait les
+    // plans des autres clients.
+    $dir = realpath(plans_dossier());
     if ($dir === false || !is_dir($dir)) { json_ok(['files' => []]); }
 
     // Récupérer tous les étages avec un FondImage rattaché (pour le crois.)
@@ -163,10 +217,8 @@ if ($action === 'plans_file') {
     if ($fname === '' || str_contains($fname, '..')) {
         http_response_code(400); header('Content-Type: text/plain'); echo 'Nom invalide'; exit;
     }
-    $rootDir  = realpath(__DIR__ . '/../..');
-    $plansDir = realpath($rootDir . '/data/plans');
-    $real     = realpath($plansDir . '/' . $fname);
-    if ($real === false || $plansDir === false || !str_starts_with($real, $plansDir)) {
+    $real = plans_fichier($fname);
+    if ($real === null) {
         http_response_code(404); header('Content-Type: text/plain'); echo 'Fichier introuvable'; exit;
     }
     $ext = strtolower(pathinfo($real, PATHINFO_EXTENSION));
@@ -193,10 +245,8 @@ if ($action === 'plans_delete_file') {
     $body = get_body();
     $fname = basename($body['name'] ?? '');
     if ($fname === '' || str_contains($fname, '..')) json_error('Nom invalide');
-    $rootDir  = realpath(__DIR__ . '/../..');
-    $plansDir = realpath($rootDir . '/data/plans');
-    $real     = realpath($plansDir . '/' . $fname);
-    if ($real === false || !str_starts_with($real, $plansDir)) json_error('Fichier introuvable');
+    $real = plans_fichier($fname);
+    if ($real === null) json_error('Fichier introuvable');
     // Sécu : ne pas autoriser la suppression si rattaché à un étage
     $etages = $db->getAllPlanEtages(null);
     foreach ($etages as $et) {
@@ -216,10 +266,8 @@ if ($action === 'plans_attach_file') {
     $etageId = (int)($body['etage_id'] ?? 0);
     if ($fname === '' || str_contains($fname, '..')) json_error('Nom invalide');
     if ($etageId <= 0) json_error('etage_id invalide');
-    $rootDir  = realpath(__DIR__ . '/../..');
-    $plansDir = realpath($rootDir . '/data/plans');
-    $real     = realpath($plansDir . '/' . $fname);
-    if ($real === false || !str_starts_with($real, $plansDir)) json_error('Fichier introuvable');
+    $real = plans_fichier($fname);
+    if ($real === null) json_error('Fichier introuvable');
     $db->updatePlanEtageFond($etageId, 'data/plans/' . $fname);
     json_ok(['ok' => true, 'path' => 'data/plans/' . $fname]);
 }
@@ -236,13 +284,18 @@ if ($action === 'plans_fond_image') {
         echo 'Pas d\'image de fond';
         exit;
     }
-    // Résoudre le chemin de manière sûre (relatif à la racine du projet)
-    $relPath = ltrim($etage['FondImage'], '/');
-    $rootDir = realpath(__DIR__ . '/../..');
-    $path = $rootDir . '/' . $relPath;
-    $real = realpath($path);
-    $plansDir = realpath($rootDir . '/data/plans');
-    if ($real === false || $plansDir === false || !str_starts_with($real, $plansDir)) {
+    // ⚠️ C'EST LA ROUTE QUI AFFICHE LE FOND SUR LA CARTE.
+    // Elle résolvait « data/plans/x.png » — le chemin gardé en base — contre le
+    // seul dossier commun. Depuis l'isolation par client, un plan fraîchement
+    // téléversé se trouve dans « data/plans/tenants/<client>/ » : la route ne
+    // l'y cherchait pas, renvoyait 404, et la carte affichait « Image
+    // introuvable » alors que le fichier venait d'être écrit.
+    //
+    // On ne garde donc que le NOM du fichier et on laisse plans_fichier() le
+    // chercher aux deux endroits — chez le client d'abord, à l'ancien
+    // emplacement ensuite, pour les étages configurés avant la mise à jour.
+    $real = plans_fichier(basename((string)$etage['FondImage']));
+    if ($real === null) {
         // ⚠️ FIX SÉCURITÉ : ne PAS exposer les chemins du serveur dans la
         // réponse — leak d'info utile pour un attaquant. Réponse neutre.
         http_response_code(404);
@@ -547,7 +600,11 @@ function _planImportGeoJson($db, $user, $etageId, string $content): int {
 
 function _planImportSvg($db, $user, $etageId, string $content): int {
     libxml_use_internal_errors(true);
-    $svg = simplexml_load_string($content);
+    // LIBXML_NONET : le parseur ne va chercher aucune ressource sur le réseau.
+    // Depuis libxml 2.9 les entités externes sont déjà refusées par défaut ;
+    // l'écrire noir sur blanc évite que cela dépende de la version installée
+    // chez le client. Un fichier importé reste un fichier reçu d'un utilisateur.
+    $svg = simplexml_load_string($content, "SimpleXMLElement", LIBXML_NONET);
     if ($svg === false) throw new \Exception('SVG invalide');
     $imported = 0;
 
@@ -646,7 +703,7 @@ function _planImportSvg($db, $user, $etageId, string $content): int {
 
 function _planImportKml($db, $user, $etageId, string $content): int {
     libxml_use_internal_errors(true);
-    $kml = simplexml_load_string($content);
+    $kml = simplexml_load_string($content, "SimpleXMLElement", LIBXML_NONET);
     if ($kml === false) throw new \Exception('KML invalide');
     $imported = 0;
     foreach ($kml->xpath('//*[local-name()="Placemark"]') as $pm) {
@@ -721,7 +778,7 @@ function _planImportKmz($db, $user, $etageId, string $tmpPath): int {
 
 function _planImportGpx($db, $user, $etageId, string $content): int {
     libxml_use_internal_errors(true);
-    $gpx = simplexml_load_string($content);
+    $gpx = simplexml_load_string($content, "SimpleXMLElement", LIBXML_NONET);
     if ($gpx === false) throw new \Exception('GPX invalide');
     $imported = 0;
     // Waypoints (wpt)

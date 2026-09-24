@@ -154,7 +154,7 @@ if ($action === 'demandes') {
                         'title'    => $titre,
                         'body'     => $corps,
                         'tag'      => 'gmao-demande-' . $demandeId,
-                        'icon'     => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/apple-touch-icon.png',
+                        'icon'     => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/icon.png',
                         'data'     => ['page' => 'demandes'],
                         'renotify' => true,
                         'requireInteraction' => defined('PUSH_NOTIF_DEMANDE_REQUIRE_INTERACTION') ? PUSH_NOTIF_DEMANDE_REQUIRE_INTERACTION : false,
@@ -203,7 +203,34 @@ if ($action === 'demandes') {
 
 // ── Badge demandes non traitées ───────────────────────────────────────────────
 if ($action === 'demandes_count' && $method === 'GET') {
-    $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    $user = require_auth();
+
+    /**
+     * ⚠️ LA ROUTE ÉTAIT FERMÉE AUX DEMANDEURS.
+     *
+     * Ils n'obtenaient donc aucun compteur, et la cloche restait muette sur le
+     * seul sujet qui les concerne : la réponse à LEUR demande. Pendant ce
+     * temps, l'écran leur proposait de s'abonner aux alertes de stock et de
+     * contrats — des préoccupations de gestionnaire, sur des écrans qui leur
+     * sont fermés.
+     *
+     * On leur rend un compteur, et UNIQUEMENT le leur : les demandes qu'ils ont
+     * déposées et qui ont reçu une réponse. Le décompte global reste réservé à
+     * ceux qui traitent les demandes.
+     *
+     * Les statuts retenus sont ceux que l'écran considère comme CLOS — les
+     * mêmes que ceux qui sortent une demande de la liste « en cours ». Deux
+     * définitions du mot « traité » finiraient par diverger.
+     */
+    if (!in_array($user['Role'] ?? '', ['Admin', 'Gestionnaire'], true)) {
+        $n = (int)($db->fetchOne(
+            "SELECT COUNT(*) AS n FROM DemandesIntervention
+              WHERE UtilisateurId = :u AND Statut IN ('Traité','Refusé','Terminée')",
+            ['u' => (int)($user['Id'] ?? 0)]
+        )['n'] ?? 0);
+        json_ok(['tech' => 0, 'archive' => 0, 'total' => 0, 'mesReponses' => $n]);
+    }
+
     $counts = $db->countDemandesDetail();
     json_ok($counts);
 }
@@ -216,7 +243,10 @@ if ($action === 'listes') {
         json_ok($cat ? $db->getListe($cat) : $db->getAllListes());
     }
     require_role($user, ['Admin','Gestionnaire']);
-    if ($method==='POST')   { $b=get_body(); json_ok(['id' => $db->addListeValeur($b['categorie'], $b['valeur'], (int)($b['ordre']??0), (int)($b['obligatoire']??0), (int)($b['saisieLibre']??0))]); }
+    // null quand le client ne se prononce pas : la valeur hérite alors des
+    // réglages de sa catégorie. Forcer 0 ici remettait « non obligatoire » à
+    // chaque ajout, en écrasant le réglage de l'administrateur.
+    if ($method==='POST')   { $b=get_body(); json_ok(['id' => $db->addListeValeur($b['categorie'], $b['valeur'], (int)($b['ordre']??0), isset($b['obligatoire']) ? (int)$b['obligatoire'] : null, isset($b['saisieLibre']) ? (int)$b['saisieLibre'] : null)]); }
     if ($method==='PUT')    { $b=get_body(); $db->updateListeValeur($id, $b['valeur'], (int)($b['ordre']??0), (int)($b['actif']??1), (int)($b['obligatoire']??0), (int)($b['saisieLibre']??0)); json_ok('OK'); }
     if ($method==='DELETE') {
         $b = get_body();
@@ -228,6 +258,35 @@ if ($action === 'listes') {
             $result = $db->deleteListeValeur($id);
             json_ok($result);
         }
+    }
+}
+
+// ── Réglages d'une catégorie de liste ────────────────────────────────────────
+//
+// Une route dédiée, plutôt qu'une boucle côté client sur chaque valeur : le
+// réglage vaut pour la CATÉGORIE, et l'appliquer ligne par ligne le laissait à
+// moitié posé si un appel échouait. C'est aussi le seul moyen de configurer une
+// catégorie encore vide — celle que vient de créer un module, précisément le
+// moment où l'on veut décider si les utilisateurs pourront l'enrichir.
+if ($action === 'liste_reglages') {
+    $user = require_auth();
+    if ($method === 'GET') {
+        $cat = (string)($_GET['categorie'] ?? '');
+        if ($cat === '') json_error('Catégorie manquante.');
+        json_ok($db->reglagesCategorie($cat));
+    }
+    require_role($user, ['Admin','Gestionnaire']);
+    if ($method === 'POST') {
+        $b   = get_body();
+        $cat = (string)($b['categorie'] ?? '');
+        if ($cat === '') json_error('Catégorie manquante.');
+        // Ramené à 0 ou 1 : un entier arbitraire rangé en base se relirait
+        // comme « ni oui ni non », et le formulaire afficherait un état que
+        // personne ne saurait expliquer.
+        $borne = fn($v) => !empty($v) ? 1 : 0;
+        $n = $db->setReglagesCategorie($cat,
+            $borne($b['obligatoire'] ?? 0), $borne($b['libre'] ?? 0));
+        json_ok(['valeurs_touchees' => $n]);
     }
 }
 

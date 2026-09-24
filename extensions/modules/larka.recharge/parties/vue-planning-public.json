@@ -1,0 +1,195 @@
+{
+  "type": "calendrier",
+  "source": "creneaux",
+  "actions": [
+    "creer",
+    "modifier",
+    "supprimer",
+    "exporter"
+  ],
+  "calendrier": {
+    "jour": "date",
+    "creneau": "horaire",
+    "ressource": "place",
+    "etat": "statut",
+    "occupe": [
+      "Accepté",
+      "Réalisé"
+    ],
+    "occupant": "demandeur",
+    "detail": "immatriculation",
+    "largeur_jour_px": 124,
+    "largeur_creneau_px": 92,
+    "masquer": [
+      "Refusé",
+      "Annulé"
+    ]
+  },
+  "filtres": [
+    {
+      "champ": "place"
+    },
+    {
+      "champ": "statut"
+    }
+  ],
+  "tri": {
+    "date": "ASC",
+    "horaire": "ASC"
+  },
+  "par_page": 300,
+  "colonnes": [
+    "date",
+    "horaire",
+    "place",
+    "demandeur",
+    "statut"
+  ],
+  "actions_rapides": [
+    {
+      "champ": "statut",
+      "valeur": "Accepté",
+      "libelle": "✓",
+      "couleur": "#16a34a"
+    },
+    {
+      "champ": "statut",
+      "valeur": "Refusé",
+      "libelle": "✕",
+      "couleur": "#dc2626"
+    }
+  ],
+  "layout": {
+    "type": "grille",
+    "colonnes": 12,
+    "espacement": "normal",
+    "marges": "normale",
+    "responsive": [
+      {
+        "sous": "tablette",
+        "colonnes": 6
+      },
+      {
+        "sous": "telephone",
+        "colonnes": 1
+      }
+    ],
+    "composants": [
+      {
+        "section": "Créneau",
+        "style": "carte",
+        "couleur": "marine",
+        "x": 1,
+        "y": 1,
+        "largeur": 8,
+        "colonnes": 12,
+        "composants": [
+          {
+            "champ": "date",
+            "x": 1,
+            "y": 1,
+            "largeur": 4
+          },
+          {
+            "champ": "horaire",
+            "x": 5,
+            "y": 1,
+            "largeur": 4
+          },
+          {
+            "champ": "duree_h",
+            "x": 9,
+            "y": 1,
+            "largeur": 4,
+            "alignement_h": "droite",
+            "largeur_max_px": 130
+          },
+          {
+            "champ": "place",
+            "x": 1,
+            "y": 2,
+            "largeur": 6
+          },
+          {
+            "champ": "borne",
+            "x": 7,
+            "y": 2,
+            "largeur": 6
+          }
+        ]
+      },
+      {
+        "section": "Décision",
+        "style": "carte",
+        "couleur": "ambre",
+        "x": 9,
+        "y": 1,
+        "largeur": 4,
+        "hauteur": 2,
+        "colonnes": 12,
+        "composants": [
+          {
+            "champ": "statut",
+            "x": 1,
+            "y": 1,
+            "largeur": 12
+          },
+          {
+            "section": "Motif",
+            "style": "discret",
+            "x": 1,
+            "y": 2,
+            "largeur": 12,
+            "colonnes": 12,
+            "espacement": "serre",
+            "visible_si": {
+              "champ": "statut",
+              "operateur": "pas_parmi",
+              "valeur": [
+                "Demandé"
+              ]
+            },
+            "composants": [
+              {
+                "champ": "reponse",
+                "x": 1,
+                "y": 1,
+                "largeur": 12,
+                "taille": "grande",
+                "masquer_libelle": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "section": "Qui demande",
+        "style": "panneau",
+        "x": 1,
+        "y": 2,
+        "largeur": 8,
+        "colonnes": 12,
+        "composants": [
+          {
+            "champ": "demandeur",
+            "x": 1,
+            "y": 1,
+            "largeur": 5
+          },
+          {
+            "champ": "immatriculation",
+            "x": 6,
+            "y": 1,
+            "largeur": 3
+          },
+          {
+            "champ": "vehicule",
+            "x": 9,
+            "y": 1,
+            "largeur": 4
+          }
+        ]
+      }
+    ]
+  }
+}

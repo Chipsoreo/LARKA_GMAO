@@ -51,6 +51,7 @@ status:        ; @./start.sh status
 logs:          ; @./start.sh logs
 reset:         ; @./start.sh reset
 doctor:        ; @./start.sh doctor
+epreuves:      ; @./start.sh epreuves
 fix:           ; @./start.sh doctor --fix
 autostart-on:  ; @sudo ./start.sh autostart on $(OPTS)
 autostart-off: ; @sudo ./start.sh autostart off

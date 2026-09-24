@@ -47,6 +47,7 @@ const PAGES = {
   utilisateurs:     { title: 'Utilisateurs',       renderFn: 'renderUtilisateurs'     },
   historique:       { title: 'Historique',         renderFn: 'renderHistorique'       },
   configuration:    { title: 'Configuration',      renderFn: 'renderConfiguration'    },
+  extensions:       { title: 'Extensions',         renderFn: 'renderExtensions'       },
   journal:          { title: 'Journal',            renderFn: 'renderJournal'          },
   statsAvancees:    { title: 'Stats avancees',     renderFn: 'renderStatsAvancees'    },
   demandes:         { title: 'Demandes en cours',  renderFn: 'renderDemandes'         },
@@ -387,6 +388,19 @@ async function buildSidebar(user, visibility) {
       ${urgencesHtml}
       ${plansHtml}
       ${lectureHtml}`;
+
+    // ⚠️ LES MODULES MANQUAIENT AU MENU DES DEMANDEURS.
+    // Cette branche écrit son menu puis sort — l'injection des pages
+    // d'extension, en fin de fonction, n'était jamais atteinte pour ce rôle.
+    // Un module pouvait donc accorder l'accès à un demandeur, le serveur le lui
+    // envoyait dans le manifeste, et aucune entrée n'apparaissait : la page
+    // existait, était autorisée, et restait injoignable.
+    //
+    // L'appel est sans risque ici : injecterMenu() ne dessine que ce que le
+    // serveur a déjà filtré selon les rôles accordés.
+    if (typeof LarkaExtensions !== 'undefined') {
+      try { LarkaExtensions.injecterMenu(); } catch (_) { /* jamais bloquant */ }
+    }
     if (typeof buildBottomNav === 'function') buildBottomNav();
     return;
   }
@@ -461,7 +475,19 @@ async function buildSidebar(user, visibility) {
   nav.innerHTML = menuBase + `
     <div class="nav-section-title" style="margin-top:8px;color:rgba(245,166,35,.6)">Administration</div>
     <div class="nav-item" data-page="configuration" onclick="navigate('configuration')"><span class="icon">⚙️</span><span class="nav-label">Configuration</span><span id="badgeDeclarations" style="display:none;background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:6px">0</span></div>
-    ${showNav('journal') ? `<div class="nav-item" data-page="journal" onclick="navigate('journal')"><span class="icon">📜</span><span class="nav-label">Journal</span></div>` : ''}`;
+    <div class="nav-item" data-page="extensions" onclick="navigate('extensions')"><span class="icon">🧩</span><span class="nav-label">Extensions</span></div>
+`;
+  // ⚠️ « Journal » a quitté cette section pour la Super Administration : la
+  // trace de ce que fait un administrateur n'a pas sa place dans le menu de
+  // cet administrateur.
+
+  // Le menu vient d'être réécrit en bloc : les entrées des modules
+  // communautaires, ajoutées dans le DOM après coup, ont disparu avec lui.
+  // On les replace. Sans cet appel, les pages d'extension s'évanouissent dès
+  // qu'on touche aux préférences de visibilité du menu.
+  if (typeof LarkaExtensions !== 'undefined') {
+    try { LarkaExtensions.injecterMenu(); } catch (_) { /* jamais bloquant */ }
+  }
 }
 
 // ── Badge demandes (rafraîchi toutes les 30s) ─────────────────────────────────
@@ -508,12 +534,35 @@ async function _refreshBadgeDeclarations() {
 const NOTIF_PREFS_KEY = 'gmao_notif_prefs';
 const NOTIF_SEEN_KEY  = 'gmao_notif_seen';
 
+/**
+ * Types de notification, et à QUI ils s'adressent.
+ *
+ * ⚠️ LA LISTE ÉTAIT PLATE, SANS FILTRAGE.
+ * Un demandeur recevait donc « Articles en alerte de stock » et « Contrats
+ * proches de l'expiration » — des préoccupations de gestionnaire — et le clic
+ * l'envoyait sur des écrans auxquels il n'a pas accès. Il apprenait au passage
+ * qu'il reste trois filtres G4 en magasin, ce qui ne le regarde pas.
+ *
+ * Un demandeur n'attend qu'une chose de la cloche : la réponse à SA demande.
+ */
 const NOTIF_TYPES = [
-  { id: 'dem_technique', label: '🔧 Nouvelles demandes techniques',       defaultOn: true  },
-  { id: 'dem_archive',   label: '🗄️ Nouvelles demandes d\'archive',        defaultOn: true  },
-  { id: 'stock_alerte',  label: '📦 Articles en alerte de stock',          defaultOn: false },
-  { id: 'contrat_alerte',label: '📋 Contrats proches de l\'expiration',    defaultOn: false },
+  { id: 'dem_technique', label: '🔧 Nouvelles demandes techniques',    defaultOn: true,
+    roles: ['Admin', 'Gestionnaire'] },
+  { id: 'dem_archive',   label: '🗄️ Nouvelles demandes d\'archive',     defaultOn: true,
+    roles: ['Admin', 'Gestionnaire'] },
+  { id: 'stock_alerte',  label: '📦 Articles en alerte de stock',       defaultOn: false,
+    roles: ['Admin', 'Gestionnaire'] },
+  { id: 'contrat_alerte',label: '📋 Contrats proches de l\'expiration', defaultOn: false,
+    roles: ['Admin', 'Gestionnaire'] },
+  { id: 'dem_reponse',   label: '✅ Réponses à mes demandes',           defaultOn: true,
+    roles: ['Demandeur', 'Visionneur'] },
 ];
+
+/** Les types que le rôle courant a lieu de voir. */
+function _notifTypes() {
+  const role = (typeof App !== 'undefined' && App.currentUser && App.currentUser.Role) || '';
+  return NOTIF_TYPES.filter(t => !t.roles || t.roles.includes(role));
+}
 
 function _getNotifPrefs() {
   try { return JSON.parse(localStorage.getItem(NOTIF_PREFS_KEY)) || {}; } catch(_) { return {}; }
@@ -535,10 +584,11 @@ function _notifRefresh(data) {
     dem_archive:    data.archive || 0,
     stock_alerte:   data.stockAlerte  || 0,
     contrat_alerte: data.contratsAlerte || 0,
+    dem_reponse:    data.mesReponses || 0,
   };
 
   let totalNonVu = 0;
-  NOTIF_TYPES.forEach(t => {
+  _notifTypes().forEach(t => {
     const actif = (prefs[t.id] !== undefined) ? prefs[t.id] : t.defaultOn;
     if (!actif) return;
     const dernier = seen[t.id] || 0;
@@ -571,7 +621,7 @@ function _buildNotifList(counts, prefs, seen) {
   const list = document.getElementById('notifList');
   if (!list) return;
 
-  const items = NOTIF_TYPES.map(t => {
+  const items = _notifTypes().map(t => {
     const actif  = (prefs[t.id] !== undefined) ? prefs[t.id] : t.defaultOn;
     const dernier = seen[t.id] || 0;
     const actuel  = counts[t.id] || 0;
@@ -591,6 +641,7 @@ function _buildNotifList(counts, prefs, seen) {
     dem_archive:    'archives',
     stock_alerte:   'stock',
     contrat_alerte: 'contrats',
+    dem_reponse:    'demandes',
   };
 
   list.innerHTML = items.filter(t => t.actuel > 0).map(t => `
@@ -669,7 +720,12 @@ function _buildNotifSettings() {
   const wrap = document.getElementById('notifSettingsItems');
   if (!wrap) return;
 
-  let html = NOTIF_TYPES.map(t => {
+  // ⚠️ TROISIÈME ENDROIT QUI PARCOURAIT LA LISTE COMPLÈTE.
+  // J'avais filtré l'affichage des notifications et leur décompte, mais pas le
+  // panneau de RÉGLAGES : un demandeur continuait donc à se voir proposer de
+  // s'abonner aux alertes de stock et aux contrats. Trois boucles sur la même
+  // liste, deux corrigées — la troisième trahit les deux autres.
+  let html = _notifTypes().map(t => {
     const checked = (prefs[t.id] !== undefined) ? prefs[t.id] : t.defaultOn;
     return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0">
       <input type="checkbox" id="notifPref_${t.id}" ${checked?'checked':''}
@@ -718,7 +774,7 @@ function _buildNotifSettings() {
 
 function sauvegarderPrefsNotif() {
   const prefs = {};
-  NOTIF_TYPES.forEach(t => {
+  _notifTypes().forEach(t => {
     const el = document.getElementById('notifPref_' + t.id);
     if (el) prefs[t.id] = el.checked;
   });

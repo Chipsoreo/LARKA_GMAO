@@ -1,0 +1,47 @@
+{
+  "identifiant": "acme.controles",
+  "format": "declaratif/1",
+  "nom": "Contrôles périodiques",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Liens vers les équipements, valeurs par défaut dynamiques, totaux et regroupement.",
+
+  "donnees": {
+    "controles": {
+      "libelle": "Contrôle",
+      "champs": {
+        "objet":      { "type": "texte", "libelle": "Objet", "obligatoire": true },
+        "equipement": { "type": "lien",  "vers": "equipements", "libelle": "Équipement",
+                        "obligatoire": true,
+                        "aide": "Sélecteur avec recherche ; la référence est vérifiée" },
+        "contrat":    { "type": "lien",  "vers": "contrats", "libelle": "Au titre du contrat" },
+        "site":       { "type": "choix", "libelle": "Site",
+                        "valeurs": ["Mairie", "Ateliers", "École"] },
+        "realise_le": { "type": "date",  "libelle": "Réalisé le", "defaut": "{{today}}" },
+        "cout":       { "type": "decimal", "libelle": "Coût", "min": 0 },
+        "conforme":   { "type": "booleen", "libelle": "Conforme", "defaut": true },
+
+        "anciennete": { "type": "formule", "libelle": "Jours écoulés", "format": "nombre",
+                        "expression": "{{diffDays(today, record.realise_le)}}" }
+      }
+    }
+  },
+
+  "pages": [{
+    "cle": "controles",
+    "titre": "Contrôles",
+    "icone": "check-circle",
+    "roles": ["Gestionnaire", "Admin"],
+    "vue": {
+      "type": "liste",
+      "source": "controles",
+      "colonnes": ["objet", "equipement", "site", "realise_le", "cout", "conforme"],
+      "recherche": ["objet"],
+      "filtres": [{ "champ": "site" }],
+      "tri": { "realise_le": "DESC" },
+      "totaux": ["cout"],
+      "grouper_par": "site",
+      "actions": ["creer", "modifier", "supprimer", "exporter"]
+    }
+  }]
+}

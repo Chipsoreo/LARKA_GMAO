@@ -57,6 +57,7 @@ async function renderDashboard() {
       ${statCard('📦', stats.stockEnAlerte   > 0 ? 'red':'teal', stats.stockEnAlerte,   'Articles en alerte stock')}
       ${statCard('📋', stats.contratsExpires > 0 ? 'red':'blue', stats.contratsExpires, 'Contrats expirés')}
       ${statCard('📝', stats.demandesNouveaux > 0 ? 'orange':'teal', stats.demandesNouveaux, 'Nouvelles demandes')}
+      <span id="dashExtTuiles" style="display:contents"></span>
     </div>
 
     <div class="dashboard-grid">
@@ -305,6 +306,16 @@ async function renderDashboard() {
     </div>`;
 
     c.innerHTML = html;
+
+    // Tuiles des modules communautaires. Après l'écriture du HTML, sinon le
+    // conteneur n'existe pas encore ; et sans await, pour qu'une tuile lente
+    // ne retarde pas l'affichage du tableau de bord.
+    if (typeof LarkaExtensions !== 'undefined') {
+      try {
+        LarkaExtensions.rendrePoint('dashboard.tuiles',
+          document.getElementById('dashExtTuiles'), {});
+      } catch (e) { console.warn('Extensions (tableau de bord) :', e); }
+    }
   App.restoreFilters();
   _loadDashboardIntervChart(6); // charge le mini-graphe des interventions (6 mois par défaut)
 

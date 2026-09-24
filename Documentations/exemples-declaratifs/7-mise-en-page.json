@@ -1,0 +1,157 @@
+{
+  "identifiant": "acme.mise-en-page",
+  "format": "declaratif/1",
+  "nom": "Mise en page — les bases",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Une grille de 12 colonnes, des champs placés, une section, et un formulaire qui tient sur un téléphone — sans une seule valeur en pixels.",
+  "donnees": {
+    "demandes": {
+      "libelle": "Demande",
+      "libelle_pluriel": "Demandes",
+      "champs": {
+        "objet": {
+          "type": "texte",
+          "libelle": "Objet",
+          "obligatoire": true,
+          "max": 120
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Équipement"
+        },
+        "urgence": {
+          "type": "choix",
+          "libelle": "Urgence",
+          "valeurs": [
+            "Faible",
+            "Normale",
+            "Haute"
+          ],
+          "defaut": "Normale",
+          "couleurs": {
+            "Haute": "rouge",
+            "Normale": "bleu",
+            "Faible": "gris"
+          }
+        },
+        "souhaitee_le": {
+          "type": "date",
+          "libelle": "Date souhaitée",
+          "min_jours": 0
+        },
+        "description": {
+          "type": "texte_long",
+          "libelle": "Description",
+          "max": 1200
+        }
+      }
+    }
+  },
+  "pages": [
+    {
+      "cle": "demandes",
+      "titre": "Demandes",
+      "icone": "inbox",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Demandeur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "demandes",
+        "colonnes": [
+          "objet",
+          "equipement",
+          "urgence",
+          "souhaitee_le"
+        ],
+        "recherche": [
+          "objet",
+          "description"
+        ],
+        "filtres": [
+          {
+            "champ": "urgence"
+          }
+        ],
+        "tri": {
+          "souhaitee_le": "DESC"
+        },
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 12,
+          "espacement": "large",
+          "responsive": [
+            {
+              "sous": "tablette",
+              "colonnes": 6
+            },
+            {
+              "sous": "telephone",
+              "colonnes": 1,
+              "espacement": "serre"
+            }
+          ],
+          "composants": [
+            {
+              "texte": "Décrivez la demande en une ligne, puis précisez si besoin.",
+              "style": "aide",
+              "largeur": 12
+            },
+            {
+              "champ": "objet",
+              "x": 1,
+              "y": 2,
+              "largeur": 8
+            },
+            {
+              "champ": "urgence",
+              "x": 9,
+              "y": 2,
+              "largeur": 4
+            },
+            {
+              "section": "Contexte",
+              "style": "carte",
+              "couleur": "bleu",
+              "x": 1,
+              "y": 3,
+              "largeur": 12,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "equipement",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 8
+                },
+                {
+                  "champ": "souhaitee_le",
+                  "x": 9,
+                  "y": 1,
+                  "largeur": 4
+                },
+                {
+                  "champ": "description",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12,
+                  "taille": "grande"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

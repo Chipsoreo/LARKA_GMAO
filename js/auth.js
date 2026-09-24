@@ -63,7 +63,7 @@ async function doLogin() {
 
 async function doLogout() {
   // Nettoyer les intervalles
-  if (window.App && App._badgeInterval) {
+  if ((typeof App !== 'undefined' && App) && App._badgeInterval) {
     clearInterval(App._badgeInterval);
     App._badgeInterval = null;
   }
@@ -279,6 +279,9 @@ async function loadSSOButtons() {
     const res  = await fetch('api/index.php?action=auth_config');
     const data = await res.json();
     const cfg  = data.data || {};
+    // Version affichée sur la page de connexion (source : version.json).
+    const vEl = document.getElementById('loginVersion');
+    if (vEl && cfg.version) vEl.textContent = cfg.version;
     const container = document.getElementById('ssoButtons');
     if (!container) return;
 
