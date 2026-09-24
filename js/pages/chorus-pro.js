@@ -93,7 +93,7 @@ async function renderChorus(){
   c.innerHTML = `<div class="card" style="padding:28px">Chargement Chorus Pro…</div>`;
   try {
     const visibility = await ChorusApi.visibility();
-    if (window.App) App.chorusVisibility = visibility;
+    if ((typeof App !== 'undefined' && App)) App.chorusVisibility = visibility;
     if (!visibility.allowed) {
       c.innerHTML = _renderChorusBlocked(visibility);
       return;

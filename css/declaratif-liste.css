@@ -1,0 +1,134 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Larka — listes des modules déclaratifs
+   ═══════════════════════════════════════════════════════════════════════════
+   Un tableau large poussait la page entière : la barre latérale se décalait,
+   les boutons du haut sortaient du cadre, et l'on défilait horizontalement sur
+   tout l'écran pour lire une colonne.
+
+   Le tableau défile désormais DANS son cadre. Le reste de la page ne bouge pas.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dp-tableau-cadre {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.dp-tableau-cadre > table { min-width: max-content; }
+
+/* Les boutons d'arbitrage restent sur une ligne, sans étirer la colonne. */
+.dp-tableau-cadre td:last-child { white-space: nowrap; }
+
+@media print {
+  .dp-tableau-cadre { overflow: visible !important; }
+  .dp-tableau-cadre > table { min-width: 0 !important; width: 100% !important; }
+}
+
+/* ── Calendrier des modules ──────────────────────────────────────────────────
+   Jours en colonnes, créneaux en lignes : la largeur est bornée par la semaine.
+
+   La carte ne s'étire plus sur tout l'écran : avec un seul jour de données,
+   elle occupait deux mille pixels pour une grille de deux cents, et le
+   planning avait l'air perdu au milieu du vide. Elle épouse maintenant sa
+   grille, quitte à ne prendre qu'un tiers de l'écran — ce qui est la bonne
+   proportion pour un jour. */
+
+.dp-cal-carte { display: inline-block; max-width: 100%; }
+
+.dp-cal {
+  width: auto;
+  max-width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+/* Assez large pour un nom, une plaque et trois boutons côte à côte. */
+.dp-cal thead th:not(.dp-cal-h) { width: 168px; }
+
+.dp-cal th, .dp-cal td {
+  padding: 6px 8px;
+  border-radius: 6px;
+  vertical-align: top;
+}
+.dp-cal thead th {
+  background: var(--gray-bg);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+.dp-cal .dp-cal-h {
+  width: 116px;
+  background: var(--gray-bg);
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Une case libre n'a pas besoin d'attirer l'œil : elle est discrète, et ce sont
+   les créneaux pris qui ressortent. L'inverse — du vert vif partout — rendait
+   le planning illisible dès qu'il était vide. */
+.dp-cal-libre {
+  background: rgba(22, 163, 74, .10);
+  border-left: 3px solid rgba(22, 163, 74, .55);
+  color: #166534;
+  text-align: center;
+  font-size: 11px;
+  padding-top: 10px !important;
+}
+.dp-cal-attente { background: #fef3c7; border-left: 3px solid #f59e0b; color: #78350f; }
+.dp-cal-pris    { background: #fee2e2; border-left: 3px solid #dc2626; color: #7f1d1d; }
+
+/* Plusieurs réservations peuvent partager une case : elles s'empilent, séparées
+   par un filet, plutôt que de s'agglutiner en un pavé illisible. */
+.dp-cal-resa + .dp-cal-resa {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, .18);
+}
+.dp-cal-qui {
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dp-cal-sub {
+  font-size: 11px;
+  opacity: .8;
+  line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dp-cal-actions { display: flex; gap: 4px; margin-top: 6px; }
+.dp-cal-b {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, .85);
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.dp-cal-b:hover { background: #fff; }
+
+/* Un thème sombre ne doit pas rendre ces aplats illisibles : le texte reste
+   foncé sur fond clair, c'est le sens même du code couleur. */
+body[data-theme] .dp-cal-libre,
+body[data-theme] .dp-cal-attente,
+body[data-theme] .dp-cal-pris { color: #1a1a1a !important; }
+
+@media print {
+  /* Sur papier on occupe toute la feuille : la largeur est imposée par le
+     format, pas par l'écran. */
+  .dp-cal-carte { display: block; }
+  .dp-cal { border-spacing: 0; font-size: 8.5pt; width: 100% !important; }
+  .dp-cal thead th:not(.dp-cal-h) { width: auto !important; }
+  .dp-cal th, .dp-cal td { border: 1px solid #999 !important; border-radius: 0; }
+  .dp-cal-actions { display: none !important; }
+}

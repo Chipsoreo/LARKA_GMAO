@@ -318,7 +318,7 @@ const PushManager_GMAO = (function() {
       _retryTimer = null;
       _retryCount++;
       // Ne retenter que si l'utilisateur est connecté
-      if (window.App?.currentUser) {
+      if ((typeof App !== 'undefined' && App)?.currentUser) {
         await checkExistingSubscription();
       }
     }, delay);
@@ -571,7 +571,7 @@ const PushManager_GMAO = (function() {
     if (Notification.permission !== 'granted') return;
 
     // Si l'utilisateur n'est pas connecté, ne rien faire
-    if (!window.App?.currentUser) return;
+    if (!(typeof App !== 'undefined' && App)?.currentUser) return;
 
     const lastSync = parseInt(localStorage.getItem(STORAGE_KEY_SYNC) || '0', 10);
     const elapsed = Date.now() - lastSync;

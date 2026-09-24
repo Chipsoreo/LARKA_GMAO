@@ -254,7 +254,10 @@ if ($action === 'interventions') {
             json_ok($db->getAllInterventions());
         }
     }
-    if ($method==='POST')   json_ok(['id' => $db->addIntervention(get_body(), $user['Login'])]);
+    if ($method==='POST') {
+        $nouvelId = $db->addIntervention(get_body(), $user['Login']);
+        json_ok(['id' => $nouvelId]);
+    }
     if ($method==='PUT')    { $db->updateIntervention($id, get_body(), $user['Login']); json_ok('OK'); }
     if ($method==='DELETE') {
         // Raison optionnelle de la suppression (saisie côté UI). Comme la

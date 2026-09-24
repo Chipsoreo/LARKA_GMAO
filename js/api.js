@@ -113,8 +113,8 @@ async function _apiRequestRaw(action, method = 'GET', body = null, id = null) {
     if (res.status === 401) {
       // Ne déclencher forceLogout que si l'utilisateur était connecté
       // (évite une boucle de reload infinie sur la page de login)
-      if (window.App?.currentUser) {
-        window.App.forceLogout();
+      if ((typeof App !== 'undefined' && App)?.currentUser) {
+        (typeof App !== 'undefined' && App).forceLogout();
       }
       throw new Error('Session expirée. Veuillez vous reconnecter.');
     }
@@ -231,7 +231,10 @@ const ListesApi = {
     });
   },
   invalidateCache: ()                          => { Object.keys(_listesCache).forEach(k => delete _listesCache[k]); },
-  create:         (categorie, valeur, ordre, obligatoire, saisieLibre) => { ListesApi.invalidateCache(); return apiRequest('listes', 'POST', { categorie, valeur, ordre, obligatoire: obligatoire||0, saisieLibre: saisieLibre||0 }); },
+  // « obligatoire » et « saisieLibre » omis ⇒ la valeur hérite des réglages de
+  // sa catégorie, côté serveur. Le « ||0 » d'avant transformait « je ne me
+  // prononce pas » en « non », et écrasait le réglage à chaque ajout.
+  create:         (categorie, valeur, ordre, obligatoire, saisieLibre) => { ListesApi.invalidateCache(); return apiRequest('listes', 'POST', Object.assign({ categorie, valeur, ordre }, obligatoire === undefined ? {} : { obligatoire }, saisieLibre === undefined ? {} : { saisieLibre })); },
   update:         (id, valeur, ordre, actif, obligatoire, saisieLibre) => { ListesApi.invalidateCache(); return apiRequest('listes', 'PUT', { valeur, ordre, actif, obligatoire: obligatoire||0, saisieLibre: saisieLibre||0 }, id); },
   delete:         (id, force = false)          => { ListesApi.invalidateCache(); return apiRequest('listes', 'DELETE', force ? { force: true } : {}, id); },
   getUsage:       (id)                         => apiRequest(`listes_usage`, 'GET', null, id),

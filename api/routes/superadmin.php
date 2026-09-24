@@ -916,10 +916,33 @@ if ($action === 'superadmin_tenant_purge_db' && $method === 'POST') {
 }
 
 // ── Modules activés/désactivés du tenant ─────────────────────────────────────
-// GET  : retourne la liste des modules désactivés pour le tenant actif
-// POST : enregistre la liste {key: 'tenant_key', disabled: ['energie','chorus',...]}
+// GET  : { disabled: ['energie',…] }
+// POST : { key: 'tenant_key', disabled: [...], extensions: [...] }
+//
+// DEUX LOGIQUES OPPOSÉES, ET C'EST VOULU :
+//   • modules du cœur   → liste des DÉSACTIVÉS (opt-out). Notre code, actif par
+//                         défaut : un nouveau tenant a tout, on retire ensuite.
+//   • modules externes  → liste des ACTIVÉS (opt-in). Du code tiers ne doit
+//                         JAMAIS arriver chez un tenant sans que quelqu'un l'ait
+//                         explicitement voulu pour LUI. Un nouveau tenant part
+//                         donc sans aucune extension, même si le serveur en a
+//                         installé dix pour d'autres clients.
+// ── Modules du CŒUR désactivables par client ────────────────────────────────
+//
+// Cet écran ne portait pas que les modules du cœur : il servait aussi à
+// affecter les EXTENSIONS à chaque client, en opt-in. Ce contrôle a été retiré.
+//
+// Il n'isolait rien — le code et l'état d'installation étaient partagés, la
+// liste ne faisait que masquer à l'exécution un module installé pour tous. Et
+// il faisait valider par l'hébergeur une décision d'administrateur déjà prise
+// à l'installation, ce qui produisait surtout des modules affichés « Actifs »
+// et pourtant invisibles pour leurs utilisateurs.
+//
+// Une extension s'installe désormais pour le client chez qui on est connecté,
+// et pour lui seul : data/extensions/tenants/<client>/.
 if ($action === 'superadmin_tenant_modules') {
     require_superadmin();
+
     if ($method === 'GET') {
         $key = trim($_GET['key'] ?? '');
         if ($key === '') json_error('Clé tenant manquante.');
@@ -936,6 +959,25 @@ if ($action === 'superadmin_tenant_modules') {
                 $decoded = json_decode($val, true);
                 if (is_array($decoded)) $list = $decoded;
             }
+            // ── L'AFFECTATION DES EXTENSIONS N'EXISTE PLUS ICI ───────────
+            //
+            // Le super admin cochait quelles extensions un client pouvait
+            // utiliser. Ce contrôle a été retiré pour deux raisons.
+            //
+            // Il n'isolait rien : le code et l'état d'installation étaient
+            // partagés entre tous les clients, et la liste ne faisait que
+            // masquer à l'exécution un module installé pour tout le monde.
+            // L'isolation se fait désormais par le chemin — chaque client a son
+            // dossier — et un module absent de chez lui n'existe pas chez lui.
+            //
+            // Et il faisait valider par l'hébergeur une décision qui ne lui
+            // revient pas : installer un module est déjà un choix
+            // d'administrateur, fait après lecture des permissions demandées.
+            // La double approbation produisait surtout des modules affichés
+            // « Actifs » et pourtant invisibles pour leurs utilisateurs.
+            //
+            // « modules_disabled » reste : il concerne les modules du CŒUR,
+            // que l'hébergeur a de bonnes raisons de pouvoir couper.
             json_ok(['disabled' => $list]);
         } catch (\Throwable $e) {
             json_error('Erreur lecture : ' . $e->getMessage());
@@ -952,21 +994,29 @@ if ($action === 'superadmin_tenant_modules') {
                   'archives','statsAvancees','legifrance','chorus','configuration'];
         $disabled = array_values(array_filter($disabled, fn($m) => in_array($m, $known, true)));
 
+        // Extensions : on ne retient que celles réellement installées et non
         $tenants = TenantResolver::getAllTenants();
         if (!isset($tenants[$key]) || !isset($tenants[$key]['base_de_donnees'])) {
             json_error('Tenant introuvable : ' . $key);
         }
         try {
             $tdb = new \Database($tenants[$key]['base_de_donnees']);
-            $val = json_encode($disabled, JSON_UNESCAPED_UNICODE);
-            // Upsert
-            $exists = $tdb->fetchOne("SELECT Id FROM Configuration WHERE Cle = :k", ['k' => 'modules_disabled']);
-            if ($exists) {
-                $tdb->execute("UPDATE Configuration SET Valeur = :v WHERE Cle = :k", ['v' => $val, 'k' => 'modules_disabled']);
-            } else {
-                $tdb->execute("INSERT INTO Configuration (Cle, Valeur) VALUES (:k, :v)", ['k' => 'modules_disabled', 'v' => $val]);
-            }
-            json_ok(['disabled' => $disabled, 'message' => count($disabled) . ' module(s) désactivé(s).']);
+
+            $upsert = function (\Database $tdb, string $cle, string $valeur): void {
+                $exists = $tdb->fetchOne("SELECT Id FROM Configuration WHERE Cle = :k", ['k' => $cle]);
+                if ($exists) {
+                    $tdb->execute("UPDATE Configuration SET Valeur = :v WHERE Cle = :k",
+                                  ['v' => $valeur, 'k' => $cle]);
+                } else {
+                    $tdb->execute("INSERT INTO Configuration (Cle, Valeur) VALUES (:k, :v)",
+                                  ['k' => $cle, 'v' => $valeur]);
+                }
+            };
+
+            $upsert($tdb, 'modules_disabled', json_encode($disabled, JSON_UNESCAPED_UNICODE));
+
+            json_ok(['disabled' => $disabled,
+                     'message' => count($disabled) . ' module(s) désactivé(s).']);
         } catch (\Throwable $e) {
             json_error('Erreur écriture : ' . $e->getMessage());
         }
@@ -1555,7 +1605,169 @@ function _sa_backup_filename(string $tenantKey, string $driver, bool $compress):
  *
  * @return array{path: string, size: int, name: string}
  */
-function _sa_do_backup(array $tenant, ?string $customDir, bool $overrideCompress = null): array {
+/**
+ * Dossiers de FICHIERS d'un client — ce que le SQL ne contient pas.
+ *
+ * ⚠️ UNE SAUVEGARDE SQL N'EST PAS UNE SAUVEGARDE.
+ * Le dump couvre toutes les tables, y compris celles créées par les modules
+ * (« ext_… ») et les documents, stockés en base dans une colonne. Mais six
+ * familles de fichiers vivent SUR LE DISQUE et n'y figurent pas :
+ *
+ *   data/plans/          images de fond des plans
+ *   data/fonds/          fonds d'écran personnels
+ *   data/extensions/     déclarations des modules, paquets reçus, état
+ *   data/thematiques/    thèmes et packs de langue installés
+ *   data/urgences/       pièces jointes des procédures d'urgence
+ *   extensions/config/   configuration des modules, dont leurs listes
+ *
+ * Restaurer le seul SQL rendait donc une base complète et des plans sans image,
+ * des modules « installés » dont le code manquait, des listes vides. Le défaut
+ * ne se voit qu'au moment de la restauration — le pire moment.
+ *
+ * Rend la liste des chemins existants, chacun avec sa taille.
+ */
+function _sa_dossiers_fichiers(string $tenantKey): array
+{
+    require_once __DIR__ . '/../extensions/Paquet.php';
+    $racine = dirname(__DIR__, 2);
+
+    // Le sous-chemin par client s'applique aux dossiers isolés.
+    $t = '';
+    if (class_exists('TenantResolver') && TenantResolver::isMultiTenant()
+        && $tenantKey !== '' && $tenantKey !== 'default') {
+        $t = '/tenants/' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $tenantKey);
+    }
+
+    $candidats = [
+        'data/plans' . $t,
+        'data/fonds' . $t,
+        'data/extensions' . $t,
+        // ⚠️ « data/thematiques » MANQUAIT : c'est là que vivent les thèmes et
+        // les packs de langue installés, isolés par client comme les modules.
+        // Une restauration rendait donc une interface revenue à l'habillage
+        // d'origine, sans que rien ne dise pourquoi.
+        'data/thematiques' . $t,
+        // Ces deux-là ne portent PAS de sous-chemin par client : data/urgences
+        // est un dossier unique dans le produit, et extensions/config isole ses
+        // clients à l'intérieur. L'archive d'un client embarque donc les médias
+        // d'urgence et les configurations de tous — à savoir avant de restaurer
+        // une sauvegarde sur une installation qui en sert plusieurs.
+        'data/urgences',
+        'extensions/config',
+    ];
+    $out = [];
+    foreach ($candidats as $rel) {
+        $abs = $racine . '/' . $rel;
+        if (!is_dir($abs)) continue;
+        $taille = 0; $n = 0;
+        foreach (new RecursiveIteratorIterator(
+                     new RecursiveDirectoryIterator($abs, FilesystemIterator::SKIP_DOTS)) as $f) {
+            if ($f->isFile()) { $taille += $f->getSize(); $n++; }
+        }
+        if ($n > 0) $out[] = ['chemin' => $rel, 'absolu' => $abs,
+                              'fichiers' => $n, 'octets' => $taille];
+    }
+    return $out;
+}
+
+/**
+ * Archive les fichiers à côté du dump SQL.
+ *
+ * Un .tar.gz porté par le même horodatage que le .sql.gz : les deux se
+ * retrouvent ensemble dans le dossier de sauvegarde, et l'on voit du premier
+ * coup d'œil s'il en manque un.
+ *
+ * ⚠️ CETTE SAUVEGARDE NE SE FAISAIT PRESQUE JAMAIS, ET LE DISAIT À PEINE.
+ *
+ * Elle appelait « tar » par exec(), après avoir testé sa présence par
+ * shell_exec(). Or le pool PHP-FPM livré avec Larka désactive les deux :
+ * `disable_functions = exec,passthru,shell_exec,system,…`. Sur toute
+ * installation suivant la procédure documentée, le test échouait donc au
+ * premier coup, la fonction répondait « tar absent — fichiers NON
+ * sauvegardés », et la sauvegarde repartait avec le seul .sql.gz.
+ *
+ * Vu de l'exploitant, c'était une sauvegarde réussie avec une mention discrète.
+ * Vu du jour de la restauration : une base complète, et des plans, des fonds,
+ * des médias d'urgence et des configurations de modules disparus. Un défaut de
+ * sauvegarde ne se découvre qu'au pire moment — c'est ce qui le rend grave.
+ *
+ * On passe donc par PharData, intégré à PHP : pas de shell, rien à installer,
+ * et le pool peut rester durci. « tar » ne sert plus que de secours quand
+ * l'extension Phar n'est pas là.
+ */
+function _sa_archiver_fichiers(string $tenantKey, string $dir, string $baseNom): array
+{
+    $dossiers = _sa_dossiers_fichiers($tenantKey);
+    if ($dossiers === []) {
+        return ['fait' => false, 'raison' => 'aucun fichier à sauvegarder'];
+    }
+
+    $racine = dirname(__DIR__, 2);
+    $cible  = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $baseNom . '-fichiers.tar.gz';
+    $resume = ['dossiers' => array_column($dossiers, 'chemin'),
+               'total_fichiers' => array_sum(array_column($dossiers, 'fichiers'))];
+
+    // ── Voie normale : PharData ──────────────────────────────────────────
+    // phar.readonly ne s'applique qu'aux archives EXÉCUTABLES (.phar) ; un
+    // .tar reste inscriptible même quand il vaut 1, ce qui est le cas par
+    // défaut et doit le rester.
+    if (class_exists('PharData')) {
+        $tar = substr($cible, 0, -3);           // …-fichiers.tar
+        try {
+            if (is_file($tar))   @unlink($tar);
+            if (is_file($cible)) @unlink($cible);
+
+            $phar = new PharData($tar);
+            foreach ($dossiers as $d) {
+                // Chemins RELATIFS à la racine : l'archive se déplie là où on
+                // la déplie, et non dans un /var/www/… figé à la sauvegarde.
+                // (buildFromDirectory() rangerait tout à plat, en perdant le
+                //  « data/plans/ » qui dit où le fichier doit revenir.)
+                $base = rtrim($d['chemin'], '/');
+                foreach (new RecursiveIteratorIterator(
+                             new RecursiveDirectoryIterator($d['absolu'],
+                                 FilesystemIterator::SKIP_DOTS)) as $f) {
+                    if (!$f->isFile()) continue;
+                    $interne = $base . '/' . ltrim(str_replace('\\', '/',
+                        substr($f->getPathname(), strlen($d['absolu']))), '/');
+                    $phar->addFile($f->getPathname(), $interne);
+                }
+            }
+            $phar->compress(Phar::GZ);
+            unset($phar);
+            if (is_file($tar)) @unlink($tar);
+
+            if (is_file($cible)) {
+                return ['fait' => true, 'fichier' => basename($cible),
+                        'octets' => filesize($cible), 'moyen' => 'phardata'] + $resume;
+            }
+        } catch (\Throwable $e) {
+            if (isset($tar) && is_file($tar)) @unlink($tar);
+            // On retombe sur « tar », s'il est joignable.
+        }
+    }
+
+    // ── Secours : le tar du système, si le shell est ouvert ──────────────
+    if (function_exists('exec') && function_exists('shell_exec')
+        && trim((string)@shell_exec('command -v tar')) !== '') {
+        $args = implode(' ', array_map(fn($d) => escapeshellarg($d['chemin']), $dossiers));
+        @exec(sprintf('tar -C %s -czf %s %s 2>&1',
+            escapeshellarg($racine), escapeshellarg($cible), $args), $sortie, $code);
+        if ($code === 0 && is_file($cible)) {
+            return ['fait' => true, 'fichier' => basename($cible),
+                    'octets' => filesize($cible), 'moyen' => 'tar'] + $resume;
+        }
+        return ['fait' => false,
+                'raison' => 'tar a échoué : ' . implode(' ', array_slice($sortie ?? [], 0, 2))]
+               + $resume;
+    }
+
+    return ['fait' => false,
+            'raison' => 'ni l\'extension Phar ni « tar » ne sont disponibles — '
+                      . 'fichiers NON sauvegardés'] + $resume;
+}
+
+function _sa_do_backup(array $tenant, ?string $customDir, ?bool $overrideCompress = null): array {
     $dbCfg = $tenant['base_de_donnees'] ?? [];
     $driver = $dbCfg['driver'] ?? 'sqlite';
     $sv = $tenant['sauvegarde'] ?? [];
@@ -1594,7 +1806,9 @@ function _sa_do_backup(array $tenant, ?string $customDir, bool $overrideCompress
         // pgsql / mariadb : dump SQL via PDO (fallback universel sans dépendre de pg_dump/mysqldump)
         $db = new \Database($dbCfg);
         $db->ensureFullSchema(); // s'assurer que toutes les colonnes lazy sont présentes
-        $sql = _sa_dump_sql_via_pdo($db->getPdo(), $driver);
+        // [] : une sauvegarde doit pouvoir restaurer une installation entière,
+        // comptes compris. L'export entre clients, lui, garde l'exclusion.
+        $sql = _sa_dump_sql_via_pdo($db->getPdo(), $driver, []);
         if ($compress) {
             $gz = gzopen($outPath, 'wb9');
             if (!$gz) throw new \RuntimeException("Impossible d'ouvrir {$outPath}");
@@ -1607,10 +1821,17 @@ function _sa_do_backup(array $tenant, ?string $customDir, bool $overrideCompress
         }
     }
 
+    // ── Les fichiers, à côté du SQL ──────────────────────────────────────
+    // Le dump ne les contient pas : ils vivent sur le disque. Une sauvegarde
+    // qui les oublie restaure une base complète et des plans sans image.
+    $base = preg_replace('/\.sql(\.gz)?$/', '', $fname);
+    $fichiers = _sa_archiver_fichiers($tenantKey, $dir, $base);
+
     return [
         'path' => $outPath,
         'size' => filesize($outPath) ?: 0,
         'name' => $fname,
+        'fichiers' => $fichiers,
     ];
 }
 
@@ -1638,12 +1859,28 @@ const SA_TABLES_EXCLUES_IMPORT_EXPORT = ['Utilisateurs', 'PushSubscriptions'];
  * Les tables listées dans SA_TABLES_EXCLUES_IMPORT_EXPORT ne sont PAS dumpées
  * afin que les comptes de la base cible soient préservés à l'import.
  */
-function _sa_dump_sql_via_pdo(PDO $pdo, string $driver): string {
+function _sa_dump_sql_via_pdo(PDO $pdo, string $driver, ?array $exclure = null): string {
+    // ⚠️ L'EXCLUSION DÉPEND DE L'USAGE, ET ELLE ÉTAIT FIGÉE.
+    //
+    // « Utilisateurs » et « PushSubscriptions » sont écartés d'un EXPORT : on
+    // transfère des données d'un client à un autre sans écraser ses comptes.
+    // C'est juste pour un export ; c'était une faute pour une SAUVEGARDE.
+    //
+    // Une sauvegarde qui omet les comptes ne restaure pas une installation :
+    // après une perte de disque, on retrouve ses équipements, ses contrats et
+    // cinq ans de factures — et plus personne pour se connecter. Le défaut ne
+    // se voit qu'au moment où l'on en a besoin.
+    //
+    // L'appelant décide donc : null = comportement d'export, [] = tout.
+    $exclure = $exclure ?? SA_TABLES_EXCLUES_IMPORT_EXPORT;
+
     $out = "-- Larka dump tenant — " . date('Y-m-d H:i:s') . "\n";
     $out .= "-- Driver: {$driver}\n";
     $out .= "-- IMPORTANT : l'import via Larka purge la base avant d'exécuter ce script.\n";
-    $out .= "-- Tables exclues (comptes utilisateurs préservés côté cible) : "
-          . implode(', ', SA_TABLES_EXCLUES_IMPORT_EXPORT) . "\n\n";
+    $out .= $exclure === []
+        ? "-- Sauvegarde COMPLÈTE : toutes les tables, comptes compris.\n\n"
+        : "-- Tables exclues (comptes utilisateurs préservés côté cible) : "
+          . implode(', ', $exclure) . "\n\n";
 
     // Lister les tables
     if ($driver === 'pgsql') {
@@ -1653,7 +1890,7 @@ function _sa_dump_sql_via_pdo(PDO $pdo, string $driver): string {
     }
 
     // Filtrer les tables exclues (case-insensitive pour robustesse)
-    $exclusLower = array_map('strtolower', SA_TABLES_EXCLUES_IMPORT_EXPORT);
+    $exclusLower = array_map('strtolower', $exclure);
     $tables = array_values(array_filter($tables, function($t) use ($exclusLower) {
         return !in_array(strtolower((string)$t), $exclusLower, true);
     }));
@@ -2258,7 +2495,26 @@ if ($action === 'superadmin_tenant_import_db' && $method === 'POST') {
             $executed = 0;
             try {
                 foreach ($stmts as $s) {
-                    $s = trim($s);
+                    // ⚠️ UN COMMENTAIRE EN TÊTE FAISAIT SAUTER L'ORDRE QUI SUIT.
+                    //
+                    // Le découpage se fait sur « ; », donc un fichier commenté
+                    // produit des morceaux de la forme :
+                    //
+                    //     -- Equipements (10)
+                    //     INSERT INTO Equipements ...
+                    //
+                    // « str_starts_with($s, '--') » écartait le morceau ENTIER,
+                    // INSERT compris. Sur un export commenté, une ligne par
+                    // section disparaissait — sans erreur, sans avertissement,
+                    // et sans que le compteur d'ordres exécutés le laisse voir.
+                    //
+                    // On retire donc les lignes de commentaire en tête, puis on
+                    // regarde s'il reste quelque chose à exécuter.
+                    // Le motif tolère les lignes VIDES entre les commentaires :
+                    // un en-tête de fichier en comporte toujours, et s'arrêter
+                    // à la première laissait le reste du bloc — donc l'ordre
+                    // qui suit — considéré comme un commentaire.
+                    $s = trim(preg_replace('/\A(?:[ \t]*(?:--[^\n]*)?\n)+/', '', $s));
                     if ($s === '' || str_starts_with($s, '--')) continue;
                     try {
                         $pdo->exec($s);

@@ -23,6 +23,13 @@ $blockedPrefixes = [
     '.git/',
     '.svn/',
     '.env',
+    // Outils de développement et documentation. Ils ne sont pas déployés en
+    // production (install.sh les exclut), mais le serveur intégré, lui, sert
+    // le dossier de travail tel quel : sans ces deux lignes, « outils/epreuves/ »
+    // — qui décrit épreuve par épreuve ce contre quoi Larka se défend — était
+    // téléchargeable depuis n'importe quel navigateur du réseau local.
+    'outils/',
+    'Documentations/',
 ];
 foreach ($blockedPrefixes as $prefix) {
     if ($uri === rtrim($prefix, '/') || str_starts_with($uri, $prefix)) {
@@ -30,8 +37,29 @@ foreach ($blockedPrefixes as $prefix) {
     }
 }
 
+// ⚠️ CETTE RÈGLE LAISSAIT ENCORE PASSER .js, .css ET .svg.
+//
+// Elle datait du temps où un module livrait son propre code client. Un module
+// est aujourd'hui une déclaration JSON : son paquet ne peut contenir aucun de
+// ces formats, et sa seule ressource — une image — est servie par la route
+// « ext_image », qui exige une session, relit les octets et pose une CSP.
+//
+// L'exception ne pouvait donc plus servir que ce qui n'a rien à faire là : un
+// fichier déposé à la main, ou restauré d'une sauvegarde ancienne. Le dossier
+// est refusé en entier, comme sous nginx.
+if (str_starts_with($uri, 'extensions/')) {
+    deny_request(404, 'Introuvable');
+}
+
+// Les dossiers « securite/ » et « sdk/ » étaient refusés ici ; ils n'existent
+// plus dans le produit — partis avec le bac à sable navigateur et le SDK
+// d'auteur — et leurs règles ont disparu avec eux. Les outils de
+// développement qui restent (outils/, Documentations/) sont couverts par la
+// liste de préfixes refusés en tête de ce fichier.
+
 $blockedExact = [
     'config.json',
+    'config.key',
     'api/env.php',
 ];
 if (in_array($uri, $blockedExact, true)) {
@@ -71,6 +99,13 @@ if (str_ends_with(strtolower($uri), '.php')) {
     if (!in_array($uri, $allowedPhp, true)) {
         deny_request(404, 'Introuvable');
     }
+}
+
+// Ancien nom du logo (iOS le demande par convention) → icon.png
+if ($uri === 'apple-touch-icon.png') {
+    header('Content-Type: image/png');
+    readfile(__DIR__ . '/icon.png');
+    exit;
 }
 
 // Fichiers statiques

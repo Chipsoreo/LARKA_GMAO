@@ -6,7 +6,7 @@
 Logiciel   : Larka — Gestion de Maintenance Assistée par Ordinateur (GMAO)
 Auteur     : Mickaël Larcin (alias « Chipsoreo »)
 Copyright  : © 2025-2026 Mickaël Larcin. Tous droits réservés.
-Version de la licence : 1.0 — date d'effet : 2026
+Version de la licence : 1.1 — date d'effet : septembre 2026
 Contact    : larcin.mickael@yahoo.com
 
 SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
@@ -52,6 +52,13 @@ propriétaire.
 1.6  « Organisation » : toute personne morale — entreprise, administration,
      collectivité, association ou autre — qui installe, déploie ou utilise le
      Logiciel, ou pour le compte de laquelle le Logiciel est utilisé.
+1.7  « Module » : un fichier ou un paquet écrit dans le format déclaratif du
+     Logiciel (extensions « .larka » et « .larka_thematique »), qui DÉCRIT des
+     données, des écrans, un habillage ou des traductions, et que le Logiciel
+     interprète. Un Module ne contient ni code exécutable, ni tout ou partie du
+     Code source du Logiciel : le format lui-même l'interdit, et l'installation
+     refuse un paquet qui en contiendrait. Les Modules livrés par l'Auteur avec
+     le Logiciel en font partie et ne sont pas visés par la présente définition.
 
 
 --------------------------------------------------------------------------------
@@ -96,6 +103,9 @@ encadré par la section 5. L'usage du Logiciel selon la présente section
 est et demeure GRATUIT, et l'Auteur entend le maintenir gratuit. Les sections 4
 et 5 en fixent les limites.
 
+Écrire un Module ne relève pas de cette section : cela ne requiert aucun droit
+concédé par l'Auteur, et la section 5 bis le précise.
+
 
 --------------------------------------------------------------------------------
 4. INTERDICTIONS (CE QUI EST INTERDIT SANS AUTORISATION ÉCRITE)
@@ -127,7 +137,33 @@ Sauf autorisation écrite et préalable de l'Auteur, il vous est interdit :
      mutualisé, infogérance, mise à disposition en ligne, mode « logiciel en
      tant que service » — que ce service soit gratuit ou payant. L'usage
      autorisé à la section 3.2 est un usage propre : celui du Licencié et de
-     son Organisation, pour ses besoins internes ;
+     son Organisation, pour ses besoins internes.
+
+     EXCEPTION — MUTUALISATION AU SEIN D'UN MÊME ENSEMBLE. Par dérogation à ce
+     qui précède, une Organisation peut héberger le Logiciel pour le compte
+     d'autres Organisations auxquelles elle est liée, à la triple condition
+     suivante :
+       a) le lien est structurel et préexistant : membres d'un même groupement
+          (établissement public de coopération intercommunale, syndicat mixte,
+          centre de gestion, groupement de commandes, groupement d'intérêt
+          public, fédération ou association dont les bénéficiaires sont
+          membres), ou sociétés d'un même groupe au sens de l'article L. 233-1
+          du Code de commerce ;
+       b) l'opération est SANS MARGE : seuls les coûts réellement supportés
+          peuvent être refacturés, et aucune redevance, aucun abonnement ni
+          aucune rémunération ne peut être perçu au titre du Logiciel
+          lui-même ;
+       c) chaque Organisation bénéficiaire accepte les présentes conditions
+          pour son propre compte (section 16).
+     Cette exception ne couvre ni l'ouverture du service à des tiers extérieurs
+     à l'ensemble ainsi défini, ni la prestation d'infogérance commerciale pour
+     le compte de clients.
+
+     Raison d'être : dans le secteur public, une petite commune sans service
+     informatique n'accède au Logiciel qu'à travers son intercommunalité ou son
+     centre de gestion. Interdire ce mode d'accès reviendrait à réserver le
+     Logiciel aux seules structures qui ont les moyens de l'héberger — soit
+     l'inverse de l'intention de l'Auteur ;
 4.8  d'utiliser le Logiciel, son Code source ou sa documentation comme données
      d'entraînement, d'ajustement ou d'évaluation d'un système d'intelligence
      artificielle ou d'apprentissage automatique, ni de les intégrer à un
@@ -159,13 +195,23 @@ cet article fixe.
      énoncées ci-dessous. Cette autorisation est personnelle, non exclusive, non
      transférable et non sous-licenciable.
 
-5.2  Obligation de communication. Vous vous engagez à communiquer à l'Auteur (à
-     l'adresse de contact indiquée en tête des présentes) toute Modification que
-     vous apportez au Logiciel, sans délai injustifié et, en tout état de cause,
-     au plus tard au moment de sa mise en production. Cette communication
-     comprend une description de la Modification et les éléments modifiés
-     correspondants. Le respect de cette obligation est une CONDITION de
-     l'autorisation accordée à l'article 5.1.
+5.2  Communication des Modifications. Vous vous engagez à communiquer à l'Auteur
+     (à l'adresse de contact indiquée en tête des présentes) les Modifications
+     que vous apportez au Logiciel, dans un délai raisonnable à compter de la
+     demande que l'Auteur vous en adresse. Cette communication comprend une
+     description de la Modification et les éléments modifiés correspondants.
+
+     Vous êtes en outre invité — sans y être tenu — à signaler spontanément
+     toute Modification corrigeant un défaut de sécurité : elle profite à tous
+     les autres Licenciés, et c'est le seul cas où le délai compte vraiment.
+
+     Cette obligation n'est PAS une condition de l'autorisation accordée à
+     l'article 5.1 : une Modification non encore communiquée n'est pas pour
+     autant une Modification non autorisée. Une version antérieure des présentes
+     en faisait une condition, ce qui plaçait en infraction tout Licencié ayant
+     corrigé une coquille sans écrire à l'Auteur le jour même. Une obligation
+     que personne ne peut tenir n'est pas une protection : c'est une fragilité
+     de plus dans le contrat.
 
 5.3  Régime des Modifications communiquées. Les Modifications ainsi communiquées
      constituent des Contributions au sens de la section 7 : l'Auteur peut, sans
@@ -195,6 +241,50 @@ cet article fixe.
      de la présente section. Cette mise à disposition ne confère aucun droit
      au-delà de ceux expressément énoncés ici, et notamment aucun droit de
      republication (article 4.6) ni de diffusion (article 5.4).
+
+
+--------------------------------------------------------------------------------
+5 bis. MODULES : CE QUI N'EST PAS UNE MODIFICATION
+--------------------------------------------------------------------------------
+5.8  Un Module n'est pas une Modification. Écrire un Module (article 1.7) ne
+     modifie pas le Logiciel : le Module est un fichier de données que le
+     Logiciel lit, comme un tableur lit un classeur. Il n'emprunte aucune ligne
+     du Code source, et le Logiciel n'exécute aucun code qu'il contiendrait —
+     le format ne sait pas en exprimer.
+
+     En conséquence, la section 5 ne s'applique pas aux Modules : vous n'avez
+     aucune autorisation à demander pour en écrire un, ni aucune obligation de
+     le communiquer à l'Auteur.
+
+5.9  Vous êtes propriétaire de vos Modules. Un Module que vous écrivez est une
+     œuvre distincte, dont vous êtes seul titulaire des droits. L'Auteur ne
+     revendique aucun droit sur lui, et la présente licence ne lui est pas
+     applicable : vous le publiez, le partagez, le vendez ou le gardez pour
+     vous, sous la licence de votre choix.
+
+     Les interdictions de la section 4 — et notamment les articles 4.1, 4.2 et
+     4.6 — ne visent que le Logiciel et ses Modifications. Elles ne concernent
+     pas vos Modules.
+
+5.10 Ce qu'un Module ne donne pas. Distribuer un Module n'est pas distribuer le
+     Logiciel : le bénéficiaire doit se le procurer lui-même auprès de l'Auteur
+     (article 3.1) et accepter les présentes. Un Module ne peut donc être vendu
+     ni présenté comme incluant le Logiciel, ni accompagné d'une copie de
+     celui-ci.
+
+5.11 Nom du Module. Par exception à l'article 4.9, vous pouvez indiquer que
+     votre Module est destiné à Larka ou compatible avec Larka — « module pour
+     Larka », « compatible Larka » — dès lors que cette mention est purement
+     descriptive, qu'elle ne donne pas votre Module pour une œuvre de l'Auteur
+     et qu'elle ne suggère ni approbation, ni partenariat, ni lien officiel.
+     Le nom propre de votre Module ne peut en revanche ni être « Larka », ni
+     l'incorporer.
+
+5.12 Responsabilité. L'Auteur ne fournit aucune garantie sur les Modules de
+     tiers, n'en assure ni le contrôle ni le suivi, et n'est pas responsable de
+     leurs effets (sections 8 et 9). L'Organisation qui installe un Module le
+     fait sous sa propre responsabilité, après avoir pris connaissance des
+     permissions que le Logiciel lui présente à l'installation.
 
 
 --------------------------------------------------------------------------------
@@ -382,7 +472,10 @@ disposition gratuite du Logiciel pour tous les autres.
      préavis, en cas de manquement à l'une quelconque de ses dispositions.
 14.2 À la cessation, vous devez immédiatement cesser tout usage et détruire
      toutes les copies du Logiciel en votre possession.
-14.3 Les sections 2, 7, 8, 9, 10, 11 et 16 survivent à la cessation.
+14.3 Les sections 2, 7, 8, 9, 10, 11 et 16 survivent à la cessation, ainsi que
+     l'article 5.9 : la cessation de la présente licence est sans effet sur les
+     droits que vous détenez sur vos propres Modules, qui ne vous ont jamais été
+     concédés par l'Auteur.
 
 
 --------------------------------------------------------------------------------

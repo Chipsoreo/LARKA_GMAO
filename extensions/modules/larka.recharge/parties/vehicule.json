@@ -1,0 +1,56 @@
+{
+  "$ref": "parties/arbitrage.json",
+  "place": {
+    "type": "choix",
+    "libelle": "Place",
+    "liste": "RechargePlace",
+    "groupe": "Emplacement",
+    "modifiable": 1,
+    "libre": false,
+    "ajout_autorise": true,
+    "defaut": "Peu importe",
+    "valeurs_initiales": [
+      "Peu importe",
+      "P1 — visiteurs",
+      "P2 — visiteurs",
+      "P3 — services",
+      "P4 — services",
+      "P5 — réservée SODEXTEC",
+      "P6 — réservée élus"
+    ],
+    "aide": "Les places réservées sont attribuées par le gestionnaire"
+  },
+  "borne": {
+    "type": "choix",
+    "libelle": "Borne",
+    "liste": "RechargeBorne",
+    "groupe": "Emplacement",
+    "modifiable": 1,
+    "libre": false,
+    "ajout_autorise": true,
+    "valeurs_initiales": [
+      "Borne A — Mairie",
+      "Borne B — Mairie",
+      "Borne C — Centre technique",
+      "Borne D — École"
+    ],
+    "aide": "Attribuée par le gestionnaire"
+  },
+  "immatriculation": {
+    "type": "texte",
+    "libelle": "Immatriculation",
+    "obligatoire": true,
+    "max": 12,
+    "groupe": "Véhicule",
+    "format_saisie": "immatriculation",
+    "exemple": "AB-123-CD",
+    "largeur_px": 150
+  },
+  "vehicule": {
+    "type": "texte",
+    "libelle": "Véhicule",
+    "max": 60,
+    "groupe": "Véhicule",
+    "exemple": "Renault Zoé"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "$ref": "parties/creneau.json",
+  "demandeur": {
+    "type": "texte",
+    "libelle": "Nom et prénom",
+    "obligatoire": true,
+    "max": 80,
+    "groupe": "Demande",
+    "defaut": "@utilisateur",
+    "aide": "Pré-rempli avec votre compte ; modifiable si vous réservez pour un collègue"
+  },
+  "service": {
+    "type": "choix",
+    "libelle": "Service",
+    "liste": "RechargeService",
+    "groupe": "Demande",
+    "modifiable": 1,
+    "libre": true,
+    "ajout_autorise": true,
+    "valeurs_initiales": [
+      "Direction",
+      "Services techniques",
+      "Urbanisme",
+      "État civil",
+      "Scolaire",
+      "Espaces verts",
+      "Police municipale"
+    ]
+  },
+  "motif": {
+    "type": "texte",
+    "libelle": "Motif",
+    "max": 120,
+    "groupe": "Demande"
+  }
+}

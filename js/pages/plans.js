@@ -295,6 +295,7 @@ function _renderMain(c) {
       <select id="planLineStyle" class="plan-mini-select" onchange="_p.lineStyle=this.value" style="display:none">${Object.entries(LINE_STYLES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select>
       <select id="planSymbol" class="plan-mini-select" onchange="_p.symbol=this.value" style="display:none">${Object.entries(PLAN_SYMBOLS).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select>
       <div class="plan-color-wrap" title="Couleur"><input type="color" id="planColor" value="${_p.color}" onchange="_p.color=this.value"></div>
+      <span id="planExtOutils" style="display:inline-flex;gap:4px;align-items:center"></span>
       <span id="planDrawStatus" class="plan-status"></span>
       <div style="flex:1"></div>
       <span id="planTraitOpts" style="display:none;gap:4px;align-items:center;flex-wrap:wrap">
@@ -498,6 +499,57 @@ function _pInitMap() {
     });
   }
   _p.map.on('click', _pMapClick); _p.map.on('mousemove', _pMapMove);
+
+  // ── Ancrage des extensions ────────────────────────────────────────────────
+  // Appelé après chaque (re)construction de la carte : les extensions
+  // replacent leurs outils, et rendrePoint() nettoie les précédents pour
+  // éviter les doublons.
+  if (typeof LarkaExtensions !== 'undefined') {
+    try {
+      LarkaExtensions.rendrePoint('plans.barre_outils',
+        document.getElementById('planExtOutils'), {
+          map: _p.map,
+          etageId: _p.etage?.Id ?? null,
+          batimentId: _p.batiment?.Id ?? null,
+          peutEditer: (typeof canEdit === 'function') ? canEdit() : false,
+          // L'extension ne touche pas aux gestionnaires de la carte : elle
+          // demande le prochain clic, et le cœur le lui transmet une fois.
+          surProchainClic: (cb, curseur) => {
+            _pExtProchainClic = cb;
+            const mc = document.getElementById('planMapContainer');
+            if (mc) mc.style.cursor = curseur || 'crosshair';
+          },
+          // Rattachement à une ZONE ou un POINT existant : l'extension reçoit
+          // l'élément sélectionné, pas une coordonnée. C'est ce qui permet à
+          // ses données de suivre le local même si la zone est redessinée.
+          surProchainElement: (cb, curseur) => {
+            _pExtProchainElement = cb;
+            const mc = document.getElementById('planMapContainer');
+            if (mc) mc.style.cursor = curseur || 'pointer';
+          },
+          annulerSelection: () => {
+            _pExtProchainElement = null;
+            _pExtProchainClic = null;
+            const mc = document.getElementById('planMapContainer');
+            if (mc) mc.style.cursor = '';
+          },
+          // Éléments de l'étage affiché, pour surligner ou lister sans
+          // requête supplémentaire.
+          elements: () => (_p.elements || []).map(e => ({
+            id: e.Id, nom: e.Nom || '', type: e.TypeElement, etageId: e.EtageId,
+          })),
+          surligner: (ids, couleur) => {
+            (_p.elements || []).forEach(e => {
+              const ly = _p.layers[e.Id];
+              if (!ly || !ly.setStyle) return;
+              if (ids.includes(e.Id)) {
+                ly.setStyle({ color: couleur || '#f59e0b', weight: 4 });
+              }
+            });
+          },
+        });
+    } catch (e) { console.warn('Extensions (plans) :', e); }
+  }
   _pUpdateScaleBar(); _p.map.on('zoomend', _pUpdateScaleBar);
   _pRenderRefMeter(); _pUpdateRefToggleBtn(); // conserver le mètre de référence tracé à travers les redraws
   // Synchroniser le sélecteur « Taille marqueurs » avec la valeur enregistrée de l'étage.
@@ -611,8 +663,24 @@ function _pToggleLockDist() { if(!_p.lockDistance){const v=prompt('Distance (px)
 function _pCloseLoop() { if(_p.drawCoords.length<3){toast('3+ points','error');return;} _p.drawCoords.push([..._p.drawCoords[0]]); _pFinish(); }
 
 // ══════════════════ CLICK CARTE ══════════════════
+// Une extension qui a demandé « le prochain clic sur le plan » (pose d'un
+// marqueur, mesure…) est servie ici, AVANT tous les outils du cœur, et la
+// demande est consommée. Sans ce court-circuit, le clic déclencherait aussi
+// l'outil de dessin actif.
+let _pExtProchainClic = null;
+
 function _pMapClick(e) {
   const lat=Math.round(e.latlng.lat*10)/10, lng=Math.round(e.latlng.lng*10)/10;
+
+  if (typeof _pExtProchainClic === 'function') {
+    const cb = _pExtProchainClic;
+    _pExtProchainClic = null;
+    const mc = document.getElementById('planMapContainer');
+    if (mc) mc.style.cursor = '';
+    try { cb({ lat, lng }); } catch (err) { console.error('[extension] clic plan', err); }
+    return;
+  }
+
   // Ref mètre
   if (_p.refMode) {
     _p.refCoords.push([lat,lng]);
@@ -767,7 +835,26 @@ function _pAddEl(el) {
 }
 
 // ══════════════════ SÉLECTION + VERTEX ══════════════════
-function _pSelectEl(el) { _p.selectedEl=el; _pShowProps(el); _pShowBottom(el); Object.entries(_p.layers).forEach(([id,ly])=>{if(ly.setStyle)ly.setStyle({weight:(id==el.Id?4:2)});}); _pClearVertexHandles(); if(canEdit()&&(el.TypeElement==='trait'||el.TypeElement==='zone'))_pShowVertexHandles(el); }
+// Une extension qui a demandé « le prochain élément sélectionné » (rattacher
+// une clé à une zone, par exemple) est servie ici, AVANT l'affichage des
+// propriétés, et la demande est consommée.
+let _pExtProchainElement = null;
+
+function _pSelectEl(el) {
+  if (typeof _pExtProchainElement === 'function') {
+    const cb = _pExtProchainElement;
+    _pExtProchainElement = null;
+    const mc = document.getElementById('planMapContainer');
+    if (mc) mc.style.cursor = '';
+    try {
+      cb({ id: el.Id, nom: el.Nom || '', type: el.TypeElement, etageId: el.EtageId });
+    } catch (err) { console.error('[extension] sélection plan', err); }
+    return;
+  }
+  _pSelectElInterne(el);
+}
+
+function _pSelectElInterne(el) { _p.selectedEl=el; _pShowProps(el); _pShowBottom(el); Object.entries(_p.layers).forEach(([id,ly])=>{if(ly.setStyle)ly.setStyle({weight:(id==el.Id?4:2)});}); _pClearVertexHandles(); if(canEdit()&&(el.TypeElement==='trait'||el.TypeElement==='zone'))_pShowVertexHandles(el); }
 function _pClearVertexHandles() { if(_p.vertexHandles?.length){_p.vertexHandles.forEach(h=>_p.map.removeLayer(h));_p.vertexHandles=[];} }
 
 function _pShowVertexHandles(el) {
@@ -1324,7 +1411,11 @@ async function _planDeleteOrphan(name) {
 }
 
 // ══════════════════ FOND, IMPORT, RECADRAGE ══════════════════
-function _planUploadFond() { if(!_p.etage){toast('Sélectionnez un étage','error');return;} const html='<div class="form-row"><p style="margin:0 0 8px;color:var(--gray-text);font-size:13px">Image de plan (PNG, JPG, SVG, PDF)</p><input id="pFF" type="file" accept="image/*,.pdf,.svg" class="input"></div>'; openModal('Image de fond',html,async()=>{const f=document.getElementById('pFF');if(!f.files[0]){toast('Fichier requis','error');return;}try{const res=await PlansApi.uploadFond(_p.etage.Id,f.files[0]);_p.etage.FondImage=res?.path||('data/plans/plan_'+_p.etage.Id+'_'+Date.now()+'.'+f.files[0].name.split('.').pop());closeModal();toast('Fond chargé','success');_pInitMap();}catch(e){toast(e.message,'error');}}); }
+function _planUploadFond() { if(!_p.etage){toast('Sélectionnez un étage','error');return;} // Le SVG est REFUSÉ par le serveur (il peut embarquer du JavaScript et
+      // s'exécuterait dans l'origine du site). Le proposer ici promettait un
+      // format que l'envoi rejette ensuite : l'utilisateur choisit son fichier,
+      // attend, et reçoit « Format non supporté » sans comprendre.
+      const html='<div class="form-row"><p style="margin:0 0 8px;color:var(--gray-text);font-size:13px">Image de plan (PNG, JPG, GIF, WebP, PDF)</p><input id="pFF" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf" class="input"></div>'; openModal('Image de fond',html,async()=>{const f=document.getElementById('pFF');if(!f.files[0]){toast('Fichier requis','error');return;}try{const res=await PlansApi.uploadFond(_p.etage.Id,f.files[0]);_p.etage.FondImage=res?.path||('data/plans/plan_'+_p.etage.Id+'_'+Date.now()+'.'+f.files[0].name.split('.').pop());closeModal();toast('Fond chargé','success');_pInitMap();}catch(e){toast(e.message,'error');}}); }
 function _planImport() { if(!_p.etage){toast('Sélectionnez un étage','error');return;} const html='<div class="form-row"><p style="margin:0 0 8px;font-size:13px">Importez des éléments :</p><ul style="margin:6px 0 12px;padding-left:20px;font-size:12px;color:var(--gray-text);line-height:1.6"><li><b>DXF</b> — AutoCAD</li><li><b>SVG</b></li><li><b>GeoJSON</b></li><li><b>CSV</b></li></ul><input id="pIF" type="file" accept=".dxf,.csv,.geojson,.json,.svg,.kml,.kmz,.gpx,.zip,.shp" class="input"></div>'; openModal('Importer',html,async()=>{const f=document.getElementById('pIF');if(!f.files[0]){toast('Fichier requis','error');return;}try{const res=await PlansApi.importFile(_p.etage.Id,f.files[0]);closeModal();toast(res.imported+' importé(s)','success');_p.elements=await PlansApi.getElements(_p.etage.Id);_pInitMap();setTimeout(()=>_pFitToElements(),200);_pRefreshCalqueLists();}catch(e){toast(e.message,'error');}}); }
 function _pFitToElements() { if(!_p.map||!_p.elements.length)return;const allCoords=[];_p.elements.forEach(el=>{try{const c=typeof el.Coords==='string'?JSON.parse(el.Coords):el.Coords;if(Array.isArray(c))c.forEach(p=>{if(Array.isArray(p)&&p.length>=2)allCoords.push(p);});}catch(_e){}});if(!allCoords.length)return;const lats=allCoords.map(c=>c[0]),lngs=allCoords.map(c=>c[1]);_p.map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[40,40],maxZoom:4}); }
 

@@ -39,7 +39,11 @@ if ($action === 'equipements') {
     $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'equipements', $db);
     if ($method==='GET')    json_ok($db->getAllEquipements());
     require_role($user, ['Admin','Gestionnaire']);
-    if ($method==='POST')   json_ok(['id' => $db->addEquipement(get_body(), $user['Login'])]);
+    if ($method==='POST') {
+        $nouvelId = $db->addEquipement(get_body(), $user['Login']);
+        $creee = $db->getEquipementById($nouvelId) ?: [];
+        json_ok(['id' => $nouvelId]);
+    }
     if ($method==='PUT')    { $db->updateEquipement($id, get_body(), $user['Login']); json_ok('OK'); }
     if ($method==='DELETE') { $db->deleteEquipement($id, $user['Login']); json_ok('OK'); }
 }

@@ -1,0 +1,57 @@
+{
+  "identifiant": "acme.consommables",
+  "format": "declaratif/1",
+  "nom": "Consommables",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Champs calculés et champs affichés sous condition.",
+
+  "donnees": {
+    "lignes": {
+      "libelle": "Consommable",
+      "champs": {
+        "designation": { "type": "texte", "libelle": "Désignation", "obligatoire": true },
+        "quantite":    { "type": "entier", "libelle": "Quantité", "min": 0, "defaut": 0 },
+        "seuil":       { "type": "entier", "libelle": "Seuil d'alerte", "min": 0, "defaut": 5 },
+        "prix":        { "type": "decimal", "libelle": "Prix unitaire HT", "min": 0 },
+        "livraison":   { "type": "date", "libelle": "Dernière livraison" },
+
+        "origine":     { "type": "choix", "libelle": "Origine",
+                         "valeurs": ["Stock interne", "Commande externe"],
+                         "defaut": "Stock interne" },
+        "fournisseur": { "type": "texte", "libelle": "Fournisseur",
+                         "visible_si": { "champ": "origine",
+                                         "operateur": "egal",
+                                         "valeur": "Commande externe" } },
+
+        "total_ht":   { "type": "formule", "libelle": "Total HT", "format": "monnaie",
+                        "expression": "{{round(record.quantite * record.prix, 2)}}" },
+        "total_ttc":  { "type": "formule", "libelle": "Total TTC", "format": "monnaie",
+                        "expression": "{{round(record.quantite * record.prix * 1.2, 2)}}" },
+        "etat":       { "type": "formule", "libelle": "État",
+                        "expression": "{{if(record.quantite <= record.seuil, 'À réapprovisionner', 'Suffisant')}}" },
+        "anciennete": { "type": "formule", "libelle": "Jours depuis livraison",
+                        "format": "nombre",
+                        "expression": "{{diffDays(today, record.livraison)}}" }
+      }
+    }
+  },
+
+  "pages": [
+    {
+      "cle": "consommables",
+      "titre": "Consommables",
+      "icone": "package",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "liste",
+        "source": "lignes",
+        "colonnes": ["designation", "quantite", "prix", "total_ht", "total_ttc", "etat"],
+        "recherche": ["designation", "fournisseur"],
+        "filtres": [{ "champ": "origine" }],
+        "tri": { "designation": "ASC" },
+        "actions": ["creer", "modifier", "supprimer", "exporter"]
+      }
+    }
+  ]
+}

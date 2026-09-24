@@ -8,206 +8,448 @@
 // prior written permission is prohibited. See the LICENSE file for details.
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * Larka — Assistant IA : Outils de lecture (tool calling)
+ * Larka — Assistant IA : outils de lecture (tool calling)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Expose une poignée de fonctions PHP au LLM via le mécanisme de "tool calling"
- * standard (Anthropic / OpenAI / Mistral / Ollama compatibles).
+ * Expose une poignée de fonctions PHP au LLM via le « tool calling » standard
+ * (Anthropic / OpenAI / Mistral / Gemini / Ollama).
  *
- * Au lieu de déverser toutes les données dans le prompt, le LLM décide quel
- * outil appeler avec quels arguments, le backend exécute, renvoie le résultat,
- * et le LLM continue jusqu'à pouvoir répondre.
- *
- * PRINCIPE :
+ * PRINCIPES
  *   - LECTURE UNIQUEMENT — aucun outil ne modifie la BDD.
- *   - 6 outils volontairement larges (couvrir 80% des cas avec peu de surface).
- *   - Anonymisation RGPD systématique sur les résultats retournés.
+ *   - Anonymisation RGPD systématique (sauf l'annuaire pro `qui_est`).
+ *   - SOBRIÉTÉ : chaque octet renvoyé repart dans le contexte du modèle. Sur un
+ *     modèle local CPU, 1 000 tokens de résultat = 10 à 30 s de traitement.
+ *     Les résultats sont donc COMPACTÉS (champs vides retirés, textes tronqués,
+ *     lignes limitées, classées par pertinence) — voir compact() / encode().
+ *   - Les schémas d'outils sont STABLES d'une question à l'autre (même ordre,
+ *     mêmes descriptions) : c'est ce qui permet aux moteurs de réutiliser leur
+ *     cache de préfixe (Ollama, llama.cpp) ou leur cache de prompt facturé
+ *     moins cher (Anthropic, OpenAI, Gemini).
  *
- * UTILISATION :
- *   $tools = new AssistantTools($db);
- *   $schema = $tools->getOpenAISchema();              // pour OpenAI/Mistral/Ollama
- *   $schema = $tools->getAnthropicSchema();           // pour Anthropic
- *   $result = $tools->execute('search', ['type'=>'biens', 'query'=>'centrale']);
+ * MODULES COMPLÉMENTAIRES (extensions déclaratives)
+ *   L'outil `module` n'est exposé que si au moins un module installé, actif et
+ *   visible pour l'utilisateur existe (ou, pour un gestionnaire, si la couche
+ *   extensions est active — il peut alors apprendre qu'un module n'est PAS
+ *   installé). La lecture passe par le moteur déclaratif, donc par la couche
+ *   de sécurité des extensions et les rôles accordés par l'administrateur.
+ *
+ * UTILISATION
+ *   $tools = new AssistantTools($db, $msToken, ['max_resultats' => 8, 'modules' => [...]]);
+ *   $tools->getOpenAISchema() / getAnthropicSchema() / getGeminiSchema()
+ *   $tools->execute('search', ['type' => 'biens', 'query' => 'centrale']);
+ *   $tools->encode($result)   // JSON compact, borné en taille
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 class AssistantTools {
     private Database $db;
-    private int $maxResults = 30;
-    private ?array $_openaiSchemaCache = null;
-    private ?array $_anthropicSchemaCache = null;
-    /** Token Microsoft Graph de l'utilisateur (si connecté via Entra ID),
-     *  capturé AVANT session_write_close() par le setup de l'assistant.
-     *  null = SharePoint indisponible → l'outil n'est pas exposé au modèle. */
-    private ?string $msToken = null;
+    private ?string $msToken;
+    private array $user;
+    /** Nombre maximal de lignes renvoyées au modèle par liste. */
+    private int $maxResults;
+    /** Longueur maximale d'un texte renvoyé au modèle. */
+    private int $maxChars;
+    /** Taille maximale (caractères) d'un résultat d'outil sérialisé. */
+    private int $maxToolChars;
+    /** Catalogue des modules installés visibles : id => [nom, jeux, pages, declaration]. */
+    private array $modules;
+    /** Rappel paresseux : modules disponibles mais non installés (gestionnaires). */
+    private $modulesDisponibles;
+    private bool $extActif;
+    private array $schemaCache = [];
 
-    public function __construct(Database $db, ?string $msToken = null) {
-        $this->db = $db;
-        $this->msToken = $msToken;
+    /** Types acceptés par search / compter (clé outil → clé de searchForAssistant). */
+    private const SEARCH_MAP = [
+        'biens'         => 'biens',
+        'equipements'   => 'equipements',
+        'interventions' => 'interventions',
+        'contrats'      => 'contrats',
+        'demandes'      => 'demandesintervention',
+        'stock'         => 'stock',
+        'documents'     => 'documents',
+        'plans'         => 'plan_elements',
+        'archives'      => 'archives_dossiers',
+    ];
+
+    /** Clés jamais utiles au modèle (bruit, coordonnées brutes, traçabilité). */
+    private const DROP_KEYS = [
+        'Coords', 'Icone', 'Couleur', 'Echelle', 'FondLargeur', 'FondHauteur',
+        'PointCoords', 'Latitude', 'Longitude', 'lat', 'lng',
+        'CreatedBy', 'UpdatedBy', 'UpdatedAt', 'SupprimeParLogin', 'SaisieParLogin',
+        'AjoutePar', 'cree_par', 'modifie_par', 'modifie_le', 'MotDePasse', 'Password',
+        'ContactsJSON', 'DetailSousCompteurs', 'PlagesAvance', 'Token', 'MsId', 'GoogleId',
+    ];
+
+    /** Segments de nom de champ désignant une personne (champs de modules). */
+    private const PERSON_SEGMENTS = [
+        'nom', 'prenom', 'detenteur', 'titulaire', 'responsable', 'agent', 'demandeur',
+        'contact', 'utilisateur', 'beneficiaire', 'conducteur', 'personne', 'salarie',
+        'stagiaire', 'participant', 'formateur', 'referent', 'emprunteur',
+    ];
+
+    public function __construct(Database $db, ?string $msToken = null, array $opts = []) {
+        $this->db            = $db;
+        $this->msToken       = $msToken;
+        $this->user          = $opts['user'] ?? [];
+        $this->maxResults    = max(3, min(30, (int)($opts['max_resultats'] ?? 12)));
+        $this->maxChars      = max(40, min(400, (int)($opts['max_chars'] ?? 120)));
+        $this->maxToolChars  = max(1500, (int)($opts['max_tool_chars'] ?? 12000));
+        $this->modules       = $opts['modules'] ?? [];
+        $this->modulesDisponibles = $opts['modules_disponibles'] ?? null;
+        $this->extActif      = (bool)($opts['ext_actif'] ?? false);
     }
 
-    /**
-     * Définition centrale des outils exposés à l'IA.
-     * Pour en ajouter un : ajouter une entrée ici + une méthode `tool_xxx()` plus bas.
-     */
+    public function hasModules(): bool { return $this->modules !== []; }
+    public function modules(): array  { return $this->modules; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── Définitions (source unique, rendue dans les 3 formats) ──
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Format interne d'un paramètre : type, description?, required?, enum?,
+    // items? (tableaux), properties? (objets : liste de clés chaîne).
+    // Les objets reçoivent TOUJOURS des propriétés explicites : Gemini refuse un
+    // objet vide, et un petit modèle local devine bien mieux les bons filtres
+    // quand on les lui nomme.
+
     private function definitions(): array {
-        return [
+        $filtresSearch = ['statut', 'type', 'famille', 'batiment', 'etage', 'etat',
+                          'categorie', 'urgence', 'societe', 'marque'];
+        $filtresCompter = ['statut', 'type', 'famille', 'batiment', 'etage', 'etat',
+                           'categorie', 'urgence', 'priorite', 'societe', 'marque',
+                           'emplacement', 'annee', 'type_element', 'calque', 'etage_id'];
+        $defs = [
             [
                 'name' => 'search',
-                'description' => "Recherche dans Larka. Type au choix : 'biens', 'equipements', 'interventions', 'contrats', 'demandes', 'stock', 'documents', 'plans' (zones/locaux dessinés), 'archives'. Utilise des mots-clés simples. Limité à 30 résultats par appel.",
+                'description' => "Recherche par mots-clés, résultats triés par pertinence (max {$this->maxResults}). type='tout' = tous les types d'un coup.",
                 'parameters' => [
-                    'type' => ['type' => 'string', 'description' => "Table à interroger : biens, equipements, interventions, contrats, demandes, stock, documents, plans, archives", 'required' => true],
-                    'query' => ['type' => 'string', 'description' => "Mots-clés de recherche (acronymes acceptés : SSI, BAES, CTA, VMC, etc.)", 'required' => true],
-                    'filtres' => ['type' => 'object', 'description' => "Filtres optionnels selon le type : pour 'interventions' : statut/type ; pour 'contrats' : statut/societe ; pour 'biens'/'equipements' : famille/batiment/etat ; pour 'demandes' : statut/urgence/categorie ; pour 'stock' : categorie", 'required' => false],
+                    'type'    => ['type' => 'string', 'required' => true,
+                                  'enum' => array_merge(array_keys(self::SEARCH_MAP), ['tout'])],
+                    'query'   => ['type' => 'string', 'required' => true, 'description' => 'Mots-clés courts (acronymes OK : SSI, BAES, CTA…)'],
+                    'filtres' => ['type' => 'object', 'description' => 'Filtres optionnels (contient)', 'properties' => $filtresSearch],
                 ],
             ],
             [
                 'name' => 'get_fiche',
-                'description' => "Récupère la fiche détaillée complète d'UN élément précis. Utilise après un 'search' pour avoir tous les champs.",
+                'description' => "Fiche complète d'UN élément (après search).",
                 'parameters' => [
-                    'type' => ['type' => 'string', 'description' => "bien, equipement, intervention, contrat, demande, stock", 'required' => true],
-                    'id' => ['type' => 'integer', 'description' => "Identifiant numérique de la fiche", 'required' => true],
+                    'type' => ['type' => 'string', 'required' => true, 'enum' => ['bien', 'equipement', 'intervention', 'contrat', 'demande', 'stock']],
+                    'id'   => ['type' => 'integer', 'required' => true],
                 ],
             ],
             [
                 'name' => 'localiser',
-                'description' => "Où se trouve un bien ou un équipement ? Renvoie bâtiment, étage, bureau, et — si dessiné sur un plan — la zone visuelle avec son étage et son numéro pour ouvrir le plan.",
+                'description' => "Où est un bien/équipement : bâtiment, étage, bureau et position sur plan (sur_plan).",
                 'parameters' => [
-                    'type' => ['type' => 'string', 'description' => "bien ou equipement", 'required' => true],
-                    'id' => ['type' => 'integer', 'description' => "Identifiant de l'élément à localiser", 'required' => true],
+                    'type' => ['type' => 'string', 'required' => true, 'enum' => ['bien', 'equipement']],
+                    'id'   => ['type' => 'integer', 'required' => true],
                 ],
             ],
             [
                 'name' => 'localiser_groupe',
-                'description' => "Localise PLUSIEURS biens ou équipements en un seul appel. Plus efficace que d'appeler 'localiser' plusieurs fois. Utile quand tu as une liste de résultats de 'search' et que tu veux tous les positionner sur les plans en même temps. Renvoie un tableau avec pour chaque ID son emplacement.",
+                'description' => "Localise PLUSIEURS biens/équipements en un appel, regroupés par étage.",
                 'parameters' => [
-                    'type' => ['type' => 'string', 'description' => "bien ou equipement (tous les ids doivent être du même type)", 'required' => true],
-                    'ids' => ['type' => 'array', 'description' => "Liste des IDs à localiser, ex: [42, 43, 88]", 'required' => true],
+                    'type' => ['type' => 'string', 'required' => true, 'enum' => ['bien', 'equipement']],
+                    'ids'  => ['type' => 'array', 'required' => true, 'items' => 'integer'],
                 ],
             ],
             [
                 'name' => 'compter',
-                'description' => "Compte les éléments d'une table avec filtres. Renvoie un nombre. Utile pour 'combien de…'. Types : biens, equipements, interventions, contrats, demandes, stock, plans (= éléments dessinés sur les plans : points, zones, traits, textes).",
+                'description' => "Nombre exact d'éléments (sans limite). type='plans' = éléments dessinés (filtre type_element: point/zone/trait/texte).",
                 'parameters' => [
-                    'type' => ['type' => 'string', 'description' => "biens, equipements, interventions, contrats, demandes, stock, plans", 'required' => true],
-                    'filtres' => ['type' => 'object', 'description' => "Mêmes filtres que pour 'search'. Ex: {statut: 'En cours'} ou {famille: 'SSI', batiment: 'A'}. Pour type='plans' : {type_element: 'point'} ou {calque: 'SSI'}.", 'required' => false],
+                    'type'    => ['type' => 'string', 'required' => true,
+                                  'enum' => ['biens', 'equipements', 'interventions', 'contrats', 'demandes', 'stock', 'plans']],
+                    'filtres' => ['type' => 'object', 'description' => 'annee=AAAA ; autres = contient', 'properties' => $filtresCompter],
                 ],
             ],
             [
                 'name' => 'alertes',
-                'description' => "Récupère les alertes actives de Larka : contrats qui expirent (dans X jours), stock en alerte (sous le seuil), interventions en retard (date dépassée mais non terminées), demandes non traitées. Renvoie un résumé.",
+                'description' => "Alertes : contrats qui expirent, stock sous seuil, interventions en retard, demandes non traitées.",
                 'parameters' => [
-                    'categorie' => ['type' => 'string', 'description' => "Optionnel : 'contrats', 'stock', 'interventions', 'demandes' ou 'toutes' (défaut)", 'required' => false],
-                    'jours' => ['type' => 'integer', 'description' => "Optionnel : pour les contrats, horizon en jours (défaut 30)", 'required' => false],
+                    'categorie' => ['type' => 'string', 'enum' => ['toutes', 'contrats', 'stock', 'interventions', 'demandes']],
+                    'jours'     => ['type' => 'integer', 'description' => 'Horizon contrats (défaut 30)'],
                 ],
             ],
             [
                 'name' => 'contexte',
-                'description' => "Retourne le vocabulaire métier du site : liste des bâtiments, familles de biens/équipements, catégories de demandes, gestionnaires actifs. À appeler au début si tu n'es pas sûr de la terminologie locale.",
+                'description' => "Vocabulaire du site : bâtiments, familles, catégories, gestionnaires.",
                 'parameters' => [],
             ],
             [
                 'name' => 'qui_est',
-                'description' => "Recherche dans l'annuaire des utilisateurs de Larka (demandeurs, gestionnaires, techniciens, admins). Permet à un gestionnaire de retrouver les coordonnées d'un demandeur ou d'identifier qui est rattaché à un service. Renvoie nom, prénom, rôle, service, poste, login et — si l'utilisateur a explicitement renseigné ses coordonnées professionnelles — son téléphone pro et son email pro. Les coordonnées personnelles ne sont jamais exposées.",
+                'description' => "Annuaire interne : nom, rôle, service, poste, téléphone pro.",
                 'parameters' => [
-                    'query' => ['type' => 'string', 'description' => "Mots-clés : nom, prénom, login, service, ou rôle (ex: 'Dupont', 'Jean Martin', 'Direction des finances', 'Gestionnaire')", 'required' => false],
-                    'role'  => ['type' => 'string', 'description' => "Filtrer par rôle exact : 'Demandeur', 'Gestionnaire', 'Technicien', 'Admin', 'Visionneur'", 'required' => false],
-                    'id'    => ['type' => 'integer', 'description' => "Récupérer un utilisateur précis par son ID (ex: pour 'qui est le demandeur de la demande #42' → d'abord get_fiche(demande, 42), puis qui_est(id=DemandeurId))", 'required' => false],
+                    'query' => ['type' => 'string', 'description' => 'Nom, service, poste…'],
+                    'role'  => ['type' => 'string', 'enum' => ['Demandeur', 'Gestionnaire', 'Technicien', 'Admin', 'Visionneur']],
+                    'id'    => ['type' => 'integer', 'description' => 'Id utilisateur (ex. UtilisateurId d\'une demande)'],
                 ],
             ],
         ];
-    }
 
-    /**
-     * Définitions effectivement exposées au modèle pour CETTE requête.
-     * L'outil SharePoint n'est proposé que si l'utilisateur a un token
-     * Microsoft valide en session — sinon le modèle tenterait des appels
-     * voués à l'échec (et gaspillerait un tour d'inférence).
-     */
-    private function activeDefinitions(): array {
-        $defs = $this->definitions();
+        // SharePoint : seulement si l'utilisateur a un jeton Microsoft valide.
         if ($this->msToken) {
             $defs[] = [
                 'name' => 'search_sharepoint',
-                'description' => "Recherche des DOCUMENTS stockés sur SharePoint / OneDrive (Microsoft 365) auxquels l'utilisateur a accès : manuels, notices, plans PDF, procédures, rapports... À utiliser quand un document n'est PAS trouvé via search(type='documents') dans Larka, ou quand l'utilisateur parle explicitement de SharePoint/OneDrive. Renvoie nom, chemin, taille, date de modification et lien web de chaque fichier.",
+                'description' => "Documents SharePoint/OneDrive de l'utilisateur (si absents de Larka).",
                 'parameters' => [
-                    'query' => ['type' => 'string', 'description' => "Mots-clés de recherche (nom de fichier, sujet). Ex: 'notice chaudière', 'DOE bâtiment A'", 'required' => true],
+                    'query' => ['type' => 'string', 'required' => true],
                 ],
+            ];
+        }
+
+        // Modules complémentaires installés (extensions déclaratives).
+        if ($this->modules !== [] || $this->extActif) {
+            $liste = [];
+            foreach ($this->modules as $id => $m) {
+                $jeux = [];
+                foreach ($m['jeux'] as $nom => $j) $jeux[] = $nom . '=' . $j['libelle'];
+                $liste[] = $id . ' « ' . $m['nom'] . ' » (jeux : ' . implode(', ', $jeux) . ')';
+            }
+            $defs[] = [
+                'name' => 'module',
+                'description' => 'Données des modules complémentaires installés. '
+                    . ($liste ? 'Installés : ' . implode(' ; ', $liste) . '.' : 'Aucun module installé.')
+                    . ' Sans « module » : catalogue (installés et non installés).',
+                'parameters' => array_filter([
+                    'module'    => $this->modules
+                        ? ['type' => 'string', 'enum' => array_keys($this->modules)]
+                        : ['type' => 'string'],
+                    'jeu'       => ['type' => 'string', 'description' => 'Jeu de données (défaut : le premier)'],
+                    'recherche' => ['type' => 'string', 'description' => 'Mots-clés (vide = derniers enregistrements)'],
+                ]),
             ];
         }
         return $defs;
     }
 
-    /** Schéma au format OpenAI / Mistral / Ollama (le plus répandu). */
-    public function getOpenAISchema(): array {
-        if ($this->_openaiSchemaCache !== null) return $this->_openaiSchemaCache;
-        $out = [];
-        foreach ($this->activeDefinitions() as $d) {
-            $props = []; $req = [];
-            foreach ($d['parameters'] as $name => $p) {
-                $props[$name] = ['type' => $p['type'], 'description' => $p['description']];
-                if (!empty($p['required'])) $req[] = $name;
-            }
-            $out[] = [
-                'type' => 'function',
-                'function' => [
-                    'name' => $d['name'],
-                    'description' => $d['description'],
-                    'parameters' => [
-                        'type' => 'object',
-                        'properties' => empty($props) ? (object)[] : $props,
-                        'required' => $req,
-                    ],
-                ],
-            ];
+    /** Schéma JSON d'un paramètre interne. */
+    private static function paramSchema(array $p, bool $gemini = false): array {
+        $s = ['type' => $p['type']];
+        if (!empty($p['description'])) $s['description'] = $p['description'];
+        if (!empty($p['enum'])) $s['enum'] = $p['enum'];
+        if ($p['type'] === 'array') $s['items'] = ['type' => $p['items'] ?? 'string'];
+        if ($p['type'] === 'object') {
+            $props = [];
+            foreach ($p['properties'] ?? ['valeur'] as $k) $props[$k] = ['type' => 'string'];
+            $s['properties'] = $props;
         }
-        return $this->_openaiSchemaCache = $out;
+        return $s;
     }
 
-    /** Schéma au format Anthropic (clé "input_schema" au lieu de "parameters"). */
-    public function getAnthropicSchema(): array {
-        if ($this->_anthropicSchemaCache !== null) return $this->_anthropicSchemaCache;
-        $out = [];
-        foreach ($this->activeDefinitions() as $d) {
-            $props = []; $req = [];
-            foreach ($d['parameters'] as $name => $p) {
-                $props[$name] = ['type' => $p['type'], 'description' => $p['description']];
-                if (!empty($p['required'])) $req[] = $name;
-            }
-            $out[] = [
-                'name' => $d['name'],
-                'description' => $d['description'],
-                'input_schema' => [
-                    'type' => 'object',
-                    'properties' => empty($props) ? (object)[] : $props,
-                    'required' => $req,
-                ],
-            ];
+    private function objectSchema(array $params, bool $gemini = false): ?array {
+        if (!$params) return $gemini ? null : ['type' => 'object', 'properties' => (object)[], 'required' => []];
+        $props = []; $req = [];
+        foreach ($params as $name => $p) {
+            $props[$name] = self::paramSchema($p, $gemini);
+            if (!empty($p['required'])) $req[] = $name;
         }
-        return $this->_anthropicSchemaCache = $out;
+        $s = ['type' => 'object', 'properties' => $props];
+        if ($req || !$gemini) $s['required'] = $req;
+        return $s;
     }
+
+    /** Format OpenAI / Mistral / Ollama / LM Studio / llama.cpp. */
+    public function getOpenAISchema(): array {
+        return $this->schemaCache['openai'] ??= array_map(fn($d) => [
+            'type' => 'function',
+            'function' => [
+                'name'        => $d['name'],
+                'description' => $d['description'],
+                'parameters'  => $this->objectSchema($d['parameters']),
+            ],
+        ], $this->definitions());
+    }
+
+    /** Format Anthropic (input_schema). */
+    public function getAnthropicSchema(): array {
+        return $this->schemaCache['anthropic'] ??= array_map(fn($d) => [
+            'name'         => $d['name'],
+            'description'  => $d['description'],
+            'input_schema' => $this->objectSchema($d['parameters']),
+        ], $this->definitions());
+    }
+
+    /** Format Gemini (functionDeclarations ; pas de `parameters` si aucun paramètre). */
+    public function getGeminiSchema(): array {
+        return $this->schemaCache['gemini'] ??= array_map(function ($d) {
+            $f = ['name' => $d['name'], 'description' => $d['description']];
+            $s = $this->objectSchema($d['parameters'], true);
+            if ($s !== null) $f['parameters'] = $s;
+            return $f;
+        }, $this->definitions());
+    }
+
+    /** Noms des outils exposés (pour le nettoyage de sortie). */
+    public function names(): array {
+        return $this->schemaCache['names'] ??= array_column($this->definitions(), 'name');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── Exécution ──
+    // ═══════════════════════════════════════════════════════════════════════
 
     /** Exécute un outil. Renvoie toujours un array (jamais throw). */
     public function execute(string $toolName, array $args): array {
-        $method = 'tool_' . $toolName;
-        if (!method_exists($this, $method)) {
-            return ['error' => "Outil inconnu : $toolName"];
+        $method = 'tool_' . preg_replace('/[^a-z_]/', '', $toolName);
+        if (!in_array($toolName, $this->names(), true) || !method_exists($this, $method)) {
+            return ['error' => "Outil inconnu : $toolName", 'outils' => $this->names()];
         }
         try {
             $result = $this->$method($args);
-            // L'outil 'qui_est' est l'annuaire interne : il expose volontairement
-            // les coordonnées PRO (TelPro, EmailPro) — c'est son utilité. On
-            // contourne l'anonymisation pour ce cas précis. Les coordonnées
-            // PERSONNELLES (Tel, Email = login) restent filtrées en amont par
-            // tool_qui_est() qui ne renvoie QUE les champs autorisés.
-            if ($toolName === 'qui_est') {
-                return $result;
-            }
-            return $this->anonymize($result);
+            // L'annuaire expose volontairement les coordonnées PRO (son utilité) ;
+            // les coordonnées personnelles sont filtrées en amont par tool_qui_est().
+            if ($toolName !== 'qui_est') $result = $this->anonymize($result);
+            // Une fiche a droit à des textes plus longs qu'une ligne de liste.
+            return $this->compact($result, $toolName === 'get_fiche' ? max($this->maxChars, 240) : null);
         } catch (\Throwable $e) {
             error_log('[Larka][assistant] tool error: ' . $e->getMessage());
             return ['error' => "Une erreur interne est survenue lors de l'exécution de l'outil."];
         }
+    }
+
+    /**
+     * Sérialise un résultat pour le modèle : JSON compact, borné en taille.
+     * Si c'est trop long, on retire des lignes (jamais le compte total) —
+     * mieux vaut 5 résultats lisibles qu'un contexte tronqué en silence.
+     */
+    public function encode(array $result): string {
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
+        $json = json_encode($result, $flags) ?: '{}';
+        $guard = 0;
+        while (strlen($json) > $this->maxToolChars && $guard++ < 6) {
+            if (!$this->shrink($result)) break;
+            $result['tronque'] = true;
+            $json = json_encode($result, $flags) ?: '{}';
+        }
+        if (strlen($json) > $this->maxToolChars) {
+            $json = json_encode(['tronque' => true, 'extrait' => mb_substr($json, 0, $this->maxToolChars - 60)], $flags);
+        }
+        return $json;
+    }
+
+    /** Divise par deux la plus longue liste du résultat. false si rien à réduire. */
+    private function shrink(array &$r): bool {
+        // 1) Trouver le chemin de la plus longue liste (parcours sans référence).
+        $bestPath = null; $bestLen = 1;
+        $stack = [[$r, []]];
+        while ($stack) {
+            [$node, $path] = array_pop($stack);
+            foreach ($node as $k => $v) {
+                if (!is_array($v)) continue;
+                if (array_is_list($v) && count($v) > $bestLen) { $bestLen = count($v); $bestPath = array_merge($path, [$k]); }
+                $stack[] = [$v, array_merge($path, [$k])];
+            }
+        }
+        if ($bestPath === null) return false;
+        // 2) Y descendre par référence et couper.
+        $ref = &$r;
+        foreach ($bestPath as $k) $ref = &$ref[$k];
+        $ref = array_slice($ref, 0, max(1, intdiv(count($ref), 2)));
+        unset($ref);
+        return true;
+    }
+
+    /**
+     * Pré-recherche (mode rapide CPU) : un search(type='tout') exécuté AVANT le
+     * premier appel au modèle et injecté comme s'il l'avait demandé lui-même.
+     * Le modèle répond alors souvent dès le premier tour — une inférence
+     * complète économisée (génération de l'appel d'outil + aller-retour).
+     */
+    public function prefetch(string $question): ?array {
+        [$orig, , $nums] = $this->keywords($question);
+        $orig = array_values(array_filter($orig, fn($w) => mb_strlen($w) >= 3));
+        if (!$orig) return null;
+        // Les numéros (« extincteur 2 ») restent dans la requête : ils départagent.
+        $args = ['type' => 'tout', 'query' => implode(' ', array_merge(array_slice($orig, 0, 6), array_slice($nums, 0, 2)))];
+        return ['name' => 'search', 'args' => $args, 'result' => $this->execute('search', $args)];
+    }
+
+    /**
+     * Type canonique, quelle que soit la façon dont le modèle (ou l'utilisateur)
+     * l'écrit : « bien », « Biens », « équipement », « articles »… Un petit
+     * modèle écrit souvent le singulier ; « Type inconnu » le faisait
+     * abandonner (« je ne trouve rien » à « combien de biens ? »).
+     */
+    public static function normType(string $t): string {
+        $t = self::norm(trim($t));
+        $t = preg_replace('/[^a-z_]/', '', $t);
+        $map = [
+            'bien' => 'biens', 'biens' => 'biens',
+            'equipement' => 'equipements', 'equipements' => 'equipements', 'equip' => 'equipements',
+            'intervention' => 'interventions', 'interventions' => 'interventions', 'interv' => 'interventions',
+            'contrat' => 'contrats', 'contrats' => 'contrats',
+            'demande' => 'demandes', 'demandes' => 'demandes', 'demandesintervention' => 'demandes',
+            'stock' => 'stock', 'stocks' => 'stock', 'article' => 'stock', 'articles' => 'stock',
+            'document' => 'documents', 'documents' => 'documents', 'doc' => 'documents', 'docs' => 'documents',
+            'plan' => 'plans', 'plans' => 'plans', 'point' => 'plans', 'points' => 'plans', 'zone' => 'plans',
+            'zones' => 'plans', 'element' => 'plans', 'elements' => 'plans', 'planelements' => 'plans',
+            'archive' => 'archives', 'archives' => 'archives', 'dossier' => 'archives', 'dossiers' => 'archives',
+            'tout' => 'tout', 'tous' => 'tout', 'all' => 'tout', 'toutes' => 'tout',
+        ];
+        return $map[$t] ?? $t;
+    }
+
+    /**
+     * Pré-comptage (questions « combien… ») : si la question nomme un type
+     * (« combien de biens au bâtiment A ? »), le comptage exact est fait AVANT
+     * d'interroger le modèle, avec les filtres reconnus (bâtiment, statut,
+     * année). S'il reste des mots précis (« combien de biens informatiques »),
+     * c'est une recherche sur ce type ; sans type (« combien d'extincteurs »),
+     * la recherche globale. Le modèle n'a plus qu'à formuler la réponse.
+     */
+    public function prefetchComptage(string $question): ?array {
+        $q = self::norm($question);
+        $types = [
+            'biens' => 'biens?', 'equipements' => 'equipements?', 'interventions' => 'interventions?',
+            'contrats' => 'contrats?', 'demandes' => 'demandes?', 'stock' => 'articles?|stocks?|references? en stock',
+            'plans' => 'points?|zones?|traits?|elements? (?:dessines|sur les plans)',
+        ];
+        $type = null;
+        foreach ($types as $t => $re) {
+            if (preg_match('/\b(?:' . $re . ')\b/u', $q)) { $type = $t; break; }
+        }
+        if ($type === null) return $this->prefetch($question);
+
+        $filtres = [];
+        if (preg_match('/\b(?:batiment|bat)\.?\s+([a-z0-9][\w-]*)/u', $q, $m) && !in_array($m[1], ['de', 'du', 'des', 'le', 'la'], true)) {
+            $filtres['batiment'] = $m[1];
+        }
+        if (preg_match('/\bcette annee\b/u', $q)) $filtres['annee'] = date('Y');
+        elseif (preg_match('/\b(20\d\d)\b/', $q, $m)) $filtres['annee'] = $m[1];
+        if (in_array($type, ['interventions', 'demandes', 'contrats'], true)) {
+            foreach (['en cours' => 'En cours', 'termine' => 'Termin', 'planifie' => 'Planifi', 'en attente' => 'attente',
+                      'nouvelle' => 'Nouveau', 'non traite' => 'Nouveau', 'actif' => 'Actif', 'expire' => 'Expir'] as $k => $v) {
+                if (str_contains($q, $k)) { $filtres['statut'] = $v; break; }
+            }
+        }
+        if ($type === 'plans') {
+            foreach (['point', 'zone', 'trait', 'texte'] as $te) if (preg_match('/\b' . $te . 's?\b/', $q)) { $filtres['type_element'] = $te; break; }
+        }
+
+        // Mots restants, une fois retirés le type, les filtres et le vocabulaire de question.
+        $reste = preg_replace('/\b(?:combien|nombre|total|quantite|au|aux|du|de|des|d|y|a|t|il|en|ai|on|ya|avons|avez|sont|est|dans|le|la|les|l|sur|pour|cette|annee|batiment|bat|' . implode('|', $types) . ')\b/u', ' ', $q);
+        if (isset($filtres['batiment'])) $reste = str_replace($filtres['batiment'], ' ', $reste);
+        foreach (['en cours', 'termine', 'terminee', 'terminees', 'planifie', 'planifiee', 'planifiees', 'en attente', 'nouvelles?', 'non traitees?', 'actifs?', 'expires?', '20\d\d', 'dessines', 'plans?'] as $w) {
+            $reste = preg_replace('/\b' . $w . '\b/u', ' ', $reste);
+        }
+        [$mots] = $this->keywords($reste);
+        $mots = array_values(array_filter($mots, fn($w) => mb_strlen($w) >= 3));
+
+        // « combien d'équipements SSI » : si le mot restant est une FAMILLE
+        // connue, le comptage exact par famille vaut mieux qu'une recherche
+        // plein texte (qui trouve « ssi » n'importe où et plafonne à 100).
+        if (count($mots) === 1 && in_array($type, ['biens', 'equipements', 'stock'], true)) {
+            $argsF = ['type' => $type, 'filtres' => $filtres + ['famille' => $mots[0]]];
+            $rf = $this->execute('compter', $argsF);
+            if ((int)($rf['count'] ?? 0) > 0) return ['name' => 'compter', 'args' => $argsF, 'result' => $rf];
+        }
+        if ($mots && $type !== 'plans') {
+            $args = ['type' => $type, 'query' => implode(' ', array_slice($mots, 0, 4))];
+            if (isset($filtres['batiment'])) $args['filtres'] = ['batiment' => $filtres['batiment']];
+            return ['name' => 'search', 'args' => $args, 'result' => $this->execute('search', $args)];
+        }
+        $args = ['type' => $type] + ($filtres ? ['filtres' => $filtres] : []);
+        return ['name' => 'compter', 'args' => $args, 'result' => $this->execute('compter', $args)];
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -215,226 +457,293 @@ class AssistantTools {
     // ═══════════════════════════════════════════════════════════════════════
 
     private function tool_search(array $args): array {
-        $type    = strtolower($args['type'] ?? '');
-        $query   = trim($args['query'] ?? '');
+        $type    = self::normType((string)($args['type'] ?? ''));
+        $query   = trim((string)($args['query'] ?? ''));
         $filtres = is_array($args['filtres'] ?? null) ? $args['filtres'] : [];
-        if (!$query) return ['error' => "Paramètre 'query' requis"];
+        if ($query === '') return ['error' => "Paramètre 'query' requis"];
 
-        $map = [
-            'biens'         => 'biens',
-            'equipements'   => 'equipements',
-            'interventions' => 'interventions',
-            'contrats'      => 'contrats',
-            'demandes'      => 'demandesintervention',
-            'stock'         => 'stock',
-            'documents'     => 'documents',
-            'plans'         => 'plan_elements',
-            'archives'      => 'archives_dossiers',
-        ];
-        if (!isset($map[$type])) {
-            return [
-                'error' => "Type '$type' invalide.",
-                'types_valides' => array_keys($map),
-            ];
+        if ($type === 'tout' || $type === 'all' || $type === '') {
+            return $this->searchAll($query);
+        }
+        if (!isset(self::SEARCH_MAP[$type])) {
+            return ['error' => "Type '$type' invalide.", 'types_valides' => array_merge(array_keys(self::SEARCH_MAP), ['tout'])];
         }
 
-        // Mots-clés + expansion synonymes basique (réutilise la logique d'assistant.php)
-        $keywords = $this->extractKeywords($query);
-        if (!$keywords) return ['type' => $type, 'count' => 0, 'results' => []];
+        $t = $this->terms($query);
+        // Requête réduite au nom du type (« biens », « tous les équipements ») :
+        // pas de mot-clé à chercher — on donne le total plutôt que « rien ».
+        $precis = array_filter($t['orig'], fn($w) => self::normType($w) !== $type
+            && !in_array(self::norm($w), ['liste', 'tous', 'toutes', 'total', 'nombre', 'ensemble'], true));
+        if (!$precis && !$t['nums']) {
+            $c = in_array($type, ['biens', 'equipements', 'interventions', 'contrats', 'demandes', 'stock', 'plans'], true)
+                ? $this->tool_compter(['type' => $type, 'filtres' => $filtres]) : [];
+            return ['type' => $type, 'count' => (int)($c['count'] ?? 0), 'results' => [],
+                    'note' => 'Aucun mot-clé précis : nombre total du type. Pour détailler, précise un mot-clé ou utilise compter avec des filtres.'];
+        }
+        if (!$t['sql']) return ['type' => $type, 'count' => 0, 'results' => []];
 
-        // Délégation à $db->searchForAssistant() puis filtrage par type
-        $all = $this->db->searchForAssistant($keywords);
-        $rows = $all[$map[$type]] ?? [];
+        $key  = self::SEARCH_MAP[$type];
+        $all  = $this->db->searchForAssistant($t['sql'], true, [$key], 100);
+        $rows = $all[$key] ?? [];
 
-        // Appliquer filtres simples (sur les colonnes texte de chaque ligne)
         if ($filtres && $rows) {
-            $rows = array_values(array_filter($rows, function($row) use ($filtres) {
+            $rows = array_values(array_filter($rows, function ($row) use ($filtres) {
                 foreach ($filtres as $col => $val) {
-                    if ($val === '' || $val === null) continue;
-                    $colName = ucfirst($col);
-                    $rowVal = $row[$colName] ?? $row[$col] ?? null;
+                    if ($val === '' || $val === null || is_array($val)) continue;
+                    $rowVal = $row[ucfirst((string)$col)] ?? $row[$col] ?? null;
                     if ($rowVal === null) return false;
-                    if (stripos((string)$rowVal, (string)$val) === false) return false;
+                    if (!str_contains(self::norm((string)$rowVal), self::norm((string)$val))) return false;
                 }
                 return true;
             }));
         }
 
-        return [
-            'type'    => $type,
-            'count'   => count($rows),
-            'results' => array_slice($rows, 0, $this->maxResults),
-        ];
+        $rows = $this->rank($rows, $t, $info);
+        $out = ['type' => $type, 'count' => count($rows)];
+        // Le SQL plafonne à 100 lignes par type : au-delà, le compte est un minimum.
+        if (count($rows) >= 100) $out['count_minimum'] = true;
+        if ($t['corrections']) $out['corrections'] = $t['corrections'];
+        if ($info['complet'] && $info['ex_aequo'] === 1) {
+            // Un SEUL élément correspond à tous les critères (mots + numéro) :
+            // le modèle peut répondre sans redemander de précision.
+            $out['meilleur_candidat'] = ['Id' => $info['best']['Id'] ?? null, 'correspondance' => 'totale'];
+        } elseif ($info['ex_aequo'] > 1) {
+            // Plusieurs éléments équivalents : il faudra proposer, puis demander.
+            $out['candidats_equivalents'] = $info['ex_aequo'];
+        }
+        $out['results'] = array_slice($rows, 0, $this->maxResults);
+        return $out;
+    }
+
+    /** search(type='tout') : les meilleurs résultats de chaque type, en une passe SQL. */
+    private function searchAll(string $query): array {
+        $t = $this->terms($query);
+        if (!$t['sql']) return ['type' => 'tout', 'total' => 0, 'par_type' => (object)[]];
+        $keys = array_values(self::SEARCH_MAP);
+        $all  = $this->db->searchForAssistant($t['sql'], true, $keys, 100);
+        $meilleur = null;
+
+        $blocs = []; $total = 0;
+        $perType = max(2, min(3, intdiv($this->maxResults, 3)));
+        foreach (self::SEARCH_MAP as $type => $key) {
+            $rows = $all[$key] ?? [];
+            if (!$rows) continue;
+            $rows = $this->rank($rows, $t, $info);
+            $total += count($rows);
+            if ($info['complet'] && $info['ex_aequo'] === 1 && (!$meilleur || $info['score'] > $meilleur['score'])) {
+                $meilleur = ['type' => $type, 'Id' => $info['best']['Id'] ?? null, 'score' => $info['score']];
+            }
+            $blocs[$type] = ['score' => $info['score'], 'count' => count($rows), 'results' => array_slice($rows, 0, $perType)];
+        }
+        // Modules complémentaires installés : leurs données comptent autant que
+        // celles du cœur (« où est le passe général ? » vit dans larka.cles).
+        if ($this->modules && class_exists('ExtMoteurDeclaratif')) {
+            $origMod = array_values(array_filter($t['orig'], fn($w) => mb_strlen($w) >= 3));
+            foreach (array_slice($this->modules, 0, 6, true) as $mid => $m) {
+                foreach ($m['jeux'] as $jeu => $j) {
+                    if (!$origMod) break 2;
+                    try { [$rows] = $this->moduleRows($mid, $jeu, $origMod); } catch (\Throwable $_) { continue; }
+                    if (!$rows) continue;
+                    $this->rank($rows, $t, $infoM);
+                    $best = $infoM['score'];
+                    $formats = $j['formats'] ?? [];
+                    $total += count($rows);
+                    $blocs["module:$mid/$jeu"] = [
+                        'score' => $best, 'module' => $mid, 'jeu' => $jeu, 'count' => count($rows),
+                        'results' => array_map(fn($r) => $this->maskModuleRow($r, $formats), array_slice($rows, 0, $perType)),
+                    ];
+                }
+            }
+        }
+        // Les types les plus pertinents d'abord ; on n'en garde que 4.
+        uasort($blocs, fn($a, $b) => $b['score'] <=> $a['score']);
+        $blocs = array_slice($blocs, 0, 4, true);
+        foreach ($blocs as &$b) unset($b['score']);
+        unset($b);
+        $out = ['type' => 'tout', 'total' => $total];
+        if ($t['corrections']) $out['corrections'] = $t['corrections'];
+        if ($meilleur) { unset($meilleur['score']); $out['meilleur_candidat'] = $meilleur + ['correspondance' => 'totale']; }
+        $out['par_type'] = $blocs ?: (object)[];
+        return $out;
+    }
+
+    /**
+     * Classe les lignes par pertinence :
+     *   - chaque mot de la question (ou sa correction orthographique) trouvé : 2 pts
+     *   - synonyme métier trouvé : 1 pt
+     *   - numéro demandé présent dans le numéro/nom (« extincteur 2 » ↔ « EXT-002 ») : 3 pts
+     *   - numéro/référence/nom identique à un mot : 3 pts
+     * $info reçoit : score du meilleur, meilleure ligne, « complet » (tous les
+     * mots ET le numéro trouvés) et le nombre d'ex æquo complets.
+     * Tri stable : l'ordre SQL départage les égalités.
+     */
+    private function rank(array $rows, array $t, ?array &$info = null): array {
+        $info = ['score' => 0, 'best' => null, 'complet' => false, 'ex_aequo' => 0];
+        if (!$rows) return [];
+        $groups = array_map(fn($g) => array_map([self::class, 'norm'], $g), $t['groups']);
+        $all = array_merge(...array_values($groups ?: [[]]));
+        $synN = array_values(array_diff(array_map([self::class, 'norm'], $t['sql']), $all));
+        $nums = $t['nums'];
+        $scored = [];
+        foreach ($rows as $i => $row) {
+            $hay = self::norm(implode(' ', array_map(fn($v) => is_scalar($v) ? (string)$v : '', $row)));
+            $score = 0; $trouves = 0;
+            foreach ($groups as $g) {
+                foreach ($g as $k) {
+                    if ($k !== '' && str_contains($hay, $k)) { $score += 2; $trouves++; break; }
+                }
+            }
+            foreach ($synN as $k) if ($k !== '' && str_contains($hay, $k)) $score += 1;
+            $numOk = !$nums;
+            if ($nums) {
+                $ident = implode(' ', array_map(fn($c) => (string)($row[$c] ?? ''),
+                    ['Numero', 'InfoProduit', 'Nom', 'Designation', 'Reference', 'Intitule', 'Titre', 'numero', 'nomination']));
+                preg_match_all('/\d+/', $ident, $m);
+                $presents = array_map('intval', $m[0]);
+                foreach ($nums as $n) if (in_array((int)$n, $presents, true)) { $score += 3; $numOk = true; break; }
+            }
+            foreach (['Numero', 'Reference', 'NumeroSerie', 'Nom'] as $c) {
+                if (!empty($row[$c]) && in_array(self::norm((string)$row[$c]), $all, true)) $score += 3;
+            }
+            $complet = $numOk && $groups && $trouves === count($groups);
+            $scored[] = [$score, $i, $row, $complet];
+        }
+        usort($scored, fn($a, $b) => [$b[0], $a[1]] <=> [$a[0], $b[1]]);
+        $top = $scored[0];
+        $info['score'] = $top[0];
+        $info['best'] = $top[2];
+        if ($top[3]) {
+            $info['complet'] = true;
+            foreach ($scored as $sc) if ($sc[3] && $sc[0] === $top[0]) $info['ex_aequo']++;
+        }
+        return array_column($scored, 2);
     }
 
     private function tool_get_fiche(array $args): array {
-        $type = strtolower($args['type'] ?? '');
+        $type = strtolower((string)($args['type'] ?? ''));
         $id   = (int)($args['id'] ?? 0);
         if (!$id) return ['error' => "Paramètre 'id' requis"];
 
         $row = null;
-        switch ($type) {
+        switch (rtrim(self::normType($type), 's')) {
             case 'bien':         $row = $this->db->getBienById($id); break;
             case 'equipement':   $row = $this->db->getEquipementById($id); break;
             case 'intervention': $row = $this->db->getInterventionById($id); break;
             case 'contrat':      $row = $this->db->getContratById($id); break;
             case 'demande':
-                $r = $this->db->fetchOne("SELECT * FROM DemandesIntervention WHERE Id=:id", ['id'=>$id]);
-                $row = $r ?: null; break;
+                $row = $this->db->fetchOne("SELECT * FROM DemandesIntervention WHERE Id=:id", ['id' => $id]) ?: null; break;
             case 'stock':
-                $r = $this->db->fetchOne("SELECT * FROM Stock WHERE Id=:id", ['id'=>$id]);
-                $row = $r ?: null; break;
+                $row = $this->db->fetchOne("SELECT * FROM Stock WHERE Id=:id", ['id' => $id]) ?: null; break;
             default: return ['error' => "Type inconnu : $type"];
         }
         if (!$row) return ['error' => "Fiche non trouvée"];
+        // Une fiche a droit à des textes un peu plus longs qu'une ligne de liste.
         return ['fiche' => $row];
     }
 
     private function tool_localiser(array $args): array {
-        $type = strtolower($args['type'] ?? '');
+        $type = self::normType((string)($args['type'] ?? ''));
         $id   = (int)($args['id'] ?? 0);
         if (!$id) return ['error' => "Paramètre 'id' requis"];
 
-        // Champs texte de la fiche
-        $row = null;
+        $type = rtrim($type, 's');
         if ($type === 'bien') $row = $this->db->getBienById($id);
         elseif ($type === 'equipement') $row = $this->db->getEquipementById($id);
         else return ['error' => "Type doit être 'bien' ou 'equipement'"];
         if (!$row) return ['error' => "Élément non trouvé"];
 
         $loc = [
-            'numero'  => $row['Numero'] ?? '',
-            'batiment'=> $row['Batiment'] ?? '',
-            'etage'   => $row['Etage'] ?? '',
-            'bureau'  => $row['NumeroBureau'] ?? '',
+            'numero'   => $row['Numero'] ?? '',
+            'batiment' => $row['Batiment'] ?? '',
+            'etage'    => $row['Etage'] ?? '',
+            'bureau'   => $row['NumeroBureau'] ?? '',
         ];
-
-        // Position sur les plans (via PlanLiens)
-        $assetType = ($type === 'bien') ? 'Bien' : 'Equipement';
         try {
             $linked = $this->db->fetchAll(
-                "SELECT el.Id AS ElementId, el.Nom AS ElementNom, el.TypeElement,
-                        et.Id AS EtageId, et.Nom AS EtageNom, et.Niveau,
-                        b.Id AS BatimentId, b.Nom AS BatimentNom
+                "SELECT el.Id AS ElementId, el.Nom AS ElementNom,
+                        et.Id AS EtageId, et.Nom AS EtageNom, b.Nom AS BatimentNom
                  FROM PlanLiens pl
                  JOIN PlanElements el ON pl.ElementId = el.Id
                  LEFT JOIN PlanEtages et ON el.EtageId = et.Id
                  LEFT JOIN PlanBatiments b ON et.BatimentId = b.Id
                  WHERE pl.AssetType = :t AND pl.AssetId = :id LIMIT 5",
-                ['t' => $assetType, 'id' => $id]
+                ['t' => $type === 'bien' ? 'Bien' : 'Equipement', 'id' => $id]
             );
             if ($linked) $loc['sur_plan'] = $linked;
         } catch (\Throwable $_) {}
-
         return $loc;
     }
 
     private function tool_localiser_groupe(array $args): array {
-        $type = strtolower($args['type'] ?? '');
+        $type = rtrim(self::normType((string)($args['type'] ?? '')), 's');
         $ids  = $args['ids'] ?? [];
+        if (is_string($ids)) $ids = preg_split('/[\s,;]+/', $ids);
         if (!is_array($ids) || empty($ids)) return ['error' => "Paramètre 'ids' (tableau) requis"];
         if (!in_array($type, ['bien', 'equipement'], true)) return ['error' => "Type doit être 'bien' ou 'equipement'"];
 
         $assetType = ($type === 'bien') ? 'Bien' : 'Equipement';
-        $idsInt = array_values(array_filter(array_map('intval', $ids), fn($i) => $i > 0));
+        $idsInt = array_values(array_unique(array_filter(array_map('intval', $ids), fn($i) => $i > 0)));
         if (empty($idsInt)) return ['error' => "Aucun ID valide"];
-        // Borner pour éviter une requête monstrueuse + un payload JSON énorme renvoyé au LLM
-        $truncated = false;
-        if (count($idsInt) > 50) {
-            $idsInt = array_slice($idsInt, 0, 50);
-            $truncated = true;
-        }
-        $idsInt = array_values(array_unique($idsInt));
+        $truncated = count($idsInt) > 50;
+        $idsInt = array_slice($idsInt, 0, 50);
 
-        // Récupérer toutes les positions plan en UN seul appel SQL
         try {
-            $placeholders = implode(',', array_map(fn($i) => ":id$i", array_keys($idsInt)));
             $params = ['t' => $assetType];
             foreach ($idsInt as $k => $v) $params["id$k"] = $v;
-
+            $ph = implode(',', array_map(fn($k) => ":id$k", array_keys($idsInt)));
             $rows = $this->db->fetchAll(
-                "SELECT pl.AssetId, el.Id AS ElementId, el.Nom AS ElementNom, el.TypeElement,
-                        et.Id AS EtageId, et.Nom AS EtageNom, et.Niveau,
-                        b.Id AS BatimentId, b.Nom AS BatimentNom
+                "SELECT pl.AssetId, el.Id AS ElementId, et.Id AS EtageId, et.Nom AS EtageNom, b.Nom AS BatimentNom
                  FROM PlanLiens pl
                  JOIN PlanElements el ON pl.ElementId = el.Id
                  LEFT JOIN PlanEtages et ON el.EtageId = et.Id
                  LEFT JOIN PlanBatiments b ON et.BatimentId = b.Id
-                 WHERE pl.AssetType = :t AND pl.AssetId IN ($placeholders)",
+                 WHERE pl.AssetType = :t AND pl.AssetId IN ($ph)",
                 $params
             );
 
-            // Indexer par AssetId pour faciliter l'accès côté LLM
-            $byId = [];
-            foreach ($rows as $r) {
-                $aid = (int)$r['AssetId'];
-                if (!isset($byId[$aid])) $byId[$aid] = [];
-                $byId[$aid][] = [
-                    'ElementId'   => (int)$r['ElementId'],
-                    'ElementNom'  => $r['ElementNom'],
-                    'TypeElement' => $r['TypeElement'],
-                    'EtageId'     => $r['EtageId'] ? (int)$r['EtageId'] : null,
-                    'EtageNom'    => $r['EtageNom'],
-                    'BatimentId'  => $r['BatimentId'] ? (int)$r['BatimentId'] : null,
-                    'BatimentNom' => $r['BatimentNom'],
-                ];
-            }
-
-            // Récupérer les noms / numéros pour TOUS les IDs demandés en UNE seule requête.
-            // (Avant : on bouclait avec getBienById/getEquipementById → N requêtes SQL,
-            //  ce qui annulait tout l'intérêt de l'outil "groupe".)
             $table = ($type === 'bien') ? 'Biens' : 'Equipements';
             $idParams = [];
             foreach ($idsInt as $k => $v) $idParams["aid$k"] = $v;
             $idPh = implode(',', array_map(fn($k) => ":$k", array_keys($idParams)));
             $assets = $this->db->fetchAll(
                 "SELECT Id, Numero, InfoProduit, Marque, Modele, Batiment, Etage, NumeroBureau
-                 FROM $table
-                 WHERE Id IN ($idPh) AND DateSuppression IS NULL",
+                 FROM $table WHERE Id IN ($idPh) AND DateSuppression IS NULL",
                 $idParams
             );
-            // Indexer par Id pour préserver l'ordre demandé
             $assetsById = [];
             foreach ($assets as $a) $assetsById[(int)$a['Id']] = $a;
+            $surPlan = [];
+            foreach ($rows as $r) $surPlan[(int)$r['AssetId']] = true;
 
             $details = [];
             foreach ($idsInt as $id) {
                 $row = $assetsById[$id] ?? null;
                 if (!$row) continue;
-                $nom = $row['InfoProduit'] ?: trim(($row['Marque'] ?? '') . ' ' . ($row['Modele'] ?? ''));
                 $details[] = [
                     'id'       => $id,
                     'numero'   => $row['Numero'] ?? '',
-                    'nom'      => $nom,
+                    'nom'      => $row['InfoProduit'] ?: trim(($row['Marque'] ?? '') . ' ' . ($row['Modele'] ?? '')),
                     'batiment' => $row['Batiment'] ?? '',
                     'etage'    => $row['Etage'] ?? '',
                     'bureau'   => $row['NumeroBureau'] ?? '',
-                    'sur_plan' => $byId[$id] ?? null,
+                    'sur_plan' => isset($surPlan[$id]),
                 ];
             }
-
-            // Regroupement utile pour l'IA : tous les éléments par EtageId, pour les liens [FICHE:plans:...]
+            // Regroupement par étage : c'est ce qu'il faut pour les liens [FICHE:plans:…].
             $regroupement = [];
             foreach ($rows as $r) {
                 $etId = (int)($r['EtageId'] ?? 0);
                 if (!$etId) continue;
-                if (!isset($regroupement[$etId])) {
-                    $regroupement[$etId] = [
-                        'EtageId'     => $etId,
-                        'EtageNom'    => $r['EtageNom'],
-                        'BatimentNom' => $r['BatimentNom'],
-                        'ElementIds'  => [],
-                    ];
-                }
+                $regroupement[$etId] ??= ['EtageId' => $etId, 'EtageNom' => $r['EtageNom'],
+                                          'BatimentNom' => $r['BatimentNom'], 'ElementIds' => []];
                 $regroupement[$etId]['ElementIds'][] = (int)$r['ElementId'];
             }
-
             return [
-                'count'           => count($details),
-                'count_sur_plan'  => count($byId),
-                'truncated'       => $truncated,
-                'details'         => $details,
+                'count'                  => count($details),
+                'count_sur_plan'         => count($surPlan),
+                'truncated'              => $truncated,
                 'regroupement_par_etage' => array_values($regroupement),
+                'details'                => $details,
             ];
         } catch (\Throwable $e) {
             error_log('[Larka][assistant] SQL error: ' . $e->getMessage());
@@ -443,27 +752,22 @@ class AssistantTools {
     }
 
     private function tool_compter(array $args): array {
-        $type = strtolower($args['type'] ?? '');
+        $type = self::normType((string)($args['type'] ?? ''));
         $filtres = is_array($args['filtres'] ?? null) ? $args['filtres'] : [];
         $tableMap = [
-            'biens' => ['Biens', "DateSuppression IS NULL"],
-            'equipements' => ['Equipements', "DateSuppression IS NULL"],
+            'biens'         => ['Biens', "DateSuppression IS NULL"],
+            'equipements'   => ['Equipements', "DateSuppression IS NULL"],
             'interventions' => ['Interventions', ''],
-            'contrats' => ['Contrats', ''],
-            'demandes' => ['DemandesIntervention', ''],
-            'stock' => ['Stock', ''],
-            // 'plans' = éléments dessinés sur les plans (points, zones, traits, textes).
-            // Filtres pertinents : TypeElement ('point'/'zone'/'trait'/'texte'),
-            // Calque (couche logique), EtageId.
-            // NB : le nom de la table est 'PlanElements' (PascalCase), pas snake_case.
-            'plans' => ['PlanElements', ''],
+            'contrats'      => ['Contrats', ''],
+            'demandes'      => ['DemandesIntervention', ''],
+            'stock'         => ['Stock', ''],
+            'plans'         => ['PlanElements', ''],
         ];
-        if (!isset($tableMap[$type])) return ['error' => "Type inconnu"];
+        if (!isset($tableMap[$type])) return ['error' => "Type inconnu", 'types_valides' => array_keys($tableMap)];
         [$table, $extraWhere] = $tableMap[$type];
 
-        // Whitelist stricte des colonnes filtrables par table. Évite que le LLM
-        // (ou un acteur malveillant via prompt injection) injecte un nom de colonne
-        // arbitraire qui ferait planter la requête, ou pire, exposerait des champs sensibles.
+        // Whitelist stricte des colonnes filtrables : un nom de colonne venu du
+        // modèle (ou d'une injection de prompt) n'entre jamais tel quel en SQL.
         $colWhitelist = [
             'Biens'                => ['Famille','Batiment','Etage','Etat','TypeBien','Categorie'],
             'Equipements'          => ['Famille','Batiment','Etage','Etat','TypeEquipement','Marque'],
@@ -471,55 +775,55 @@ class AssistantTools {
             'Contrats'             => ['Statut','Societe','Type','Categorie'],
             'DemandesIntervention' => ['Statut','Urgence','Categorie','Batiment'],
             'Stock'                => ['Categorie','Famille','Emplacement'],
-            // PlanElements : on accepte aussi 'type_element' comme alias de 'TypeElement'
-            // (le LLM utilise spontanément le snake_case).
             'PlanElements'         => ['TypeElement','Calque','EtageId','Nom'],
         ];
         $allowed = $colWhitelist[$table] ?? [];
         $allowedLower = array_map('strtolower', $allowed);
 
-        // Filtre spécial "annee" (sur DateCreation ou DateIntervention)
         $where = []; $params = [];
         if ($extraWhere) $where[] = $extraWhere;
+        $appliques = [];
 
         foreach ($filtres as $col => $val) {
-            if ($val === '' || $val === null) continue;
-            $colLower = strtolower(preg_replace('/[^A-Za-z0-9_]/', '', $col));
+            if ($val === '' || $val === null || is_array($val)) continue;
+            $colLower = strtolower(preg_replace('/[^A-Za-z0-9_]/', '', (string)$col));
             if (!$colLower) continue;
 
-            // Alias pratiques : le LLM utilise spontanément des noms snake_case
-            // ou des synonymes. On les normalise vers le nom interne whitelisté.
-            $aliases = [
-                'type_element' => 'typeelement',
-                'type'         => 'typeelement', // pour type='plans', filtres={type:'point'}
-                'etage_id'     => 'etageid',
-            ];
-            if (isset($aliases[$colLower])) {
-                $colLower = $aliases[$colLower];
-            }
+            // Alias snake_case spontanés du modèle. « type » ne désigne
+            // TypeElement QUE pour les plans : sur les interventions c'est bien
+            // la colonne Type (l'ancien alias global la rendait infiltrable).
+            $aliases = ['type_element' => 'typeelement', 'etage_id' => 'etageid'];
+            if ($table === 'PlanElements') $aliases['type'] = 'typeelement';
+            if ($table === 'Biens')       $aliases['type'] = 'typebien';
+            if ($table === 'Equipements') $aliases['type'] = 'typeequipement';
+            $colLower = $aliases[$colLower] ?? $colLower;
 
-            // Cas spécial année (utilisé par les exemples du prompt)
             if ($colLower === 'annee' && preg_match('/^\d{4}$/', (string)$val)) {
                 $dateCol = ($table === 'Interventions') ? 'DateIntervention'
-                         : (($table === 'DemandesIntervention' || $table === 'Contrats') ? 'DateCreation' : null);
+                         : (in_array($table, ['DemandesIntervention', 'Contrats'], true) ? 'DateCreation' : null);
                 if ($dateCol) {
                     $where[] = "SUBSTR(CAST(\"$dateCol\" AS TEXT),1,4) = :annee";
                     $params['annee'] = (string)$val;
+                    $appliques['annee'] = (string)$val;
                 }
                 continue;
             }
-
-            // Cas général : colonne whitelistée uniquement
             $idx = array_search($colLower, $allowedLower, true);
-            if ($idx === false) continue; // colonne refusée silencieusement
+            if ($idx === false) continue;
             $safeCol = $allowed[$idx];
             $where[] = "LOWER(CAST(\"$safeCol\" AS TEXT)) LIKE LOWER(:v_$safeCol)";
             $params["v_$safeCol"] = '%' . $val . '%';
+            $appliques[$safeCol] = (string)$val;
         }
         $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
         try {
             $row = $this->db->fetchOne("SELECT COUNT(*) AS c FROM $table $whereSql", $params);
-            return ['type' => $type, 'count' => (int)($row['c'] ?? 0), 'filtres' => $filtres];
+            $out = ['type' => $type, 'count' => (int)($row['c'] ?? 0), 'filtres_appliques' => $appliques ?: (object)[]];
+            $ignores = array_diff(array_keys($filtres), array_keys($appliques), ['annee']);
+            if ($ignores && count($appliques) < count(array_filter($filtres, fn($v) => $v !== '' && $v !== null))) {
+                $out['filtres_ignores'] = array_values($ignores);
+            }
+            return $out;
         } catch (\Throwable $e) {
             error_log('[Larka][assistant] SQL error: ' . $e->getMessage());
             return ['error' => "Erreur lors de la requête."];
@@ -527,36 +831,33 @@ class AssistantTools {
     }
 
     private function tool_alertes(array $args): array {
-        $cat   = strtolower($args['categorie'] ?? 'toutes');
+        $cat   = strtolower((string)($args['categorie'] ?? 'toutes')) ?: 'toutes';
         $jours = max(1, min(365, (int)($args['jours'] ?? 30)));
         $out = [];
+        $lim = $this->maxResults;
 
         if ($cat === 'toutes' || $cat === 'contrats') {
             try {
                 $rows = $this->db->getContratsEnAlerte();
-                $out['contrats_expirent'] = array_slice(array_map(fn($r) => [
-                    'id' => $r['Id'],
-                    'societe' => $r['Societe'],
-                    'numero' => $r['Numero'],
-                    'date_fin' => $r['DateFin'],
-                    'montant_annuel' => $r['MontantAnnuel'],
-                ], $rows), 0, 30);
+                $limite = date('Y-m-d', strtotime("+$jours days"));
+                $rows = array_values(array_filter($rows, fn($r) => empty($r['DateFin']) || substr((string)$r['DateFin'], 0, 10) <= $limite));
+                $out['contrats_expirent'] = ['count' => count($rows), 'items' => array_slice(array_map(fn($r) => [
+                    'id' => $r['Id'], 'societe' => $r['Societe'], 'numero' => $r['Numero'],
+                    'date_fin' => $r['DateFin'], 'montant_annuel' => $r['MontantAnnuel'],
+                ], $rows), 0, $lim)];
             } catch (\Throwable $_) {}
         }
         if ($cat === 'toutes' || $cat === 'stock') {
             try {
                 $rows = $this->db->getStockEnAlerte();
-                $out['stock_en_alerte'] = array_slice(array_map(fn($r) => [
-                    'id' => $r['Id'],
-                    'designation' => $r['Designation'],
-                    'quantite' => $r['Quantite'],
-                    'seuil' => $r['SeuilAlerte'],
-                ], $rows), 0, 30);
+                $out['stock_en_alerte'] = ['count' => count($rows), 'items' => array_slice(array_map(fn($r) => [
+                    'id' => $r['Id'], 'designation' => $r['Designation'],
+                    'quantite' => $r['Quantite'], 'seuil' => $r['SeuilAlerte'],
+                ], $rows), 0, $lim)];
             } catch (\Throwable $_) {}
         }
         if ($cat === 'toutes' || $cat === 'interventions') {
             try {
-                // Interventions planifiées avec DateIntervention dépassée
                 $rows = $this->db->fetchAll(
                     "SELECT Id, Numero, Type, Statut, DateIntervention, Description
                      FROM Interventions
@@ -566,7 +867,7 @@ class AssistantTools {
                      ORDER BY DateIntervention LIMIT 30",
                     ['today' => date('Y-m-d')]
                 );
-                $out['interventions_en_retard'] = $rows;
+                $out['interventions_en_retard'] = ['count' => count($rows), 'items' => array_slice($rows, 0, $lim)];
             } catch (\Throwable $_) {}
         }
         if ($cat === 'toutes' || $cat === 'demandes') {
@@ -577,34 +878,15 @@ class AssistantTools {
                      WHERE Statut IN ('Nouveau','Demandeur','Relancé')
                      ORDER BY DateCreation LIMIT 30"
                 );
-                $out['demandes_non_traitees'] = $rows;
+                $out['demandes_non_traitees'] = ['count' => count($rows), 'items' => array_slice($rows, 0, $lim)];
             } catch (\Throwable $_) {}
         }
         return $out;
     }
 
     /**
-     * Annuaire interne — recherche un utilisateur par mot-clé, rôle ou ID.
-     *
-     * Politique RGPD : on n'expose JAMAIS le mot de passe (évident), les tokens,
-     * les IDs Microsoft/Google. Pour les coordonnées, distinction PRO vs PERSO :
-     *   - PRO (TelPro, OfficeLocation, CompanyName) : exposé sans restriction —
-     *     c'est de l'annuaire interne légitime.
-     *   - PERSO (Tel, TelMobile, Email perso ≠ Login) : exposé UNIQUEMENT si
-     *     l'utilisateur a explicitement coché "partager ces coordonnées dans
-     *     l'annuaire" (champ PartagerCoordonnees s'il existe, sinon non exposé).
-     *
-     * Cet outil est exempté de anonymize() — voir execute(). C'est lui qui doit
-     * filtrer ce qui sort.
-     */
-    /**
-     * Recherche de documents SharePoint / OneDrive via l'API Microsoft Search
-     * (POST /search/query, entityTypes=driveItem — même mécanique que la route
-     * 'sharepoint_search_files'). Utilise le token DÉLÉGUÉ de l'utilisateur :
-     * il ne voit donc que les fichiers auxquels SON compte a accès (RGPD ok).
-     *
-     * Résultats volontairement COMPACTS (8 max, champs courts) : chaque octet
-     * renvoyé repart dans le contexte du LLM et coûte du temps d'inférence CPU.
+     * Recherche de documents SharePoint / OneDrive via Microsoft Search, avec
+     * le jeton DÉLÉGUÉ de l'utilisateur (il ne voit que ce à quoi il a accès).
      */
     private function tool_search_sharepoint(array $args): array {
         if (!$this->msToken) {
@@ -614,24 +896,19 @@ class AssistantTools {
         if ($query === '') return ['erreur' => 'Requête vide.'];
         if (mb_strlen($query) > 200) $query = mb_substr($query, 0, 200);
 
-        $body = json_encode([
-            'requests' => [[
-                'entityTypes' => ['driveItem'],
-                'query'       => ['queryString' => $query],
-                'from'        => 0,
-                'size'        => 8,
-            ]],
-        ], JSON_UNESCAPED_UNICODE);
+        $body = json_encode(['requests' => [[
+            'entityTypes' => ['driveItem'],
+            'query'       => ['queryString' => $query],
+            'from'        => 0,
+            'size'        => 8,
+        ]]], JSON_UNESCAPED_UNICODE);
 
         $ch = curl_init('https://graph.microsoft.com/v1.0/search/query');
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => $body,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => [
-                'Authorization: Bearer ' . $this->msToken,
-                'Content-Type: application/json',
-            ],
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $this->msToken, 'Content-Type: application/json'],
             CURLOPT_TIMEOUT        => 10,
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_SSL_VERIFYPEER => true,
@@ -642,9 +919,9 @@ class AssistantTools {
         $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($raw === false)  return ['erreur' => 'Microsoft Graph injoignable.'];
-        if ($http === 401)   return ['erreur' => 'Session Microsoft expirée : se reconnecter via Microsoft.'];
-        if ($http >= 400)    return ['erreur' => "Erreur Microsoft Graph (HTTP $http)."];
+        if ($raw === false) return ['erreur' => 'Microsoft Graph injoignable.'];
+        if ($http === 401)  return ['erreur' => 'Session Microsoft expirée : se reconnecter via Microsoft.'];
+        if ($http >= 400)   return ['erreur' => "Erreur Microsoft Graph (HTTP $http)."];
 
         $data  = json_decode($raw, true);
         $items = [];
@@ -652,7 +929,7 @@ class AssistantTools {
             foreach (($resp['hitsContainers'] ?? []) as $hc) {
                 foreach (($hc['hits'] ?? []) as $hit) {
                     $r = $hit['resource'] ?? [];
-                    if (empty($r['id']) || isset($r['folder'])) continue; // fichiers uniquement
+                    if (empty($r['id']) || isset($r['folder'])) continue;
                     $parentPath = '';
                     if (!empty($r['parentReference']['path'])) {
                         $p   = $r['parentReference']['path'];
@@ -660,13 +937,11 @@ class AssistantTools {
                         $parentPath = $pos !== false ? rawurldecode(ltrim(substr($p, $pos + 5), '/')) : '';
                     }
                     $items[] = [
-                        'nom'      => mb_substr($r['name'] ?? '', 0, 120),
-                        'chemin'   => mb_substr($parentPath, 0, 150),
-                        'taille_ko'=> (int)round(($r['size'] ?? 0) / 1024),
-                        'modifie'  => substr($r['lastModifiedDateTime'] ?? '', 0, 10),
-                        'url'      => $r['webUrl'] ?? '',
-                        'driveId'  => $r['parentReference']['driveId'] ?? '',
-                        'itemId'   => $r['id'],
+                        'nom'       => mb_substr($r['name'] ?? '', 0, 120),
+                        'chemin'    => mb_substr($parentPath, 0, 150),
+                        'taille_ko' => (int)round(($r['size'] ?? 0) / 1024),
+                        'modifie'   => substr($r['lastModifiedDateTime'] ?? '', 0, 10),
+                        'url'       => $r['webUrl'] ?? '',
                     ];
                     if (count($items) >= 8) break 3;
                 }
@@ -676,19 +951,17 @@ class AssistantTools {
         return ['resultats' => $items];
     }
 
+    /**
+     * Annuaire interne. On n'expose que des champs PRO (jamais mot de passe,
+     * jetons, identifiants OAuth, téléphone ou email personnels).
+     */
     private function tool_qui_est(array $args): array {
         $id    = (int)($args['id'] ?? 0);
         $query = trim((string)($args['query'] ?? ''));
         $role  = trim((string)($args['role'] ?? ''));
-        $roles = ['Demandeur','Gestionnaire','Technicien','Admin','Visionneur'];
+        $roles = ['Demandeur', 'Gestionnaire', 'Technicien', 'Admin', 'Visionneur'];
+        $select = "Id, Nom, Prenom, Login, Role, Service, Poste, TelPro, OfficeLocation, CompanyName, ManagerName, Actif";
 
-        // Champs renvoyés : on ne mappe PAS Tel/TelMobile/Email perso par défaut.
-        // Login est utile pour les références internes (le LLM peut s'en servir
-        // pour mettre en relation avec un AssigneA, un DeclarantLogin, etc.).
-        $select = "Id, Nom, Prenom, Login, Role, Service, Poste, TelPro, "
-                . "OfficeLocation, CompanyName, ManagerName, Actif";
-
-        // Lookup par ID
         if ($id > 0) {
             try {
                 $row = $this->db->fetchOne("SELECT $select FROM Utilisateurs WHERE Id = :id LIMIT 1", ['id' => $id]);
@@ -700,57 +973,39 @@ class AssistantTools {
             }
         }
 
-        // Construction des WHERE
-        $where  = ["Actif = 1"];
-        $params = [];
-
+        $where = ["Actif = 1"]; $params = [];
         if ($role && in_array($role, $roles, true)) {
             $where[] = "Role = :role";
             $params['role'] = $role;
         }
-
         if ($query !== '') {
-            // Recherche LIKE sur plusieurs champs. On split en mots et on
-            // applique un AND entre mots (chaque mot doit matcher AU MOINS
-            // un champ). C'est plus permissif que d'exiger tous les mots
-            // sur le même champ.
-            $kw = $this->extractKeywords($query);
-            if (!empty($kw)) {
-                $i = 0;
-                foreach ($kw as $w) {
-                    $i++;
+            [$kw] = $this->keywords($query);
+            if ($kw) {
+                foreach (array_values($kw) as $i => $w) {
                     $k = ":kw$i";
                     $params["kw$i"] = '%' . mb_strtolower($w) . '%';
                     $where[] = "(LOWER(Nom) LIKE $k OR LOWER(Prenom) LIKE $k OR LOWER(Login) LIKE $k "
                              . "OR LOWER(Service) LIKE $k OR LOWER(Poste) LIKE $k OR LOWER(Role) LIKE $k)";
                 }
             } else {
-                // Pas de mot-clé exploitable, on traite query comme un seul motif
                 $params['raw'] = '%' . mb_strtolower($query) . '%';
                 $where[] = "(LOWER(Nom) LIKE :raw OR LOWER(Prenom) LIKE :raw OR LOWER(Login) LIKE :raw)";
             }
         }
-
-        $sql = "SELECT $select FROM Utilisateurs WHERE " . implode(' AND ', $where)
-             . " ORDER BY Nom, Prenom LIMIT 30";
         try {
-            $rows = $this->db->fetchAll($sql, $params);
+            $rows = $this->db->fetchAll("SELECT $select FROM Utilisateurs WHERE " . implode(' AND ', $where)
+                                        . " ORDER BY Nom, Prenom LIMIT 30", $params);
         } catch (\Throwable $e) {
             error_log('[Larka][assistant] annuaire error: ' . $e->getMessage());
             return ['error' => 'Erreur lors de la lecture de l\'annuaire.'];
         }
-
-        if (empty($rows)) {
-            return ['count' => 0, 'results' => [], 'message' => 'Aucun utilisateur trouvé.'];
-        }
-
+        if (!$rows) return ['count' => 0, 'results' => [], 'message' => 'Aucun utilisateur trouvé.'];
         return [
             'count'   => count($rows),
-            'results' => array_map(fn($r) => $this->formatUserRow($r), $rows),
+            'results' => array_map(fn($r) => $this->formatUserRow($r), array_slice($rows, 0, $this->maxResults)),
         ];
     }
 
-    /** Formate une ligne utilisateur pour exposition au LLM. */
     private function formatUserRow(array $row): array {
         return [
             'Id'          => (int)($row['Id'] ?? 0),
@@ -768,26 +1023,145 @@ class AssistantTools {
 
     private function tool_contexte(array $args): array {
         $out = [];
-        try {
-            $r = $this->db->fetchAll("SELECT DISTINCT Batiment FROM Biens WHERE Batiment IS NOT NULL AND Batiment != '' AND DateSuppression IS NULL ORDER BY Batiment LIMIT 50");
-            $out['batiments'] = array_column($r, 'Batiment');
-        } catch (\Throwable $_) {}
-        try {
-            $r = $this->db->fetchAll("SELECT DISTINCT Famille FROM Biens WHERE Famille IS NOT NULL AND Famille != '' AND DateSuppression IS NULL ORDER BY Famille LIMIT 30");
-            $out['familles_biens'] = array_column($r, 'Famille');
-        } catch (\Throwable $_) {}
-        try {
-            $r = $this->db->fetchAll("SELECT DISTINCT Famille FROM Equipements WHERE Famille IS NOT NULL AND Famille != '' AND DateSuppression IS NULL ORDER BY Famille LIMIT 30");
-            $out['familles_equipements'] = array_column($r, 'Famille');
-        } catch (\Throwable $_) {}
-        try {
-            $r = $this->db->fetchAll("SELECT DISTINCT Categorie FROM DemandesIntervention WHERE Categorie IS NOT NULL AND Categorie != '' ORDER BY Categorie LIMIT 30");
-            $out['categories_demandes'] = array_column($r, 'Categorie');
-        } catch (\Throwable $_) {}
+        $q = [
+            'batiments'            => "SELECT DISTINCT Batiment AS v FROM Biens WHERE Batiment IS NOT NULL AND Batiment != '' AND DateSuppression IS NULL ORDER BY Batiment LIMIT 40",
+            'familles_biens'       => "SELECT DISTINCT Famille AS v FROM Biens WHERE Famille IS NOT NULL AND Famille != '' AND DateSuppression IS NULL ORDER BY Famille LIMIT 30",
+            'familles_equipements' => "SELECT DISTINCT Famille AS v FROM Equipements WHERE Famille IS NOT NULL AND Famille != '' AND DateSuppression IS NULL ORDER BY Famille LIMIT 30",
+            'categories_demandes'  => "SELECT DISTINCT Categorie AS v FROM DemandesIntervention WHERE Categorie IS NOT NULL AND Categorie != '' ORDER BY Categorie LIMIT 30",
+        ];
+        foreach ($q as $k => $sql) {
+            try { $out[$k] = array_column($this->db->fetchAll($sql), 'v'); } catch (\Throwable $_) {}
+        }
         try {
             $r = $this->db->fetchAll("SELECT Prenom, Nom, Poste, Service FROM Utilisateurs WHERE Actif = 1 AND Role IN ('Gestionnaire','Admin') ORDER BY Nom LIMIT 20");
             $out['gestionnaires'] = array_map(fn($u) => trim(($u['Prenom'] ?? '') . ' ' . ($u['Nom'] ?? '')) . ' (' . ($u['Poste'] ?: $u['Service'] ?: '') . ')', $r);
         } catch (\Throwable $_) {}
+        if ($this->modules) {
+            $out['modules_installes'] = array_map(fn($m) => $m['nom'], $this->modules);
+        }
+        return $out;
+    }
+
+    /**
+     * Données d'un module complémentaire (extension déclarative).
+     *
+     * La lecture passe par ExtMoteurDeclaratif::lister() : mêmes contrôles
+     * que l'écran du module (rôles page par page, couche de sécurité,
+     * journal). Un module non installé, inactif ou non accordé à ce rôle
+     * n'apparaît simplement pas dans $this->modules.
+     */
+    private function tool_module(array $args): array {
+        $id = trim((string)($args['module'] ?? ''));
+
+        // ── Catalogue ────────────────────────────────────────────────────
+        if ($id === '') {
+            $out = ['installes' => []];
+            foreach ($this->modules as $mid => $m) {
+                $out['installes'][] = [
+                    'module' => $mid, 'nom' => $m['nom'],
+                    'jeux'   => array_map(fn($j) => $j['libelle'], $m['jeux']),
+                    'pages'  => $m['pages'],
+                ];
+            }
+            if (is_callable($this->modulesDisponibles)) {
+                try {
+                    $dispo = ($this->modulesDisponibles)();
+                    if ($dispo) $out['non_installes'] = $dispo;
+                } catch (\Throwable $_) {}
+            }
+            if (!$out['installes']) $out['note'] = 'Aucun module complémentaire installé et accessible.';
+            return $out;
+        }
+
+        // Tolérance : le modèle donne parfois le NOM au lieu de l'identifiant.
+        if (!isset($this->modules[$id])) {
+            foreach ($this->modules as $mid => $m) {
+                if (self::norm($m['nom']) === self::norm($id) || str_ends_with($mid, '.' . strtolower($id))) { $id = $mid; break; }
+            }
+        }
+        if (!isset($this->modules[$id])) {
+            return ['error' => "Module « $id » non installé, inactif ou non accessible pour ce rôle.",
+                    'installes' => array_keys($this->modules)];
+        }
+        if (!class_exists('ExtMoteurDeclaratif')) return ['error' => 'Couche extensions indisponible.'];
+
+        $m   = $this->modules[$id];
+        $jeu = trim((string)($args['jeu'] ?? ''));
+        if ($jeu === '' || !isset($m['jeux'][$jeu])) {
+            // Nom de jeu approximatif (« clés » pour « cles ») → on rapproche.
+            $trouve = null;
+            foreach ($m['jeux'] as $nom => $j) {
+                if ($jeu !== '' && (self::norm($j['libelle']) === self::norm($jeu) || self::norm($nom) === self::norm($jeu))) { $trouve = $nom; break; }
+            }
+            $jeu = $trouve ?? array_key_first($m['jeux']);
+        }
+        if ($jeu === null) return ['error' => 'Aucun jeu de données lisible dans ce module pour ce rôle.'];
+
+        $recherche = trim((string)($args['recherche'] ?? ''));
+        [$orig] = $recherche !== '' ? $this->keywords($recherche) : [[]];
+        try {
+            [$rows, $total] = $this->moduleRows($id, $jeu, $orig);
+        } catch (\Throwable $e) {
+            return ['error' => 'Lecture refusée ou impossible : ' . mb_substr($e->getMessage(), 0, 120)];
+        }
+
+        $champs  = $m['jeux'][$jeu]['champs'] ?? [];
+        $formats = $m['jeux'][$jeu]['formats'] ?? [];
+        $rows = array_map(fn($row) => $this->maskModuleRow($row, $formats), array_slice($rows, 0, $this->maxResults));
+
+        return [
+            'module'  => $id,
+            'jeu'     => $jeu,
+            'libelle' => $m['jeux'][$jeu]['libelle'],
+            'champs'  => $champs,
+            'total'   => $total,
+            'results' => $rows,
+        ];
+    }
+
+    /**
+     * Lignes d'un jeu de module, via le moteur déclaratif (droits compris).
+     * Sans mot-clé : les derniers enregistrements. Avec : préfiltre moteur sur
+     * le mot le plus long, puis classement par pertinence ici.
+     * @return array{0: array, 1: int}
+     */
+    private function moduleRows(string $id, string $jeu, array $orig): array {
+        $moteur = new ExtMoteurDeclaratif($id, $this->modules[$id]['declaration'], $this->db, $this->user);
+        if (!$orig) {
+            $r = $moteur->lister($jeu, ['page' => 1]);
+            return [$r['lignes'] ?? [], (int)($r['total'] ?? count($r['lignes'] ?? []))];
+        }
+        usort($orig, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+        $rows = [];
+        foreach (array_slice($orig, 0, 2) as $mot) {
+            $r = $moteur->lister($jeu, ['page' => 1, 'recherche' => $mot]);
+            $rows = $r['lignes'] ?? [];
+            if ($rows) break;
+        }
+        $t = ['groups' => array_map(fn($w) => [$w], $orig), 'sql' => $orig, 'nums' => []];
+        $rows = array_values(array_filter($this->rank($rows, $t), function ($row) use ($orig) {
+            $hay = self::norm(implode(' ', array_map(fn($v) => is_scalar($v) ? (string)$v : '', $row)));
+            foreach ($orig as $k) if (str_contains($hay, self::norm($k))) return true;
+            return false;
+        }));
+        return [$rows, count($rows)];
+    }
+
+    /** RGPD sur une ligne de module : traçabilité retirée, personnes/coordonnées masquées. */
+    private function maskModuleRow(array $row, array $formats): array {
+        $out = [];
+        foreach ($row as $k => $v) {
+            $k = (string)$k;
+            if (in_array($k, ['cree_par', 'modifie_par', 'modifie_le'], true)) continue;
+            if (is_string($v) && $v !== '') {
+                $fmt = $formats[$k] ?? '';
+                $segs = preg_split('/[_\-]+/', strtolower($k));
+                if ($fmt === 'email' || array_intersect($segs, ['email', 'mail', 'courriel'])) $v = '[email]';
+                elseif ($fmt === 'telephone' || array_intersect($segs, ['telephone', 'tel', 'mobile', 'portable'])) $v = '[téléphone]';
+                elseif (array_intersect($segs, self::PERSON_SEGMENTS) && !str_ends_with($k, '_libelle')) $v = '[personne]';
+            }
+            $out[$k] = $v;
+        }
         return $out;
     }
 
@@ -795,48 +1169,180 @@ class AssistantTools {
     // ── Helpers ──
     // ═══════════════════════════════════════════════════════════════════════
 
-    /** Extraction de mots-clés simple + expansion synonymes/acronymes métier. */
-    private function extractKeywords(string $q): array {
-        $stop = ['je','tu','il','elle','le','la','les','un','une','des','de','du','au','aux','en','et','ou','est','sur','dans','pour','avec','par','ne','que','qui','quoi','où','quand','quel','quelle','combien','comment'];
-        $words = preg_split('/[\s,;:.\-\'"\/()?!]+/u', mb_strtolower($q));
-        $kw = array_values(array_filter($words, fn($w) => mb_strlen($w) >= 2 && !in_array($w, $stop)));
+    /** Minuscules sans accents — comparaisons tolérantes. */
+    public static function norm(string $s): string {
+        $s = mb_strtolower($s);
+        return strtr($s, [
+            'à'=>'a','â'=>'a','ä'=>'a','á'=>'a','ã'=>'a','ç'=>'c','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e',
+            'î'=>'i','ï'=>'i','í'=>'i','ô'=>'o','ö'=>'o','ó'=>'o','ù'=>'u','û'=>'u','ü'=>'u','ú'=>'u',
+            'ÿ'=>'y','œ'=>'oe','æ'=>'ae','’'=>"'",
+        ]);
+    }
 
-        // Dictionnaire d'acronymes métier (réutilisé d'assistant.php)
-        $syn = [
-            'ssi'=>['sécurité incendie','alarme incendie','centrale incendie','détection incendie'],
-            'baes'=>['bloc autonome','éclairage sécurité','éclairage secours'],
-            'cta'=>['centrale traitement air','centrale ventilation'],
-            'vmc'=>['ventilation','extraction air'],
-            'ecs'=>['eau chaude sanitaire','ballon eau chaude'],
-            'gtb'=>['gestion technique bâtiment','supervision'],
-            'tgbt'=>['tableau général basse tension','armoire électrique'],
-            'cvc'=>['chauffage ventilation climatisation'],
-            'pac'=>['pompe à chaleur'],
-            'pcs'=>['poste central sécurité'],
-            'des'=>['désenfumage'],
-            'erp'=>['établissement recevant public'],
-            'igh'=>['immeuble grande hauteur'],
-            'pmr'=>['personne mobilité réduite','accessibilité'],
-        ];
-        $expanded = $kw;
-        foreach ($kw as $w) {
-            $k = mb_strtolower($w);
-            if (isset($syn[$k])) {
-                foreach ($syn[$k] as $exp) {
-                    foreach (preg_split('/\s+/', $exp) as $ww) if (mb_strlen($ww) >= 4) $expanded[] = $ww;
-                    $expanded[] = $exp;
-                }
-            }
-            // Sens inverse : mot du domaine → acronyme
-            foreach ($syn as $acro => $exps) {
-                foreach ($exps as $exp) {
-                    if (mb_strlen($k) >= 4 && str_contains(mb_strtolower($exp), $k)) {
-                        $expanded[] = $acro; break;
+    /**
+     * Analyse complète d'une requête pour la recherche :
+     *   orig        mots d'origine
+     *   groups      par mot : [mot, correction éventuelle] — l'un OU l'autre suffit
+     *   sql         mots envoyés au LIKE (mots + corrections + synonymes)
+     *   nums        numéros isolés (« extincteur 2 », « 2ème ») — servent au
+     *               classement, pas au LIKE (« %2% » trouverait tout)
+     *   corrections mot mal orthographié → mot connu de la base
+     *
+     * La correction orthographique compare les mots inconnus au vocabulaire
+     * RÉEL du site (familles, désignations, bâtiments, éléments de plan…) :
+     * « exctincteur » → « extincteur ». Le mot d'origine est conservé : une
+     * correction ne peut qu'ajouter des résultats, jamais en retirer.
+     */
+    public function terms(string $q): array {
+        [$orig, $expanded, $nums] = $this->keywords($q);
+        $groups = []; $corr = []; $sql = $expanded;
+        $vocab = null;
+        foreach ($orig as $w) {
+            $g = [$w];
+            $n = self::norm($w);
+            if (mb_strlen($n) >= 4 && !ctype_digit($n)) {
+                $vocab ??= $this->vocab();
+                if ($vocab && !isset($vocab[$n])) {
+                    $best = null; $bestD = PHP_INT_MAX;
+                    $max = mb_strlen($n) <= 5 ? 1 : (mb_strlen($n) <= 8 ? 2 : 3);
+                    foreach ($vocab as $v => $_) {
+                        if (abs(strlen($v) - strlen($n)) > $max) continue;
+                        $d = levenshtein($n, $v);
+                        if ($d < $bestD) { $bestD = $d; $best = $v; if ($d === 1) break; }
+                    }
+                    if ($best !== null && $bestD <= $max) {
+                        $g[] = $best; $corr[$w] = $best; $sql[] = $best;
                     }
                 }
             }
+            $groups[] = $g;
         }
-        return array_values(array_unique($expanded));
+        return ['orig' => $orig, 'groups' => $groups, 'sql' => array_values(array_unique($sql)),
+                'nums' => $nums, 'corrections' => $corr];
+    }
+
+    /** Vocabulaire du site (mots normalisés), construit une fois par requête. */
+    private ?array $vocabCache = null;
+    private function vocab(): array {
+        if ($this->vocabCache !== null) return $this->vocabCache;
+        $sources = [
+            "SELECT DISTINCT Famille AS v FROM Equipements", "SELECT DISTINCT SousFamille AS v FROM Equipements",
+            "SELECT DISTINCT InfoProduit AS v FROM Equipements", "SELECT DISTINCT Batiment AS v FROM Equipements",
+            "SELECT DISTINCT Marque AS v FROM Equipements",
+            "SELECT DISTINCT Famille AS v FROM Biens", "SELECT DISTINCT SousFamille AS v FROM Biens",
+            "SELECT DISTINCT InfoProduit AS v FROM Biens", "SELECT DISTINCT Batiment AS v FROM Biens",
+            "SELECT DISTINCT Designation AS v FROM Stock", "SELECT DISTINCT Categorie AS v FROM Stock",
+            "SELECT DISTINCT Societe AS v FROM Contrats", "SELECT DISTINCT Type AS v FROM Contrats",
+            "SELECT DISTINCT Type AS v FROM Interventions", "SELECT DISTINCT Categorie AS v FROM DemandesIntervention",
+            "SELECT DISTINCT Nom AS v FROM PlanElements", "SELECT DISTINCT Calque AS v FROM PlanElements",
+            "SELECT DISTINCT Nom AS v FROM PlanBatiments", "SELECT DISTINCT Nom AS v FROM PlanEtages",
+        ];
+        $v = [];
+        foreach ($sources as $sql) {
+            try { $rows = $this->db->fetchAll($sql . " LIMIT 3000"); } catch (\Throwable $_) { continue; }
+            foreach ($rows as $r) {
+                foreach (preg_split('/[^\p{L}]+/u', self::norm((string)($r['v'] ?? '')), -1, PREG_SPLIT_NO_EMPTY) as $w) {
+                    if (strlen($w) < 4) continue;
+                    $v[$w] = true;
+                    if (str_ends_with($w, 's')) $v[substr($w, 0, -1)] = true;
+                }
+            }
+            if (count($v) > 20000) break;
+        }
+        // Vocabulaire métier courant, même absent de la base.
+        foreach (['extincteur','sprinkler','alarme','incendie','desenfumage','ascenseur','chaudiere','climatisation',
+                  'ventilation','luminaire','eclairage','prise','porte','poignee','fenetre','serrure','fuite',
+                  'robinet','toilette','lavabo','radiateur','tableau','electrique','onduleur','groupe','electrogene',
+                  'pompe','compteur','vanne','store','volet','plafond','peinture','vitre','badge','cle'] as $w) $v[$w] = true;
+        return $this->vocabCache = $v;
+    }
+
+    /**
+     * Mots-clés d'une requête : [mots d'origine, mots + synonymes métier, numéros isolés].
+     * @return array{0: string[], 1: string[]}
+     */
+    public function keywords(string $q): array {
+        static $stop = ['je','tu','il','elle','on','nous','vous','ils','le','la','les','l','un','une','des','de','d',
+            'du','au','aux','en','et','ou','est','sont','sur','dans','pour','avec','par','ne','pas','que','qui',
+            'quoi','où','quand','quel','quelle','quels','quelles','combien','comment','ce','cet','cette','ces',
+            'mon','ma','mes','ton','ta','tes','son','sa','ses','se','y','a','moi','donne','donner','liste',
+            'lister','montre','montrer','cherche','chercher','trouve','trouver','affiche','afficher','tous',
+            'toutes','tout','peux','peut','veux','voudrais','stp','svp','merci','il','y','a-t-il','existe',
+            'the','of','and','est-ce','qu','c'];
+        static $syn = [
+            'ssi'  => ['sécurité incendie','alarme incendie','centrale incendie','détection incendie'],
+            'baes' => ['bloc autonome','éclairage sécurité','éclairage secours'],
+            'cta'  => ['centrale traitement air','centrale ventilation'],
+            'vmc'  => ['ventilation','extraction air'],
+            'ecs'  => ['eau chaude sanitaire','ballon eau chaude'],
+            'gtb'  => ['gestion technique bâtiment','supervision'],
+            'tgbt' => ['tableau général basse tension','armoire électrique'],
+            'cvc'  => ['chauffage ventilation climatisation'],
+            'pac'  => ['pompe à chaleur'],
+            'pcs'  => ['poste central sécurité'],
+            'des'  => ['désenfumage'],
+            'erp'  => ['établissement recevant public'],
+            'igh'  => ['immeuble grande hauteur'],
+            'pmr'  => ['personne mobilité réduite','accessibilité'],
+        ];
+        $words = preg_split('/[\s,;:.\-\'’"\/()?!«»#°]+/u', mb_strtolower($q), -1, PREG_SPLIT_NO_EMPTY);
+        // Numéros isolés, ordinaux compris (2, 02, 2e, 2ème, 1er).
+        $nums = [];
+        foreach ($words as $w) {
+            if (preg_match('/^(\d{1,6})(e|eme|ème|er|ere|ère|nd|nde)?$/u', $w, $m)) $nums[] = (string)(int)$m[1];
+        }
+        $words = array_filter($words, fn($w) => !preg_match('/^\d{1,2}(e|eme|ème|er|ere|ère|nd|nde)?$/u', $w));
+        $orig = array_values(array_unique(array_filter($words,
+            fn($w) => mb_strlen($w) >= 2 && !in_array($w, $stop, true))));
+        // Pluriels simples : « pompes » trouve aussi « pompe ».
+        $orig = array_map(fn($w) => (mb_strlen($w) > 4 && str_ends_with($w, 's') && !str_ends_with($w, 'ss')) ? mb_substr($w, 0, -1) : $w, $orig);
+        $orig = array_values(array_unique($orig));
+
+        $expanded = $orig;
+        foreach ($orig as $w) {
+            if (isset($syn[$w])) {
+                foreach ($syn[$w] as $exp) {
+                    foreach (preg_split('/\s+/u', $exp) as $ww) if (mb_strlen($ww) >= 4) $expanded[] = $ww;
+                }
+            }
+            foreach ($syn as $acro => $exps) {
+                foreach ($exps as $exp) {
+                    if (mb_strlen($w) >= 4 && str_contains(mb_strtolower($exp), $w)) { $expanded[] = $acro; break; }
+                }
+            }
+        }
+        // Plafond : chaque mot multiplie les LIKE côté SQL.
+        return [$orig, array_slice(array_values(array_unique($expanded)), 0, 12), array_values(array_unique($nums))];
+    }
+
+    /**
+     * Compactage d'un résultat pour le modèle : retire les valeurs vides et les
+     * clés inutiles, tronque les textes, arrondit les décimaux, limite les
+     * listes imbriquées. Aucune donnée utile n'est inventée ni reformulée.
+     */
+    public function compact(mixed $data, ?int $maxChars = null, int $depth = 0): mixed {
+        $maxChars ??= $this->maxChars;
+        if (is_array($data)) {
+            $isList = array_is_list($data);
+            $out = [];
+            foreach ($data as $k => $v) {
+                if (!$isList && in_array((string)$k, self::DROP_KEYS, true)) continue;
+                if ($v === null || $v === '' || $v === []) continue;
+                $out[$k] = $this->compact($v, $maxChars, $depth + 1);
+            }
+            // Listes d'objets imbriquées dans une ligne (VuSurPlan, ElementsLies…) :
+            // 3 suffisent. Les listes de scalaires (ElementIds) restent entières.
+            if ($isList && $depth >= 3 && count($out) > 3 && is_array(reset($out))) $out = array_slice($out, 0, 3);
+            return $isList ? array_values($out) : $out;
+        }
+        if (is_float($data)) return round($data, 2);
+        if (is_string($data)) {
+            $data = trim(preg_replace('/\s+/u', ' ', $data));
+            if (preg_match('/^-?\d+\.\d{3,}$/', $data)) return (string)round((float)$data, 2);
+            if (preg_match('/^(\d{4}-\d{2}-\d{2})[ T]00:00:00(\.0+)?$/', $data, $m)) return $m[1];
+            if (mb_strlen($data) > $maxChars) return mb_substr($data, 0, $maxChars) . '…';
+        }
+        return $data;
     }
 
     /** Anonymisation RGPD des données personnelles dans les résultats. */
@@ -845,35 +1351,20 @@ class AssistantTools {
             'AjoutePar','SupprimeParLogin','SaisieParLogin','CreatedBy','UpdatedBy',
             'AgentNom','AgentPrenom','AgentTel','AgentEmail',
             'EmailDemandeur','TelDemandeur','NomAutrui','EmailAutrui','TelAutrui'];
-        // Liste de clés qui contiennent "mail"/"tel" dans leur nom mais ne sont PAS
-        // des données personnelles (dates, drapeaux, etc.) — on les laisse intactes.
         $excludedKeys = ['DateEnvoiMail','DateMail','EnvoiMail','TelechargementUrl','TelechargementId'];
 
-        $walk = function(&$v) use (&$walk, $anonFields, $excludedKeys) {
+        $walk = function (&$v) use (&$walk, $anonFields, $excludedKeys) {
             if (!is_array($v)) return;
             foreach ($v as $k => &$vv) {
-                // Recursion d'abord pour les sous-structures
-                if (is_array($vv)) {
-                    $walk($vv);
-                    continue;
-                }
+                if (is_array($vv)) { $walk($vv); continue; }
                 if (!is_string($k)) continue;
-
-                // Clé directement listée comme anonymisable
-                if (in_array($k, $anonFields, true) && is_string($vv) && $vv !== '') {
-                    $vv = '[personne]';
-                    continue;
-                }
+                if (in_array($k, $anonFields, true) && is_string($vv) && $vv !== '') { $vv = '[personne]'; continue; }
                 if (in_array($k, $excludedKeys, true)) continue;
-
                 if (is_string($vv) && $vv !== '') {
-                    // Email : la clé contient "mail" ET la valeur ressemble à un email
                     if ((stripos($k, 'email') !== false || stripos($k, 'mail') !== false)
                         && preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]+$/', trim($vv))) {
                         $vv = '[email]';
-                    }
-                    // Téléphone : la clé contient "tel"/"phone" ET ≥ 8 chiffres
-                    elseif ((stripos($k, 'tel') !== false || stripos($k, 'phone') !== false)
+                    } elseif ((stripos($k, 'tel') !== false || stripos($k, 'phone') !== false)
                         && preg_match('/\d{8,}/', preg_replace('/\D/', '', $vv))) {
                         $vv = '[téléphone]';
                     }

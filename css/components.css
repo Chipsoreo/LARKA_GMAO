@@ -423,3 +423,26 @@ select.form-control   { cursor: pointer; overflow: hidden; text-overflow: ellips
 
 /* ── Calque selector dans la toolbar ── */
 .plan-mini-label { display:inline-flex; align-items:center; gap:4px; }
+
+/* ── Zones du modal « Nouvelle demande » ─────────────────────────────────────
+   Ces deux conteneurs ont été ajoutés pour basculer entre les champs du cœur et
+   ceux d'un module. Enveloppés tels quels dans « .form-grid », ils devenaient
+   UN SEUL élément de grille : tous les champs se retrouvaient empilés dans la
+   colonne de gauche, et la moitié droite du modal restait vide.
+
+   Ils occupent donc toute la largeur et redeviennent eux-mêmes des grilles à
+   deux colonnes. On garde un vrai conteneur plutôt que « display: contents »,
+   car il faut pouvoir le masquer d'un bloc quand l'autre zone prend la main. */
+.form-grid > #zone_coeur,
+.form-grid > #zone_module {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-content: start;
+}
+/* Un écran étroit ne supporte pas deux colonnes de formulaire. */
+@media (max-width: 720px) {
+  .form-grid > #zone_coeur,
+  .form-grid > #zone_module { grid-template-columns: 1fr; }
+}

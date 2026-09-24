@@ -429,7 +429,11 @@ class Database {
      *      donc jamais créée et getAllUtilisateurs() plante — l'onglet Comptes
      *      renvoie alors « Erreur base de données ».
      */
-    private const SCHEMA_VERSION = 8;
+    // v9 : les tables de plans (PlanBatiments, PlanEtages, PlanElements,
+    //      PlanLiens) sont désormais créées par initTables() et non plus à la
+    //      première visite de l'écran Plans. Le bump force leur création sur
+    //      les bases déjà déployées où personne n'a encore ouvert cet écran.
+    private const SCHEMA_VERSION = 9;
 
     /**
      * Fichier sentinelle utilisé pour court-circuiter initTables() quand
@@ -1002,6 +1006,19 @@ class Database {
                 foreach ($defaults as $row) { $stmt->execute($row); }
             }
         }
+        // ── Tables de plans, créées ICI et non plus à la demande ─────────
+        //
+        // ⚠️ ELLES N'EXISTAIENT QU'APRÈS LA PREMIÈRE VISITE DE L'ÉCRAN PLANS.
+        // initPlansTables() était appelée par chaque méthode de plan, jamais à
+        // la migration. Sur une base fraîche, « PlanBatiments » et les trois
+        // autres n'existaient donc pas — et tout ce qui les touche sans passer
+        // par l'écran échouait : import d'un jeu de données, restauration de
+        // sauvegarde, requête d'inventaire.
+        //
+        // Une table dont l'existence dépend de l'écran qu'on a ouvert n'est pas
+        // une table : c'est un effet de bord. Elle est créée avec les autres.
+        try { $this->initPlansTables(); } catch (\Throwable $e) { /* best-effort */ }
+
         // ⚠️ FIX PERFS : marquer le schéma comme à jour pour éviter de
         // refaire toutes les CREATE TABLE IF NOT EXISTS au prochain boot.
         // Best-effort — un échec ici n'a aucune conséquence fonctionnelle.
@@ -1050,19 +1067,139 @@ class Database {
     public function getListe(string $categorie): array {
         return $this->fetchAll("SELECT * FROM Listes WHERE Categorie = :cat AND Actif = 1 ORDER BY Ordre, Valeur", ['cat' => $categorie]);
     }
+    /**
+     * Les deux réglages d'une catégorie de liste : obligatoire, saisie libre.
+     *
+     * Exactement ceux des listes du cœur. Il y a eu ici quatre réglages — on
+     * pouvait aussi autoriser ou refuser l'ajout et le retrait de valeurs par
+     * les utilisateurs. C'étaient des permissions dont personne n'avait besoin :
+     * dans Configuration, ajouter une valeur ou la désactiver est ce qu'on fait
+     * normalement, pas un droit à s'accorder. Deux cases de plus pour un réglage
+     * que personne ne décochait.
+     *
+     * ⚠️ « SELECT * », JAMAIS DE COLONNES NOMMÉES SUR « Listes ».
+     * « Obligatoire » et « SaisieLibre » n'existent pas dans les bases
+     * antérieures. Les nommer fait échouer la requête entière — et comme
+     * l'appelant attrape l'exception, l'échec est SILENCIEUX : la valeur n'est
+     * pas ajoutée, la liste reste vide, et rien n'explique pourquoi. Le même
+     * piège est déjà documenté dans resoudreListes() ; il a été retendu ici en
+     * ajoutant deux colonnes et en les nommant.
+     */
+    public function reglagesCategorie(string $categorie): array
+    {
+        $l = [];
+        try {
+            $st = $this->getPdo()->prepare(
+                'SELECT * FROM Listes WHERE Categorie = :c LIMIT 1');
+            $st->execute([':c' => $categorie]);
+            $l = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) { /* table absente : les défauts conviennent */ }
+
+        // ── Deux cas envoient vers Config, et le second manquait ─────────
+        //
+        // 1. CATÉGORIE VIDE. Les réglages ne peuvent pas vivre sur des lignes
+        //    qui n'existent pas. C'est ce qui permet de configurer une liste
+        //    AVANT d'y mettre la moindre valeur.
+        //
+        // 2. COLONNES ABSENTES. « Obligatoire » et « SaisieLibre » n'existent
+        //    pas dans les bases antérieures à leur migration. L'UPDATE échoue
+        //    alors, setReglagesCategorie() se rabat sur Config — mais la
+        //    relecture, elle, trouvait une ligne et s'arrêtait là. Elle lisait
+        //    donc « 0 » sur une colonne inexistante et ne consultait jamais
+        //    l'endroit où la valeur venait d'être écrite.
+        //
+        //    Résultat vu de l'écran : on coche la case, on enregistre sans
+        //    erreur, on rouvre, la case est décochée. Rien dans les journaux.
+        //
+        // Une ligne SANS la colonne signale un schéma ancien, pas une catégorie
+        // sans réglage : les deux méritent le repli.
+        if ($l === [] || !array_key_exists('Obligatoire', $l)) {
+            $j = json_decode((string)$this->getConfig('liste_cfg_' . $categorie), true);
+            $l = is_array($j) ? $j : [];
+        }
+        return [
+            'obligatoire' => (int)($l['Obligatoire'] ?? $l['obligatoire'] ?? 0),
+            'libre'       => (int)($l['SaisieLibre'] ?? $l['libre'] ?? 0),
+        ];
+    }
+
+    /**
+     * Pose les réglages sur TOUTE la catégorie, en une requête.
+     *
+     * L'écran de configuration bouclait côté client sur chaque valeur, en
+     * appelant l'API une fois par ligne : lent, et surtout partiellement appliqué
+     * si l'un des appels échouait — la liste se retrouvait avec des lignes
+     * réglées et d'autres non, alors que le réglage vaut pour la catégorie.
+     */
+    public function setReglagesCategorie(string $categorie, int $obligatoire,
+                                          int $libre): int
+    {
+        $touchees = 0;
+        try {
+            $st = $this->getPdo()->prepare(
+                'UPDATE Listes SET Obligatoire = :o, SaisieLibre = :l '
+                . 'WHERE Categorie = :c');
+            $st->execute([':o' => $obligatoire, ':l' => $libre, ':c' => $categorie]);
+            $touchees = $st->rowCount();
+        } catch (\Throwable $e) {
+            // Colonnes absentes d'une base antérieure : on retombe sur Config,
+            // et $touchees reste à 0 — ce qui déclenche l'écriture plus bas.
+            $touchees = 0;
+        }
+
+        // Catégorie vide : on garde le réglage de côté pour qu'il s'applique
+        // aux valeurs à venir, et pour que l'écran le réaffiche.
+        if ($touchees === 0) {
+            $this->setConfig('liste_cfg_' . $categorie, json_encode([
+                'obligatoire' => $obligatoire, 'libre' => $libre,
+            ]));
+        } else {
+            // La catégorie a des lignes : elles portent désormais le réglage.
+            // On efface le repli, sinon deux sources coexistent et finissent par
+            // diverger — celle qu'on lit dépendrait de l'ordre des opérations.
+            $this->setConfig('liste_cfg_' . $categorie, '');
+        }
+        return $touchees;
+    }
+
     public function getAllListes(): array {
         $rows = $this->fetchAll("SELECT * FROM Listes ORDER BY Categorie, Ordre, Valeur");
         $grouped = [];
         foreach ($rows as $row) { $grouped[$row['Categorie']][] = $row; }
         return $grouped;
     }
-    public function addListeValeur(string $categorie, string $valeur, int $ordre = 0, int $obligatoire = 0, int $saisieLibre = 0): int {
+    /**
+     * Ajoute une valeur à une catégorie.
+     *
+     * `$obligatoire` et `$saisieLibre` à null : la valeur HÉRITE des réglages
+     * de sa catégorie, lus par reglagesCategorie() — lignes existantes d'abord,
+     * puis Config pour une catégorie encore vide.
+     *
+     * ⚠️ C'EST LA PREMIÈRE VALEUR QUI POSAIT PROBLÈME.
+     * L'écran de configuration calculait ces deux drapeaux côté client, en
+     * copiant ceux d'une valeur déjà présente. Sur une catégorie VIDE il n'y en
+     * a aucune : les drapeaux tombaient à zéro, et la ligne était insérée avec
+     * « obligatoire = non ». Un administrateur qui cochait « champ
+     * obligatoire » sur une liste vide — réglage rangé dans Config faute de
+     * lignes — puis ajoutait sa première valeur, écrasait son propre réglage
+     * sans le savoir. Aucune erreur, aucun astérisque, aucune explication.
+     *
+     * Le calcul revient donc au serveur, seul endroit qui connaisse les deux
+     * sources.
+     */
+    public function addListeValeur(string $categorie, string $valeur, int $ordre = 0, ?int $obligatoire = null, ?int $saisieLibre = null): int {
+        if ($obligatoire === null || $saisieLibre === null) {
+            $r = $this->reglagesCategorie($categorie);
+            $obligatoire ??= $r['obligatoire'];
+            $saisieLibre ??= $r['libre'];
+        }
         $this->execute(
             "INSERT INTO Listes (Categorie, Valeur, Ordre, Actif, Obligatoire, SaisieLibre) VALUES (:cat, :val, :ordre, 1, :oblig, :libre)",
             ['cat' => $categorie, 'val' => $valeur, 'ordre' => $ordre, 'oblig' => $obligatoire, 'libre' => $saisieLibre]
         );
         return $this->lastId();
     }
+
     public function updateListeValeur(int $id, string $valeur, int $ordre, int $actif, int $obligatoire = 0, int $saisieLibre = 0): void {
         $this->execute("UPDATE Listes SET Valeur = :val, Ordre = :ordre, Actif = :actif, Obligatoire = :oblig, SaisieLibre = :libre WHERE Id = :id", ['val' => $valeur, 'ordre' => $ordre, 'actif' => $actif, 'oblig' => $obligatoire, 'libre' => $saisieLibre, 'id' => $id]);
     }
@@ -3487,9 +3624,18 @@ public function getArchivesBordereauData(int $id): ?array {
     }
 
     // ══ ASSISTANT IA — Recherche globale exhaustive ══
-    public function searchForAssistant(array $keywords, bool $anonymize = true): array {
+    /**
+     * @param array|null $only  Clés de résultat à calculer (ex. ['equipements']).
+     *   null = toutes. L'outil `search` de l'assistant ne demande qu'UN type :
+     *   interroger les ~18 tables à chaque appel était du temps SQL perdu.
+     */
+    public function searchForAssistant(array $keywords, bool $anonymize = true, ?array $only = null, int $limit = 30): array {
+        // $limit : l'assistant classe lui-même par pertinence, il demande donc
+        // plus de lignes (sinon « extincteur 2 » pouvait être coupé par le LIMIT).
+        $limit = max(15, min(200, $limit));
         $results = [];
         $params = [];
+        $want = static fn(string $key): bool => $only === null || in_array($key, $only, true);
         foreach ($keywords as $i => $kw) {
             $params["kw$i"] = "%$kw%";
         }
@@ -3516,7 +3662,9 @@ public function getArchivesBordereauData(int $id): ?array {
             return $binds;
         };
 
-        $search = function(string $table, string $select, array $cols, string $extraWhere = '', string $order = '', int $limit = 30) use ($buildWhere, $bindAll, &$results) {
+        $search = function(string $table, string $select, array $cols, string $extraWhere = '', string $order = '', ?int $lim = null) use ($buildWhere, $bindAll, &$results, $want, $limit) {
+            $limit = $lim ?? $limit;
+            if (!$want(strtolower($table))) return;
             $where = $buildWhere($cols);
             if (!$where) return;
             $fullWhere = $extraWhere ? "($extraWhere) AND ($where)" : $where;
@@ -3569,8 +3717,10 @@ public function getArchivesBordereauData(int $id): ?array {
 
         // Équipements
         $search('Equipements',
-            'Id,Numero,Famille,SousFamille,Statut,Etat,Marque,Modele,Batiment,Etage,NumeroBureau,Fournisseur,DateInstallation,Observations',
-            ['Numero','Famille','SousFamille','Marque','Modele','Batiment','NumeroBureau','Fournisseur','Statut','Etat','DateInstallation','Observations','Etage'],
+            // InfoProduit = désignation de l'équipement : absente jusqu'ici, « centrale
+            // SSI » ne trouvait l'équipement que par hasard (via la famille).
+            'Id,Numero,InfoProduit,Famille,SousFamille,Statut,Etat,Marque,Modele,Batiment,Etage,NumeroBureau,Fournisseur,DateInstallation,Observations',
+            ['Numero','InfoProduit','Famille','SousFamille','Marque','Modele','Batiment','NumeroBureau','Fournisseur','Statut','Etat','DateInstallation','Observations','Etage'],
             'DateSuppression IS NULL', 'Numero');
 
         // Contrats (sans données personnelles de contact)
@@ -3610,7 +3760,7 @@ public function getArchivesBordereauData(int $id): ?array {
             '', 'DateSuppression DESC', 15);
 
         // Compteurs énergie
-        try {
+        if ($want('compteurs_energie')) try {
             $cols = ['Nom','Type','Unite','Site','NumeroCompteur'];
             $where = $buildWhere($cols);
             if ($where) {
@@ -3620,7 +3770,7 @@ public function getArchivesBordereauData(int $id): ?array {
         } catch (\Throwable $_) {}
 
         // Relevés énergie
-        try {
+        if ($want('releves_energie')) try {
             $cols = ['Fournisseur','NumeroFacture','Commentaire','Date','Type'];
             $where = $buildWhere($cols);
             if ($where) {
@@ -3630,7 +3780,7 @@ public function getArchivesBordereauData(int $id): ?array {
         } catch (\Throwable $_) {}
 
         // Devis interventions
-        try {
+        if ($want('devis')) try {
             $cols = ['NumeroDevis','Raison'];
             $where = $buildWhere($cols);
             if ($where) {
@@ -3640,7 +3790,7 @@ public function getArchivesBordereauData(int $id): ?array {
         } catch (\Throwable $_) {}
 
         // Archives — Boîtes
-        try {
+        if ($want('archives_boites')) try {
             $cols = ['Numero','Intitule','Service','Batiment','Emplacement','Description','CodeBarre'];
             $where = $buildWhere($cols);
             if ($where) {
@@ -3650,7 +3800,7 @@ public function getArchivesBordereauData(int $id): ?array {
         } catch (\Throwable $_) {}
 
         // Archives — Dossiers
-        try {
+        if ($want('archives_dossiers')) try {
             $cols = ['Numero','Intitule','Service','NumeroMandat','Description','CodeBarre'];
             $where = $buildWhere($cols);
             if ($where) {
@@ -3692,7 +3842,7 @@ public function getArchivesBordereauData(int $id): ?array {
     };
 
     // ── 1. PlanBatiments ──────────────────────────────────────────────────────
-    try {
+    if ($want('plan_batiments')) try {
         $cols = ['Nom','Adresse'];
         $where = $buildWhere($cols);
         if ($where) {
@@ -3705,7 +3855,7 @@ public function getArchivesBordereauData(int $id): ?array {
     } catch (\Throwable $_) {}
 
     // ── 2. PlanEtages (joints au bâtiment parent) ─────────────────────────────
-    try {
+    if ($want('plan_etages')) try {
         $cols = ['Nom'];
         $where = $buildWhere($cols);
         if ($where) {
@@ -3726,7 +3876,7 @@ public function getArchivesBordereauData(int $id): ?array {
     } catch (\Throwable $_) {}
 
     // ── 3. PlanElements (le plus important — zones, points, locaux dessinés) ──
-    try {
+    if ($want('plan_elements')) try {
         $cols = ['Nom','Description','TypeElement','SousType','Calque'];
         $where = $buildWhere($cols);
         if ($where) {
@@ -3743,7 +3893,7 @@ public function getArchivesBordereauData(int $id): ?array {
             LEFT JOIN PlanBatiments b ON et.BatimentId = b.Id
             WHERE $wherePrefixed
             ORDER BY b.Nom, et.Niveau, el.Nom
-            LIMIT 25";
+            LIMIT " . max(25, $limit);
             $rows = $this->fetchAll($sql, $bindings);
             if ($rows) {
                 // Post-traitement : décoder Coords, calculer surface/longueur, lister biens liés.

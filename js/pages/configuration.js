@@ -29,7 +29,7 @@
  *   - Base de données (SQLite/PostgreSQL/MariaDB), HTTPS, CORS
  *   - OAuth (Microsoft, Google), SMTP
  *   - Légifrance, Chorus Pro
- *   - Assistant IA (fournisseur, clé API, modèle)
+ *   - Assistant IA (fournisseur, clé API, modèle, réglages de rapidité CPU)
  *   - Migration inter-drivers
  *
  * POINT D'ENTRÉE : renderConfiguration()
@@ -65,6 +65,19 @@ const LISTES_TABS = {
   demandes:      { label: '📝 Demandes',       cats: ['CategorieDemande'] },
   plans:         { label: '🗺️ Plans',           cats: ['CategoriePoint'] },
 };
+
+// ── Listes des modules ──────────────────────────────────────────────────────
+//
+// Elles ne sont plus dans la table « Listes » du cœur : chaque module a son
+// fichier, propre au client.
+//
+//     extensions/config/<identifiant>/[<client>/]listes.json
+//
+// L'onglet ci-dessous est un ÉDITEUR par-dessus ce fichier — il lit et réécrit
+// exactement le même. Le fichier reste la source, et l'éditer à la main marche
+// toujours ; mais configurer un module ne doit pas exiger un accès SSH.
+let _catsModules = [];      // [{identifiant, module, fichier, listes}]
+let _moduleCourant = null;  // identifiant du module ouvert dans l'onglet
 
 let _configTab = 'listes';
 let _listesSubTab = 'biens';
@@ -164,6 +177,12 @@ async function renderConfiguration() {
   showLoading(c);
   try {
     const [listes, config] = await Promise.all([ListesApi.getAll(), ConfigApi.getAll()]);
+
+    // Listes des modules, lues dans leurs fichiers. En cas d'échec on continue :
+    // la configuration du cœur ne doit pas dépendre de la couche extensions.
+    try {
+      _catsModules = await apiRequest('ext_config_listes') || [];
+    } catch (e) { _catsModules = []; }
 
     c.innerHTML = `
     <style>
@@ -365,10 +384,21 @@ function _renderTabListes(listes, config) {
     const active = _listesSubTab === key ? 'background:var(--blue);color:#fff' : 'background:var(--gray-bg);color:var(--gray-text);border-right:1px solid var(--gray-border)';
     html += `<button style="flex:1;min-width:100px;padding:10px;text-align:center;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s;${active}" onclick="_listesSubTab='${key}';renderConfiguration()">${tab.label}</button>`;
   });
+  if (_catsModules.length) {
+    const actif = _listesSubTab === 'modules'
+      ? 'background:var(--blue);color:#fff'
+      : 'background:var(--gray-bg);color:var(--gray-text)';
+    html += `<button style="flex:1;min-width:100px;padding:10px;text-align:center;
+      font-size:12px;font-weight:600;cursor:pointer;border:none;${actif}"
+      onclick="_listesSubTab='modules';renderConfiguration()">🧩 Modules</button>`;
+  }
   html += `</div>`;
+
+  if (_listesSubTab === 'modules') return html + _renderListesModules();
 
   const currentCats = LISTES_TABS[_listesSubTab]?.cats || [];
   const colCount = currentCats.length === 1 ? '1fr' : '1fr 1fr';
+
 
   // Message d'aide pour l'onglet Plans
   if (_listesSubTab === 'plans') {
@@ -394,11 +424,11 @@ function _renderTabListes(listes, config) {
       <div class="card-header">
         <div class="card-title">📋 ${label}</div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button class="btn btn-ghost btn-sm" onclick="configurerCategorie('${cat}','${labelEsc}',${isCatOblig?1:0},${isCatLibre?1:0})" title="Configurer la liste">⚙️</button>
+          <button class="btn btn-ghost btn-sm" onclick="configurerCategorie('${cat}','${labelEsc}')" title="Configurer la liste">⚙️</button>
           <button class="btn btn-primary btn-sm" onclick="ajouterValeur('${cat}')">+ Ajouter</button>
         </div>
       </div>
-      <div style="padding:4px 16px;font-size:11px;color:var(--gray-text);display:flex;gap:12px">
+      <div style="padding:4px 16px;font-size:11px;color:var(--gray-text);display:flex;gap:12px;flex-wrap:wrap">
         ${isCatOblig ? `<span style="color:var(--red)">● Champ obligatoire</span>` : `<span>● Champ optionnel</span>`}
         ${isCatLibre ? `<span style="color:var(--blue)">● Saisie libre autorisée</span>` : ``}
       </div>
@@ -781,6 +811,7 @@ function _renderTabServeur(cfg) {
   const ce = cfg.carbone_energie || {};
   const ai = cfg.assistant       || {};
   const pu = cfg.push            || {};
+  const ext= cfg.extensions      || {};
 
   const drv = (db.driver || 'sqlite');
 
@@ -1211,6 +1242,8 @@ function _renderTabServeur(cfg) {
       <div class="srv-grid">
         ${toggle('ms_actif','Microsoft OAuth activé', ms.actif,
           'Active le bouton "Se connecter avec Microsoft" sur la page de login.')}
+        ${toggle('sp_actif','SharePoint / OneDrive', (cfg.sharepoint || {}).actif !== false,
+          'Permet de lier des fichiers SharePoint aux fiches (raccourcis, sans copie). Nécessite la connexion Microsoft. Désactivé : documents stockés dans Larka uniquement, et la connexion Microsoft ne demande plus l\'accès aux fichiers. Les utilisateurs doivent se reconnecter après un changement.')}
         ${field('ms_client','Client ID', ms.client_id,
           'L\'identifiant de votre application Azure Active Directory.',
           'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', {envPath:'microsoft_oauth.client_id'})}
@@ -1401,12 +1434,28 @@ function _renderTabServeur(cfg) {
       </div>
     </div>
 
+    <!-- ── Version & mises à jour ───────────────────── -->
+    <div class="srv-section">
+      ${sectionTitle('⬆️','Version et mises à jour')}
+      <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
+        ℹ️ Larka vérifie automatiquement si une nouvelle version est publiée et vous la propose ; rien ne s'installe sans votre validation.
+        Les données (base, documents, plans, <code>config.json</code>, <code>.env</code>) ne sont jamais modifiées ; une sauvegarde est faite avant chaque installation.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span>Version installée : <strong id="cfgMajVersion">…</strong></span>
+        <button class="btn btn-primary" type="button" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.verifier()">Vérifier maintenant</button>
+        <button class="btn" type="button" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.historique()">Historique / restaurer</button>
+      </div>
+      <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" style="display:none" onload="apiRequest('maj_etat').then(function(e){var el=document.getElementById('cfgMajVersion');if(el)el.textContent=(e.locale&&e.locale.libelle)||'?';}).catch(function(){})">
+    </div>
+
     <!-- ── Assistant IA ─────────────────────────────── -->
     <div class="srv-section">
       ${sectionTitle('🤖','Assistant IA (recherche en langage naturel)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
         ℹ️ L'assistant permet de rechercher dans Larka en langage naturel.
-        Choisissez un fournisseur d'IA : <strong>Anthropic</strong>, <strong>OpenAI</strong>, <strong>Mistral</strong>, <strong>Microsoft Copilot</strong> (gratuit sur Windows), ou un modèle local (<strong>Ollama</strong>, <strong>LM Studio</strong>).
+        Choisissez un fournisseur d'IA : <strong>Anthropic</strong>, <strong>OpenAI</strong>, <strong>Mistral</strong>, <strong>Google Gemini</strong>, <strong>Microsoft Copilot</strong>, ou un modèle local (<strong>Ollama</strong>, <strong>LM Studio</strong>).
+        Les modèles proposés par défaut sont les plus <strong>rapides et économiques</strong> de chaque fournisseur ; les requêtes réutilisent le cache de prompt (jusqu'à −90 % sur les tokens d'entrée).
       </div>
       <div class="srv-grid">
         ${toggle('ai_actif','Activer l\'assistant', ai.actif !== false,
@@ -1414,8 +1463,8 @@ function _renderTabServeur(cfg) {
         <div class="srv-field">
           <span class="srv-label">Fournisseur</span>
           <select class="form-control" id="ai_fournisseur" onchange="_onAiFournisseurChange()">
-            ${['anthropic','openai','mistral','copilot','ollama','lmstudio','local'].map(f =>
-              '<option value="'+f+'" '+(((ai.fournisseur||'anthropic')===f)?'selected':'')+'>'+{anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',mistral:'Mistral AI',copilot:'Microsoft Copilot (gratuit sur Windows)',ollama:'Ollama (local)',lmstudio:'LM Studio (local)',local:'Autre (OpenAI-compatible)'}[f]+'</option>'
+            ${['anthropic','openai','mistral','gemini','copilot','ollama','lmstudio','local'].map(f =>
+              '<option value="'+f+'" '+(((ai.fournisseur||'anthropic')===f)?'selected':'')+'>'+{anthropic:'Anthropic (Claude)',openai:'OpenAI (GPT)',mistral:'Mistral AI',gemini:'Google Gemini',copilot:'Microsoft Copilot (gratuit sur Windows)',ollama:'Ollama (local)',lmstudio:'LM Studio (local)',local:'Autre (OpenAI-compatible, ex. llama.cpp)'}[f]+'</option>'
             ).join('')}
           </select>
           <span class="srv-desc">Les fournisseurs locaux (Ollama, LM Studio) ne nécessitent pas de clé API.</span>
@@ -1423,17 +1472,37 @@ function _renderTabServeur(cfg) {
       </div>
       <div class="srv-grid" style="margin-top:14px">
         ${field('ai_api_key','Clé API', ai.api_key && ai.api_key.length > 5 ? '••••••••' : '',
-          'Clé secrète du fournisseur choisi. Pas nécessaire pour les modèles locaux.', 'sk-ant-… / sk-… / …', {secret:true, secretPath:'assistant.api_key'})}
+          'Clé secrète du fournisseur choisi. Pas nécessaire pour les modèles locaux.', 'sk-ant-… / sk-… / AIza… (Gemini)', {secret:true, secretPath:'assistant.api_key'})}
         ${field('ai_model','Modèle', ai.model || '',
-          'Nom du modèle. Laissez vide pour utiliser le modèle par défaut du fournisseur.', 'claude-sonnet-4-20250514 / gpt-4o-mini / llama3.1')}
+          'Nom du modèle. Laissez vide pour le modèle par défaut (le plus rapide et économique). Sur CPU, préférez un modèle de 3 milliards de paramètres (3B) quantifié Q4.', 'claude-haiku-4-5 / gpt-4o-mini / gemini-3.1-flash-lite / ministral-3:3b')}
       </div>
       <div class="srv-grid-1" style="margin-top:14px">
         ${field('ai_api_url','URL API (optionnel)', ai.api_url || '',
-          'URL de l\'endpoint. Laissez vide pour utiliser l\'URL par défaut du fournisseur. Utile pour un proxy ou un serveur local personnalisé.', 'https://api.anthropic.com/v1/messages')}
+          'URL de l\'endpoint. Laissez vide pour utiliser l\'URL par défaut du fournisseur. Utile pour un proxy ou un serveur local personnalisé. Ollama : l\'API native /api/chat est utilisée automatiquement (fenêtre de contexte réellement appliquée).', 'https://api.anthropic.com/v1/messages')}
       </div>
       <div class="srv-grid" style="margin-top:14px">
-        ${field('ai_timeout','Durée max de réflexion (secondes)', ai.timeout_seconds || 120,
-          'Temps maximal accordé au modèle pour répondre. Augmenter pour les modèles locaux lents (Ollama sur CPU peut nécessiter 180-300s). Borné entre 30 et 600 secondes. En mode streaming, ce délai est automatiquement étendu de 50 %. Par défaut : 120 s.', '120')}
+        ${field('ai_timeout','Durée max de réflexion (secondes)', ai.timeout_seconds || '',
+          'Temps maximal accordé au modèle pour répondre. Borné entre 30 et 600 s ; étendu de 50 % en streaming. Vide = 240 s pour un modèle local, 90 s pour un fournisseur distant.', '240')}
+        ${toggle('ai_prechauffage','Préchauffage du modèle local', ai.prechauffage !== false,
+          'À l\'ouverture du panneau, le modèle local traite ses instructions pendant que l\'utilisateur tape : la première réponse arrive bien plus vite. Sans effet pour un fournisseur distant.')}
+      </div>
+      <div class="srv-grid" style="margin-top:14px">
+        <div class="srv-field">
+          <span class="srv-label">Pré-recherche (mode rapide)</span>
+          <select class="form-control" id="ai_pre_recherche">
+            ${[['auto','Automatique (modèles locaux)'],['on','Toujours'],['off','Jamais']].map(([v,l]) =>
+              '<option value="'+v+'" '+((ai.pre_recherche||'auto')===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select>
+          <span class="srv-desc">Larka lance la recherche avant d'interroger le modèle : souvent une seule inférence au lieu de deux ou trois. Recommandé sur CPU.</span>
+        </div>
+        <div class="srv-field">
+          <span class="srv-label">Réflexion des modèles locaux</span>
+          <select class="form-control" id="ai_reflexion_locale">
+            ${[['auto','Automatique'],['off','Désactivée (plus rapide)'],['on','Défaut du modèle']].map(([v,l]) =>
+              '<option value="'+v+'" '+((ai.reflexion_locale||'auto')===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select>
+          <span class="srv-desc">Les modèles « à réflexion » (qwen3, deepseek-r1…) génèrent des centaines de tokens invisibles : sur CPU, désactiver divise souvent le temps de réponse.</span>
+        </div>
       </div>
     </div>
 
@@ -1517,9 +1586,9 @@ function _renderTabServeur(cfg) {
           "{demandeur} a soumis une demande d'intervention.")}
       </div>
       <div class="srv-grid" style="margin-top:14px">
-        ${field('push_icon','Icône (URL)', pu.notif_demande_icon || '/apple-touch-icon.png',
+        ${field('push_icon','Icône (URL)', pu.notif_demande_icon || '/icon.png',
           'URL de l\'icône affichée dans la notification (petite image carrée).',
-          '/apple-touch-icon.png')}
+          '/icon.png')}
         ${field('push_image','Image (URL, optionnel)', pu.notif_demande_image || '',
           'URL d\'une image large affichée dans la notification (optionnel). Laisser vide pour ne pas afficher d\'image.', '')}
       </div>
@@ -1571,6 +1640,21 @@ function _renderTabServeur(cfg) {
             'Nombre de demandes affichées par page dans la vue demandeur.','25')}
           <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="sauverConfigDemande('items_par_page','srv_items_page')">💾 Enregistrer</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Modules complémentaires ───────────────────── -->
+    <div class="srv-section">
+      ${sectionTitle('🧩','Modules complémentaires')}
+      <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
+        Un module est un fichier <code>.larka</code> décrivant des données et des écrans,
+        que Larka interprète : <strong>aucun code n'est exécuté</strong>. Chaque module
+        annonce, avant installation, les tables qu'il créera et les écrans qu'il ajoutera.
+        <br>Un module doit ensuite être affecté à un client (Super&nbsp;Admin → Tenants → 🧩).
+      </div>
+      <div class="srv-grid">
+        ${toggle('ext_actif','Activer les modules complémentaires', ext.actif === true,
+          'Désactivé, la couche est <strong>inerte</strong> : aucun module chargé, quels que soient les réglages des clients.')}
       </div>
     </div>
 
@@ -2022,6 +2106,7 @@ async function _sauvegarderServeur() {
 
   // Microsoft OAuth
   p('microsoft_oauth','actif',               'ms_actif',    false);
+  p('sharepoint','actif',                    'sp_actif',    false);
   p('microsoft_oauth','client_id',           'ms_client',   '');
   p('microsoft_oauth','tenant_id',           'ms_tenant',   'common');
   const mss = _readField('ms_secret','');
@@ -2090,7 +2175,7 @@ async function _sauvegarderServeur() {
   p('push','actif',                          'push_actif',              true);
   p('push','notif_demande_titre',            'push_titre',             '📝 Nouvelle demande d\'intervention');
   p('push','notif_demande_corps',            'push_corps',             '{demandeur} a soumis une demande d\'intervention.');
-  p('push','notif_demande_icon',             'push_icon',              '/apple-touch-icon.png');
+  p('push','notif_demande_icon',             'push_icon',              '/icon.png');
   p('push','notif_demande_image',            'push_image',             '');
   p('push','notif_demande_require_interaction','push_require_interaction', false);
   // Rôles : récupérer les checkboxes cochées
@@ -2102,12 +2187,18 @@ async function _sauvegarderServeur() {
   p('assistant','fournisseur', 'ai_fournisseur', 'anthropic');
   p('assistant','model', 'ai_model', '');
   p('assistant','api_url', 'ai_api_url', '');
-  p('assistant','timeout_seconds', 'ai_timeout', 120);
+  p('assistant','timeout_seconds', 'ai_timeout', '');
+  p('assistant','prechauffage', 'ai_prechauffage', true);
+  p('assistant','pre_recherche', 'ai_pre_recherche', 'auto');
+  p('assistant','reflexion_locale', 'ai_reflexion_locale', 'auto');
   // Clé API : ne pas écraser si masquée
   const aiKeyVal = gv('ai_api_key');
   if (aiKeyVal && !aiKeyVal.includes('••')) {
     P.push({ section:'assistant', cle:'api_key', valeur: aiKeyVal });
   }
+
+  // Modules communautaires
+  p('extensions','actif', 'ext_actif', false);
 
   // Conversion types numériques
   P.forEach(item => {
@@ -2177,13 +2268,12 @@ function ajouterValeur(categorie) {
     const valeur = gv('f_valeur').trim();
     if (!valeur) { toast('La valeur est obligatoire.', 'error'); return; }
     try {
-      // Hériter les flags Obligatoire/SaisieLibre de la catégorie
-      const allListes = await ListesApi.getAll();
-      const items = allListes[categorie] || [];
-      const refItem = items.find(x => x.Actif == 1) || items[0];
-      const oblig = refItem?.Obligatoire == 1 ? 1 : 0;
-      const libre = refItem?.SaisieLibre == 1 ? 1 : 0;
-      await ListesApi.create(categorie, valeur, 0, oblig, libre);
+      // Les drapeaux de la catégorie sont hérités PAR LE SERVEUR. Ils étaient
+      // recopiés ici depuis une valeur existante — ce qui ne pouvait pas
+      // fonctionner sur une catégorie vide, où il n'y en a aucune : la première
+      // valeur ajoutée arrivait avec « non obligatoire » et effaçait le réglage
+      // que l'administrateur venait de poser.
+      await ListesApi.create(categorie, valeur, 0);
       toast('Valeur ajoutée.', 'success'); closeModal(); renderConfiguration();
     } catch(e) { toast(e.message, 'error'); }
   }, 'Ajouter');
@@ -2213,41 +2303,207 @@ function modifierValeur(id, categorie, valeur, ordre, actif, obligatoire, saisie
   });
 }
 
-function configurerCategorie(categorie, label, obligActuel, libreActuel) {
+/**
+ * Configure une catégorie de liste.
+ *
+ * Deux cases, celles des listes du cœur. Il y en a eu quatre — on pouvait aussi
+ * autoriser ou refuser l'ajout et le retrait de valeurs par les utilisateurs —
+ * puis quatre sélecteurs à trois états pour arbitrer entre le module et
+ * l'administrateur. C'étaient des permissions dont personne n'avait besoin :
+ * dans cet écran, ajouter une valeur ou la désactiver est ce qu'on fait
+ * normalement, pas un droit à s'accorder.
+ *
+ * Une liste de module se règle donc exactement comme une liste du cœur, et il
+ * n'y a plus rien de particulier à apprendre.
+ *
+ * Les réglages partent en UN appel, sur la catégorie entière. La version
+ * précédente bouclait sur chaque valeur : lent, à moitié appliqué si un appel
+ * échouait, et sans aucun effet sur une catégorie encore vide — c'est-à-dire
+ * celle que vient de créer un module.
+ */
+async function configurerCategorie(categorie, label) {
+  let r = { obligatoire: 0, libre: 0 };
+  try {
+    r = await apiRequest(`liste_reglages&categorie=${encodeURIComponent(categorie)}`) || r;
+  } catch (e) { /* jamais réglée : les défauts conviennent */ }
+
+  const bascule = (id, titre, aide, v) => `
+    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;
+      font-size:13px;padding:10px;background:var(--gray-bg);border-radius:8px">
+      <input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="margin-top:2px">
+      <div>
+        <div style="font-weight:600">${titre}</div>
+        <div style="font-size:11px;color:var(--gray-text)">${aide}</div>
+      </div>
+    </label>`;
+
   openModal(`⚙️ Configurer "${label}"`, `
   <div class="form-grid cols-1">
     <div style="font-size:13px;color:var(--gray-text);margin-bottom:4px">
-      Ces paramètres s'appliquent à <strong>tous les éléments</strong> de cette liste dans les formulaires.
+      Ces paramètres s'appliquent à <strong>tous les éléments</strong> de cette
+      liste dans les formulaires.
     </div>
-    <div class="form-group" style="display:flex;flex-direction:column;gap:12px">
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;padding:10px;background:var(--gray-bg);border-radius:8px">
-        <input type="checkbox" id="f_catOblig" ${obligActuel?'checked':''}> 
-        <div>
-          <div style="font-weight:600">Champ obligatoire</div>
-          <div style="font-size:11px;color:var(--gray-text)">L'utilisateur devra obligatoirement renseigner ce champ dans le formulaire</div>
-        </div>
-      </label>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;padding:10px;background:var(--gray-bg);border-radius:8px">
-        <input type="checkbox" id="f_catLibre" ${libreActuel?'checked':''}>
-        <div>
-          <div style="font-weight:600">Saisie libre autorisée</div>
-          <div style="font-size:11px;color:var(--gray-text)">L'utilisateur peut aussi saisir une valeur ne figurant pas dans la liste</div>
-        </div>
-      </label>
+    <div class="form-group" style="display:flex;flex-direction:column;gap:10px">
+      ${bascule('f_catOblig','Champ obligatoire',
+                "L'utilisateur devra renseigner ce champ", r.obligatoire)}
+      ${bascule('f_catLibre','Saisie libre autorisée',
+                "L'utilisateur peut aussi saisir une valeur ne figurant pas dans la liste",
+                r.libre)}
     </div>
   </div>`, async () => {
-    const oblig = document.getElementById('f_catOblig')?.checked ? 1 : 0;
-    const libre = document.getElementById('f_catLibre')?.checked ? 1 : 0;
+    const v = (id) => document.getElementById(id)?.checked ? 1 : 0;
     try {
-      // Applique les flags à tous les items de la catégorie
-      const items = (await ListesApi.getAll())[categorie] || [];
-      for (const item of items) {
-        await ListesApi.update(item.Id, item.Valeur, item.Ordre, item.Actif, oblig, libre);
-      }
-      toast('Configuration appliquée à la liste.', 'success');
+      const res = await apiRequest('liste_reglages', 'POST', {
+        categorie, obligatoire: v('f_catOblig'), libre: v('f_catLibre'),
+      });
+      toast(res?.valeurs_touchees > 0
+        ? 'Configuration appliquée à la liste.'
+        : "Configuration enregistrée : elle s'appliquera aux valeurs à venir.",
+        'success');
       closeModal();
       renderConfiguration();
     } catch(e) { toast(e.message, 'error'); }
+  }, 'Enregistrer');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LISTES DES MODULES — éditeur du fichier de configuration
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Rend l'onglet « 🧩 Modules » de Configuration → Listes.
+ *
+ * Chaque module installé chez ce client montre ses listes, avec le chemin du
+ * fichier qui les porte. Le chemin est AFFICHÉ volontairement : il dit où
+ * chercher quand on veut éditer à la main, sauvegarder, ou comprendre pourquoi
+ * un autre client ne voit pas la même chose.
+ */
+function _renderListesModules() {
+  if (!_catsModules.length) {
+    return `<div style="padding:14px 18px;background:var(--gray-bg);border-radius:10px;
+      font-size:13px;color:var(--gray-text)">
+      Aucun module installé ne déclare de liste modifiable.</div>`;
+  }
+
+  let html = `<div style="padding:12px 16px;background:var(--blue-pale);border-radius:10px;
+      margin-bottom:16px;font-size:13px;color:var(--navy);line-height:1.6">
+      <strong>🧩 Listes des modules</strong> — Elles vivent dans un fichier propre à
+      ce client, pas dans la base. Vous pouvez les modifier ici ou éditer le
+      fichier directement : c'est le même.
+    </div>`;
+
+  _catsModules.forEach((mod) => {
+    html += `<div style="border:1px solid var(--gray-border);border-radius:10px;
+        margin-bottom:16px;overflow:hidden">
+      <div style="padding:10px 16px;background:var(--gray-bg);display:flex;
+        justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <strong style="font-size:14px">${escHtml(mod.module)}</strong>
+        <code style="font-size:11px;color:var(--gray-text)">${escHtml(mod.fichier)}</code>
+      </div>`;
+
+    Object.entries(mod.listes).forEach(([cat, def]) => {
+      const vals = def.valeurs || [];
+      html += `<div style="padding:14px 16px;border-top:1px solid var(--gray-border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;
+          gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <div>
+            <strong style="font-size:13px">${escHtml(def.libelle || cat)}</strong>
+            <code style="font-size:11px;color:var(--gray-text);margin-left:6px">${escHtml(cat)}</code>
+          </div>
+          <button class="btn btn-sm btn-secondary"
+            onclick="modifierListeModule('${escHtml(mod.identifiant)}','${escHtml(cat)}')">
+            ⚙️ Modifier</button>
+        </div>
+        <div style="font-size:11px;color:var(--gray-text);margin-bottom:8px;display:flex;gap:12px">
+          ${def.obligatoire ? '<span style="color:var(--red)">● Champ obligatoire</span>'
+                            : '<span>● Champ optionnel</span>'}
+          ${def.libre ? '<span style="color:var(--blue)">● Saisie libre autorisée</span>' : ''}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${vals.length
+            ? vals.map(v => `<span style="padding:3px 9px;background:var(--gray-bg);
+                border-radius:12px;font-size:12px">${escHtml(v)}</span>`).join('')
+            : '<span style="font-size:12px;color:var(--gray-text)">Aucune valeur</span>'}
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  return html;
+}
+
+/**
+ * Édite une liste de module.
+ *
+ * Les valeurs se saisissent une par ligne. Une zone de texte plutôt qu'une
+ * ligne par valeur avec des boutons : on colle une nomenclature de trente
+ * entrées d'un coup, on la réordonne en déplaçant des lignes, et l'ordre du
+ * texte est l'ordre du menu déroulant. Trente champs à remplir un par un, pour
+ * le même résultat, n'auraient servi personne.
+ */
+function modifierListeModule(identifiant, categorie) {
+  const mod = _catsModules.find(m => m.identifiant === identifiant);
+  const def = mod?.listes?.[categorie];
+  if (!def) { toast('Liste introuvable.', 'error'); return; }
+
+  openModal(`⚙️ ${escHtml(def.libelle || categorie)}`, `
+  <div class="form-grid cols-1">
+    <div style="font-size:12px;color:var(--gray-text)">
+      Module « ${escHtml(mod.module)} » · <code>${escHtml(mod.fichier)}</code>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Valeurs — une par ligne</label>
+      <textarea class="form-control" id="f_modVals" rows="10"
+        style="font-family:ui-monospace,monospace;font-size:13px">${escHtml((def.valeurs||[]).join('\n'))}</textarea>
+      <div style="font-size:11px;color:var(--gray-text);margin-top:4px">
+        L'ordre des lignes est l'ordre du menu déroulant. Retirer une valeur la
+        retire du menu ; les fiches qui la portent la conservent.</div>
+    </div>
+    <div class="form-group" style="display:flex;flex-direction:column;gap:10px">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;
+        font-size:13px;padding:10px;background:var(--gray-bg);border-radius:8px">
+        <input type="checkbox" id="f_modOblig" ${def.obligatoire ? 'checked' : ''} style="margin-top:2px">
+        <div><div style="font-weight:600">Champ obligatoire</div>
+          <div style="font-size:11px;color:var(--gray-text)">L'utilisateur devra le renseigner</div></div>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;
+        font-size:13px;padding:10px;background:var(--gray-bg);border-radius:8px">
+        <input type="checkbox" id="f_modLibre" ${def.libre ? 'checked' : ''} style="margin-top:2px">
+        <div><div style="font-weight:600">Saisie libre autorisée</div>
+          <div style="font-size:11px;color:var(--gray-text)">Une valeur hors liste est acceptée</div></div>
+      </label>
+    </div>
+  </div>`, async () => {
+    const lignes = (document.getElementById('f_modVals')?.value || '')
+      .split('\n').map(v => v.trim()).filter(v => v !== '');
+
+    // On réécrit TOUTES les listes du module, pas seulement celle-ci : le
+    // fichier est écrit d'un bloc, et n'envoyer qu'une catégorie effacerait
+    // les autres.
+    const listes = JSON.parse(JSON.stringify(mod.listes));
+    listes[categorie] = {
+      libelle:     def.libelle || categorie,
+      obligatoire: !!document.getElementById('f_modOblig')?.checked,
+      libre:       !!document.getElementById('f_modLibre')?.checked,
+      valeurs:     lignes,
+    };
+    try {
+      await apiRequest('ext_config_listes', 'POST', { identifiant, listes });
+
+      // Les déclarations des modules sont chargées UNE FOIS, après
+      // l'authentification. Sans ce rechargement, la modification s'écrivait
+      // bien côté serveur mais le module continuait d'utiliser la copie du
+      // démarrage : « champ obligatoire » et « saisie libre » restaient sans
+      // effet visible jusqu'au prochain F5.
+      if (typeof LarkaExtensions !== 'undefined' && LarkaExtensions.recharger) {
+        try { await LarkaExtensions.recharger(); }
+        catch (e) { console.warn('Rechargement des modules :', e); }
+      }
+
+      toast('Liste enregistrée.', 'success');
+      closeModal();
+      renderConfiguration();
+    } catch (e) { toast(e.message, 'error'); }
   }, 'Enregistrer');
 }
 
@@ -2264,8 +2520,29 @@ async function _sauverChampsOblig() {
       if (raw) champsOblig = JSON.parse(raw);
     } catch(_) {}
 
-    // Collecter les checkboxes cochées pour le sous-onglet actif
-    const checked = Array.from(document.querySelectorAll('.cb-champ-oblig:checked')).map(cb => cb.value);
+    /**
+     * ⚠️ LA COLLECTE RATISSAIT TOUT LE DOCUMENT.
+     *
+     * « querySelectorAll('.cb-champ-oblig:checked') » ramasse les cases de
+     * TOUS les panneaux présents dans la page, pas seulement celui du
+     * sous-onglet affiché. Les champs d'un autre formulaire se retrouvaient
+     * donc enregistrés comme obligatoires pour celui-ci — d'où les doublons
+     * visibles et l'impression que cocher ne servait à rien : on relisait
+     * ensuite un mélange.
+     *
+     * On se limite à la grille VISIBLE, et l'on dédoublonne : deux cases de
+     * même valeur ne doivent pas produire deux entrées.
+     */
+    const grilles = Array.from(document.querySelectorAll('#champsObligGrid'));
+    const grille = grilles.find(g => g.offsetParent !== null) || grilles[0];
+    if (!grille) { toast('Panneau introuvable.', 'error'); return; }
+
+    const checked = [...new Set(
+      Array.from(grille.querySelectorAll('.cb-champ-oblig:checked')).map(cb => cb.value)
+    )];
+
+    // On n'écrit que la clé du sous-onglet courant : les autres formulaires
+    // gardent leurs réglages, même si leur panneau traîne dans le document.
     champsOblig[_listesSubTab] = checked;
 
     await ConfigApi.set('champs_obligatoires', JSON.stringify(champsOblig));
@@ -2314,12 +2591,12 @@ function _onAiFournisseurChange() {
   const urlField = document.getElementById('ai_api_url');
   const modelField = document.getElementById('ai_model');
   // Griser la clé API pour les fournisseurs locaux
-  if (keyField) keyField.placeholder = localProviders.includes(f) ? '(pas nécessaire)' : 'sk-ant-… / sk-… / …';
+  if (keyField) keyField.placeholder = localProviders.includes(f) ? '(pas nécessaire)' : (f === 'gemini' ? 'AIza… (Google AI Studio)' : 'sk-ant-… / sk-… / …');
   // Placeholder URL
-  const urls = { anthropic:'https://api.anthropic.com/v1/messages', openai:'https://api.openai.com/v1/chat/completions', mistral:'https://api.mistral.ai/v1/chat/completions', copilot:'https://api.githubcopilot.com/chat/completions', ollama:'http://localhost:11434/v1/chat/completions', lmstudio:'http://localhost:1234/v1/chat/completions', local:'http://localhost:8080/v1/chat/completions' };
+  const urls = { anthropic:'https://api.anthropic.com/v1/messages', openai:'https://api.openai.com/v1/chat/completions', mistral:'https://api.mistral.ai/v1/chat/completions', gemini:'https://generativelanguage.googleapis.com/v1beta', copilot:'https://api.githubcopilot.com/chat/completions', ollama:'http://localhost:11434/api/chat', lmstudio:'http://localhost:1234/v1/chat/completions', local:'http://localhost:8080/v1/chat/completions' };
   if (urlField) urlField.placeholder = urls[f] || '';
-  // Placeholder modèle
-  const models = { anthropic:'claude-sonnet-4-20250514', openai:'gpt-4o-mini', mistral:'mistral-small-latest', copilot:'gpt-4o', ollama:'llama3.1', lmstudio:'local-model', local:'local-model' };
+  // Placeholder modèle (défauts serveur : rapides et économiques)
+  const models = { anthropic:'claude-haiku-4-5', openai:'gpt-4o-mini', mistral:'mistral-small-latest', gemini:'gemini-3.1-flash-lite', copilot:'gpt-4o', ollama:'ministral-3:3b', lmstudio:'local-model', local:'local-model' };
   if (modelField && !modelField.value) modelField.placeholder = models[f] || '';
 }
 
@@ -2598,7 +2875,7 @@ function _cfgNotifPreview() {
   <div class="srv-section" style="border:2px solid var(--blue)">
     <div class="srv-section-title"><span>👁️</span> Aperçu</div>
     <div style="display:flex;gap:14px;align-items:flex-start">
-      <img src="/apple-touch-icon.png" style="width:40px;height:40px;border-radius:10px;flex-shrink:0">
+      <img src="/icon.png" style="width:40px;height:40px;border-radius:10px;flex-shrink:0">
       <div style="flex:1">
         <div style="font-weight:700;font-size:14px;margin-bottom:4px">${_escCfg(titre)}</div>
         <div style="font-size:13px;line-height:1.5">${_escCfg(corps)}</div>

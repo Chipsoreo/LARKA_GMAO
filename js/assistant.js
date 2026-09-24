@@ -22,7 +22,14 @@
  *   - Timeout allongé (2 min) pour les modèles locaux (Ollama)
  *
  * FOURNISSEURS SUPPORTÉS :
- *   Anthropic (Claude), OpenAI (GPT), Mistral, Ollama (local), LM Studio (local)
+ *   Anthropic (Claude), OpenAI (GPT), Mistral, Google Gemini, Copilot,
+ *   Ollama / LM Studio / llama.cpp (locaux)
+ *
+ * RAPIDITÉ (modèles locaux sur CPU) :
+ *   - Préchauffage à l'ouverture du panneau (assistant_warmup) : le modèle
+ *     traite son prompt pendant que l'utilisateur tape.
+ *   - Streaming réel ; bouton ■ pour arrêter — le serveur coupe alors la
+ *     génération, le CPU est libéré pour les autres.
  *
  * INITIALISATION :
  *   bootAssistant() → appelé depuis initApp() dans init.js
@@ -43,7 +50,15 @@ let _assistantBusy = false;
 // (createAssistantPanel) et restauré par resetAssistant.
 let _assistantInitialMessagesHTML = '';
 let _assistantInitialSuggestionsHTML = '';
-const ASSISTANT_TIMEOUT_MS = 120000; // 2 minutes (Ollama peut être lent au 1er appel)
+// Délai client : fourni par assistant_status (dérivé du réglage serveur).
+function _assistantTimeoutMs() {
+  const t = window._assistantStatus && window._assistantStatus.timeout_ms;
+  return (typeof t === 'number' && t > 0) ? t : 240000;
+}
+// Requête en cours (pour le bouton Stop) et dernier préchauffage.
+let _assistantAbortCtrl = null;
+let _assistantStopped = false;
+let _assistantLastWarmup = 0;
 
 function initAssistant() {
   if (document.getElementById('assistantBubble')) return; // éviter double-init
@@ -126,7 +141,7 @@ function initAssistant() {
       <div style="display:flex;gap:8px">
         <input type="text" id="assistantInput" placeholder="Posez votre question…"
           onkeydown="if(event.key==='Enter')askAssistant()">
-        <button id="assistantSendBtn" onclick="askAssistant()">
+        <button id="assistantSendBtn" onclick="_assistantBusy ? stopAssistant() : askAssistant()" title="Envoyer">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
@@ -149,6 +164,7 @@ function toggleAssistant() {
     panel.classList.add('open');
     bubble.classList.add('hidden');
     setTimeout(() => document.getElementById('assistantInput')?.focus(), 200);
+    _assistantWarmup();
   } else {
     panel.classList.remove('open');
     bubble.classList.remove('hidden');
@@ -167,14 +183,8 @@ function toggleAssistant() {
  */
 function resetAssistant() {
   if (_assistantBusy) {
-    // Petite indication visuelle plutôt qu'un alert intrusif
-    const btn = document.getElementById('assistantResetBtn');
-    if (btn) {
-      const orig = btn.style.background;
-      btn.style.background = 'rgba(255,80,80,.35)';
-      btn.title = 'Patientez, une réponse est en cours…';
-      setTimeout(() => { btn.style.background = orig; btn.title = 'Effacer la conversation et recommencer'; }, 1200);
-    }
+    // Une réponse est en cours : on l'arrête (le serveur libère le modèle).
+    stopAssistant();
     return;
   }
   // Confirmation légère uniquement si l'utilisateur a vraiment dialogué.
@@ -199,15 +209,59 @@ function resetAssistant() {
   if (input) { input.value = ''; input.focus(); }
 }
 
+/**
+ * Préchauffage du modèle local (au plus toutes les 4 min). Sans effet pour un
+ * fournisseur distant : le serveur répond « skipped » sans rien appeler.
+ */
+function _assistantWarmup() {
+  const st = window._assistantStatus || {};
+  if (!st.prechauffage || typeof apiRequest !== 'function') return;
+  const now = Date.now();
+  if (now - _assistantLastWarmup < 240000) return;
+  _assistantLastWarmup = now;
+  apiRequest('assistant_warmup', 'POST', {}).catch(() => {});
+}
+
+/** Arrête la réponse en cours (bouton ■). */
+function stopAssistant() {
+  if (!_assistantBusy || !_assistantAbortCtrl) return;
+  _assistantStopped = true;
+  try { _assistantAbortCtrl.abort(); } catch (_) {}
+}
+
+function _assistantSetBusyUI(busy) {
+  const input = document.getElementById('assistantInput');
+  const sendBtn = document.getElementById('assistantSendBtn');
+  if (input) input.disabled = busy;
+  if (sendBtn) {
+    sendBtn.classList.toggle('is-stop', busy);
+    sendBtn.title = busy ? 'Arrêter la réponse' : 'Envoyer';
+    sendBtn.setAttribute('aria-label', sendBtn.title);
+    sendBtn.innerHTML = busy
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  }
+}
+
+/** Ouvre l'écran d'un module complémentaire ([MODULE:identifiant:libellé]). */
+function _assistantOpenModule(id) {
+  if (typeof PAGES === 'undefined' || typeof navigate !== 'function') return;
+  const cle = Object.keys(PAGES).find(k => PAGES[k] && PAGES[k].extension === id);
+  if (!cle) { if (typeof showToast === 'function') showToast('Module indisponible pour votre profil.', 'warning'); return; }
+  if (_assistantOpen) toggleAssistant();
+  navigate(cle);
+}
+
 function _askSuggestion(btn) {
   const input = document.getElementById('assistantInput');
   if (input) { input.value = btn.textContent; askAssistant(); }
 }
 
-/** Appel API avec timeout allongé (2 min) pour Ollama */
+/** Appel API JSON (repli si le streaming est impossible). */
 async function _assistantApiCall(question, history) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS) : null;
+  _assistantAbortCtrl = controller;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), _assistantTimeoutMs()) : null;
 
   const url = (typeof API_BASE !== 'undefined' ? API_BASE : 'api/index.php') + '?action=assistant';
   const opts = {
@@ -228,13 +282,14 @@ async function _assistantApiCall(question, history) {
     return json.data;
   } catch(err) {
     if (timeoutId) clearTimeout(timeoutId);
+    if (err?.name === 'AbortError' && _assistantStopped) throw err;
     if (err?.name === 'AbortError') {
       // Message adapté au provider configuré (sinon générique).
       const provider = (window._assistantProvider || '').toLowerCase();
       const isLocal = ['ollama','lmstudio','local'].includes(provider);
       throw new Error(isLocal
-        ? 'Le modèle local met trop de temps à répondre (>2 min). Vérifiez qu\'Ollama/LM Studio tourne et que le modèle est bien téléchargé.'
-        : 'Le serveur IA met trop de temps à répondre (>2 min). Réessayez ou reformulez plus simplement.');
+        ? 'Le modèle local met trop de temps à répondre. Vérifiez qu\'Ollama/LM Studio tourne, ou choisissez un modèle plus petit (3B).'
+        : 'Le serveur IA met trop de temps à répondre. Réessayez ou reformulez plus simplement.');
     }
     throw err;
   }
@@ -247,11 +302,8 @@ async function askAssistant() {
 
   input.value = '';
   _assistantBusy = true;
-
-  // Désactivation visuelle du bouton + input pendant l'attente
-  const sendBtn = document.getElementById('assistantSendBtn');
-  if (input) input.disabled = true;
-  if (sendBtn) sendBtn.disabled = true;
+  _assistantStopped = false;
+  _assistantSetBusyUI(true);
 
   const sugg = document.getElementById('assistantSuggestions');
   if (sugg) sugg.style.display = 'none';
@@ -267,6 +319,9 @@ async function askAssistant() {
     try {
       reply = await _assistantStreamCall(question, _assistantHistory, typingId);
     } catch(streamErr) {
+      // Pas de second essai si l'utilisateur a arrêté, ou si le SERVEUR a
+      // répondu une erreur (le rejouer doublerait l'attente et le coût).
+      if (_assistantStopped || streamErr?.fromServer) throw streamErr;
       console.warn('[Assistant] Stream KO, fallback non-streamé :', streamErr);
       // Restaurer l'indicateur "typing" puisque le stream a pu en effacer le contenu
       const elFallback = document.getElementById(typingId);
@@ -299,12 +354,22 @@ async function askAssistant() {
     _assistantHistory.push({ role: 'assistant', content: replyForHistory });
     if (_assistantHistory.length > 20) _assistantHistory = _assistantHistory.slice(-20);
   } catch(e) {
-    document.getElementById(typingId)?.remove();
-    _addMsg('bot', `<div style="color:var(--red)">❌ ${_escHtml(e.message || 'Erreur inconnue')}</div>`);
+    if (_assistantStopped) {
+      // Arrêt volontaire : on garde le texte déjà reçu, on le signale.
+      const el = document.getElementById(typingId);
+      const content = el?.querySelector('.assistant-msg-content');
+      const partial = el?.querySelector('.assistant-stream-text')?.textContent || '';
+      if (content) content.innerHTML = (partial ? _formatReply(partial) + '<br>' : '')
+        + '<span style="color:var(--gray-text);font-style:italic;font-size:12px">⏹ Réponse interrompue.</span>';
+    } else {
+      document.getElementById(typingId)?.remove();
+      _addMsg('bot', `<div style="color:var(--red)">❌ ${_escHtml(e.message || 'Erreur inconnue')}</div>`);
+    }
   } finally {
     _assistantBusy = false;
-    if (input) { input.disabled = false; input.focus(); }
-    if (sendBtn) sendBtn.disabled = false;
+    _assistantAbortCtrl = null;
+    _assistantSetBusyUI(false);
+    if (input) input.focus();
   }
 }
 
@@ -320,10 +385,13 @@ async function askAssistant() {
  *   data: {"type":"error","message":"..."}
  */
 async function _assistantStreamCall(question, history, targetMsgId) {
-  const url = (window.API_BASE || '/api') + '/?action=assistant_stream';
+  // ⚠️ « index.php/?action=… » (PATH_INFO) ne passait pas la règle nginx
+  // `\.php$` : en production le streaming échouait TOUJOURS et chaque question
+  // partait en repli JSON, sans affichage progressif.
+  const url = ((typeof API_BASE !== 'undefined' && API_BASE) || './api/index.php') + '?action=assistant_stream';
   const ctrl = new AbortController();
-  // Timeout global de sécurité (3 min — un peu plus que le timeout serveur)
-  const timeoutId = setTimeout(() => ctrl.abort(), 180000);
+  _assistantAbortCtrl = ctrl;
+  const timeoutId = setTimeout(() => ctrl.abort(), _assistantTimeoutMs());
 
   const res = await fetch(url, {
     method: 'POST',
@@ -376,6 +444,8 @@ async function _assistantStreamCall(question, history, targetMsgId) {
   let toolCallsSeen = 0;
   let firstDeltaReceived = false;
   let streamDone = false;
+  let doneInfo = null;
+  const hideTokens = t => t.replace(/\[(?:FICHE|DOC|SPDOC|MODULE|ACTION):[^\]]*\]?/g, '');
 
   const container = document.getElementById('assistantMessages');
 
@@ -411,11 +481,17 @@ async function _assistantStreamCall(question, history, targetMsgId) {
             // On masque les tokens techniques en cours d'écriture pour ne pas
             // afficher "[FICHE:plan:1:2:Bureau A]" puis le remplacer en bouton
             // à la fin — visuellement c'est plus propre.
-            textEl.textContent = fullText
-              .replace(/\[FICHE:[^\]]*\]/g, '')
-              .replace(/\[DOC:[^\]]*\]/g, '');
+            textEl.textContent = hideTokens(fullText);
             container.scrollTop = container.scrollHeight;
           }
+        } else if (evt.type === 'reset') {
+          // Texte émis avant des appels d'outils : effacé.
+          fullText = '';
+          if (textEl) textEl.textContent = '';
+        } else if (evt.type === 'replace') {
+          // Version nettoyée du texte final (réflexion, annonces retirées).
+          fullText = String(evt.text || '');
+          if (textEl) textEl.textContent = hideTokens(fullText);
         } else if (evt.type === 'tool_call') {
           toolCallsSeen++;
           if (statusEl) {
@@ -433,9 +509,12 @@ async function _assistantStreamCall(question, history, targetMsgId) {
           console.log('[Assistant SSE debug]', `round=${evt.round}`,
             `text_len=${evt.text_len}`, `tool_calls=${evt.tool_calls}`);
         } else if (evt.type === 'error') {
-          throw new Error(evt.message || 'Erreur streaming');
+          const err = new Error(evt.message || 'Erreur streaming');
+          err.fromServer = true;
+          throw err;
         } else if (evt.type === 'done') {
           // Fin propre annoncée par le serveur — on sort des DEUX boucles
+          doneInfo = evt;
           streamDone = true;
           break;
         }
@@ -443,7 +522,7 @@ async function _assistantStreamCall(question, history, targetMsgId) {
     }
   } finally {
     clearTimeout(timeoutId);
-    try { reader.cancel(); } catch(_) {}
+    try { const c = reader.cancel(); if (c && c.catch) c.catch(() => {}); } catch(_) {}
   }
 
   // Rendu final : applique le markdown sur le texte complet et masque la status bar.
@@ -451,7 +530,7 @@ async function _assistantStreamCall(question, history, targetMsgId) {
   // arrêté), on affiche un message d'erreur explicite plutôt qu'une bulle vide.
   if (contentEl) {
     if (fullText) {
-      contentEl.innerHTML = _formatReply(fullText);
+      contentEl.innerHTML = _formatReply(fullText) + _assistantStatsHtml(doneInfo);
       _processSpecialTokens(bubble, fullText);
     } else {
       contentEl.innerHTML = '<div style="color:var(--gray);font-style:italic">Le modèle a exécuté '
@@ -466,6 +545,22 @@ async function _assistantStreamCall(question, history, targetMsgId) {
     if (!streamDone) throw new Error('Aucune donnée reçue du stream');
   }
   return fullText;
+}
+
+/**
+ * Petite ligne discrète sous la réponse : durée et vitesse (utile pour régler
+ * un modèle local sur CPU). Masquée pour les demandeurs.
+ */
+function _assistantStatsHtml(done) {
+  if (!done || !done.usage || App.currentUser?.Role === 'Demandeur') return '';
+  const u = done.usage;
+  const parts = [];
+  if (u.ms) parts.push((u.ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' s');
+  if (u.tok_s) parts.push(u.tok_s.toLocaleString('fr-FR') + ' tok/s');
+  if (u.cached && u.in) parts.push('cache ' + Math.round(100 * u.cached / u.in) + ' %');
+  if (done.tool_calls_count) parts.push(done.tool_calls_count + ' recherche' + (done.tool_calls_count > 1 ? 's' : ''));
+  if (!parts.length) return '';
+  return '<div class="assistant-stats" title="' + _escAttr((done.fournisseur || '') + ' · ' + (done.model || '')) + '">⚡ ' + _escHtml(parts.join(' · ')) + '</div>';
 }
 
 /**
@@ -562,6 +657,10 @@ function _openPrefilledDemande(fields, descAvecTag) {
                       : rawPresta.includes('archiv')    ? 'Archivage'
                       : '';
 
+  // Filet de sécurité : un petit modèle met parfois le lieu dans le titre
+  // (« Poignée cassée bureau 235 2eme étage ») au lieu du champ prévu.
+  _assistantFixLieu(fields);
+
   // Attend que les champs du modal soient présents (rendu asynchrone)
   const tryFill = (retries = 20) => {
     const f_titre = document.getElementById('f_titre');
@@ -645,6 +744,31 @@ function _openPrefilledDemande(fields, descAvecTag) {
   tryFill();
 }
 
+/**
+ * Déplace le lieu (bureau, salle, étage) du titre vers le champ Bureau quand
+ * celui-ci est vide, et retire ce lieu du titre. Ne touche à rien sinon.
+ */
+function _assistantFixLieu(fields) {
+  const reBureau = /\b(?:bureau|salle|local|pi[eè]ce)\s*(?:n[°o]\s*)?[\w-]*\d[\w-]*/i;
+  const reEtage  = /\b(?:(\d+)\s*(?:e|er|ère|eme|ème|nd|nde)?\s*[ée]tage|[ée]tage\s*(\d+)|rez[- ]de[- ]chauss[ée]e|rdc|sous[- ]sol)\b/i;
+  const src = [fields.titre, fields.description].filter(Boolean).join(' ');
+  if (!fields.bureau) {
+    const parts = [];
+    const b = src.match(reBureau); if (b) parts.push(b[0].replace(/^./, c => c.toUpperCase()));
+    const e = src.match(reEtage);
+    if (e) parts.push(e[1] || e[2] ? `${e[1] || e[2]}${(e[1] || e[2]) === '1' ? 'er' : 'e'} étage` : e[0]);
+    if (parts.length) fields.bureau = parts.join(', ');
+  }
+  if (fields.titre) {
+    // On ne retire du titre que ce qui figure bien dans le champ Bureau.
+    const lieu = String(fields.bureau || '').toLowerCase();
+    const dansLieu = m => { const d = (m.match(/\d+/) || [m.toLowerCase()])[0]; return !!m && lieu.includes(d); };
+    const t = fields.titre.replace(reBureau, m => dansLieu(m) ? '' : m).replace(reEtage, m => dansLieu(m) ? '' : m)
+      .replace(/\s*[-–,(]\s*[)]?\s*$/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (t.length >= 4) fields.titre = t.charAt(0).toUpperCase() + t.slice(1);
+  }
+}
+
 function _addMsg(role, content, isRaw = false) {
   const container = document.getElementById('assistantMessages');
   const id = 'amsg_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
@@ -702,6 +826,11 @@ function _formatReply(text) {
     if (!allowed) return safeNom;
     return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#0078d4;color:#fff;border-radius:6px;font-size:12px;text-decoration:none;margin:2px 0;font-weight:500">📁 ${safeNom}</a>`;
   });
+
+  // ── Liens modules : [MODULE:identifiant:libellé] → écran du module.
+  //    L'identifiant est contraint (a-z0-9.-) : rien d'autre n'entre dans l'onclick.
+  html = html.replace(/\[MODULE:([a-z0-9\-]+\.[a-z0-9\-]+):([^\]]+)\]/g, (_, id, label) =>
+    `<a href="#" onclick="event.preventDefault();_assistantOpenModule('${id}')" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:6px;font-size:12px;text-decoration:none;color:var(--blue);font-weight:500;margin:2px 0">🧩 ${_escAttr(label)}</a>`);
 
   // ── Liens fiches : trois formats supportés
   //    [FICHE:type:id:label]                  → fiche simple ou plan sans sélection
@@ -775,6 +904,7 @@ async function bootAssistant() {
     const status = await apiRequest('assistant_status');
     if (status?.actif) {
       window._assistantProvider = status.fournisseur || '';
+      window._assistantStatus = status;
       initAssistant();
     }
   } catch(_) { /* assistant non disponible */ }

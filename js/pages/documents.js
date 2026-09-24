@@ -36,7 +36,7 @@ const DOC_MIME_CAT = {
 };
 
 function docCategorie(mime) { return DOC_MIME_CAT[mime] || 'autre'; }
-function docIcon(cat) { return cat === 'pdf' ? '📄' : cat === 'photo' ? '🖼️' : '📎'; }
+
 function fmtTaille(bytes) {
   if (!bytes) return '';
   if (bytes < 1024) return bytes + ' o';

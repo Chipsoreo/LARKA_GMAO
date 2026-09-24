@@ -1,0 +1,44 @@
+{
+  "identifiant": "acme.stock-doubles",
+  "format": "declaratif/1",
+  "nom": "Stock de doubles",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Tient le stock de doubles, et en publie une partie aux autres modules.",
+
+  "donnees": {
+    "doubles": {
+      "libelle": "Double",
+      "champs": {
+        "reference": { "type": "texte", "libelle": "Numéro de clé", "obligatoire": true },
+        "quantite":  { "type": "entier", "libelle": "Quantité", "min": 0, "defaut": 0 },
+        "armoire":   { "type": "texte", "libelle": "Armoire" },
+        "cout":      { "type": "decimal", "libelle": "Coût unitaire" }
+      }
+    }
+  },
+
+  "partage": [
+    {
+      "nom": "doubles_par_cle",
+      "libelle": "Doubles disponibles, par numéro de clé",
+      "source": "doubles",
+      "champs": ["reference", "quantite"]
+    }
+  ],
+
+  "pages": [
+    {
+      "cle": "doubles",
+      "titre": "Stock de doubles",
+      "icone": "package",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "liste", "source": "doubles",
+        "colonnes": ["reference", "quantite", "armoire"],
+        "recherche": ["reference", "armoire"],
+        "actions": ["creer", "modifier", "supprimer"]
+      }
+    }
+  ]
+}

@@ -60,7 +60,7 @@ async function renderEquipements() {
         { key:'Batiment',    label:'Bâtiment' },
       ],
       addBtnFn: canEdit() ? 'editEquip' : null,
-      extraButtons: canEdit() ? '<button class="btn btn-secondary" onclick="openImportEquipements()" style="margin-right:8px" title="Importer des équipements depuis un fichier Excel">📥 Importer</button>' : '',
+      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportEquipements()" title="Importer des équipements depuis un fichier Excel">📥 Importer</button>' : '',
       searchTerm: App.searchTerm, currentFilter: App.currentFilter,
       canEdit: canEdit(), canDelete: canDelete(),
     });
@@ -204,6 +204,8 @@ async function editEquip(id, readOnly = false) {
       ${isNew ? docsPanelHtml('Equipement', 0, 'Equipement') : docsPanelHtml('Equipement', id)}
     </div>` : ''}
 
+    ${!isNew ? '<div id="eqAncrageModules"></div>' : ''}
+
   </div>`, readOnly ? null : async () => {
     const numero = gv('f_numero');
     if (!numero) { toast('Le numéro est obligatoire.', 'error'); return; }
@@ -236,6 +238,16 @@ async function editEquip(id, readOnly = false) {
     if (!readOnly) {
       if (isNew) { window._docsPending['Equipement'] = []; }
       initDocsPanel('Equipement', id, 'Equipement');
+    }
+
+    // Blocs des modules communautaires. Après l'ouverture de la fiche, sinon le
+    // conteneur n'existe pas encore ; jamais sur une création, faute
+    // d'identifiant auquel rattacher quoi que ce soit.
+    if (!isNew && typeof LarkaExtensions !== 'undefined') {
+      try {
+        LarkaExtensions.rendrePoint('equipement.fiche',
+          document.getElementById('eqAncrageModules'), { equipementId: id });
+      } catch (e) { console.warn('Extensions (fiche équipement) :', e); }
     }
     const etatEl = document.getElementById('f_etat');
     if (etatEl && !readOnly) {

@@ -256,7 +256,7 @@ function _anStartPresenceRefresh() {
 async function _anLoadPresence() {
   _an.presence = {};
   const ids = _an.points.map(p => p.user && p.user.Id).filter(Boolean);
-  if (!ids.length || !window.AnnuaireApi || !AnnuaireApi.getPresence) return;
+  if (!ids.length || !(typeof AnnuaireApi !== 'undefined' && AnnuaireApi) || !AnnuaireApi.getPresence) return;
   try {
     const res = await AnnuaireApi.getPresence(ids);
     // Mémoriser la cause d'indisponibilité pour l'afficher (au lieu du silence).
@@ -613,7 +613,7 @@ async function _anLoadAgenda(userId, u) {
   if (u) _anCal.who = ((u.Prenom || '') + ' ' + (u.Nom || '')).trim();
   const cell = () => document.getElementById('anCal');
   const c0 = cell(); if (!c0) return;
-  if (!window.AnnuaireApi || !AnnuaireApi.getAgenda) { c0.textContent = ''; return; }
+  if (!(typeof AnnuaireApi !== 'undefined' && AnnuaireApi) || !AnnuaireApi.getAgenda) { c0.textContent = ''; return; }
 
   const [s, e] = _anCalWindow(_anCal.view, _anCal.anchor);
   c0.innerHTML = _anCalHeader(s, e) + '<div style="color:var(--gray-text)">Chargement…</div>';

@@ -266,7 +266,7 @@ function _appliquerFacteurs(liste, source, maj, origine, message, anneeFacteurs)
 function _getTransport(id) { return TRANSPORTS_ADEME.find(t => t.id === id) || TRANSPORTS_ADEME[TRANSPORTS_ADEME.length-1]; }
 function _getFreq(id) { return FREQUENCES.find(f => f.id === id) || FREQUENCES[0]; }
 function _getMethode(id) { return METHODES.find(m => m.id === id) || METHODES[0]; }
-function _estDerive(id) { return _getMethode(id).source === 'derive'; }
+
 
 /**
  * Facteur retenu pour une ligne, selon le périmètre demandé.
@@ -288,6 +288,29 @@ function _facteurLigne(ligne, methode) {
   if (!isNaN(saisi) && saisi > 0) return saisi;
   var t = _getTransport(ligne.Transport);
   return t[m.champ] || 0;
+}
+
+/**
+ * Kilométrage ANNUEL d'une déclaration.
+ *
+ * La liste montrait « 15 km × 2 trajet(s) par jour » : le chiffre qui compte
+ * dans un bilan — combien de kilomètres par an — restait à faire de tête, en
+ * devinant au passage le nombre de jours travaillés retenu. Deux personnes
+ * arrivaient à deux résultats, et aucune ne savait laquelle avait raison.
+ *
+ * Même formule que le calcul de CO2, sans le facteur d'émission : les deux
+ * chiffres ne peuvent donc pas diverger.
+ */
+function _kmAnnuel(ligne) {
+  var f = _getFreq(ligne.Frequence);
+  var dist = parseFloat(ligne.DistanceKm) || 0;
+  var nb = parseFloat(ligne.NbFrequence) || 1;
+  return dist * nb * f.facAnnuel;
+}
+
+function _fmtKm(km) {
+  if (!km) return '0 km';
+  return Math.round(km).toLocaleString('fr-FR') + ' km';
 }
 
 function _co2Annuel(ligne, methode) {
@@ -464,6 +487,10 @@ async function renderMobiliteCarbone() {
       html += '<div style="font-size:14px;font-weight:700;color:var(--navy)">' + t.label + '</div>';
       html += '<div style="font-size:12px;color:var(--gray-text);margin-top:2px">';
       html += dist + ' km × ' + nb + ' trajet(s) ' + f.label;
+      // Le total annuel, explicite : c'est lui qu'on compare d'une année sur
+      // l'autre, et il évite de refaire le calcul de tête.
+      html += ' <strong style="color:var(--navy)">= ' + _fmtKm(_kmAnnuel(l))
+           + '/an</strong>';
       html += ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:var(--gray-bg);border:1px solid var(--gray-border);font-size:10px;font-weight:600">'
            + _anneeLigne(l) + '</span>';
       html += '</div>';

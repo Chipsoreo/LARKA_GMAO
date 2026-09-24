@@ -62,10 +62,21 @@ body.app-mode .content { background: #1a3050; }
 /* Navigation */
 .sidebar-nav { flex: 1; padding: 12px 0; }
 .nav-section-title {
-  padding: 6px 20px 4px;
+  /* 6 px au-dessus, 4 en dessous : un titre de section se retrouvait collé à la
+     dernière entrée de la section PRÉCÉDENTE. « Historique », « Demandes
+     clôturées » et « Fiche comptable » formaient ainsi un bloc continu, et rien
+     ne disait qu'ils appartiennent à trois rubriques différentes.
+     Un séparateur discret double le repère : l'espace pour l'œil pressé, le
+     filet pour celui qui cherche. */
+  margin-top: 14px;
+  padding: 8px 20px 5px;
+  border-top: 1px solid rgba(255, 255, 255, .07);
   color: rgba(255,255,255,.25); font-size: 10px; font-weight: 700;
   letter-spacing: 1.2px; text-transform: uppercase;
 }
+/* Pas de filet ni d'espace avant la toute première section : il n'y a rien
+   à séparer du haut de la barre. */
+.nav-section-title:first-child { margin-top: 0; border-top: none; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 20px; cursor: pointer;

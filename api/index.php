@@ -209,7 +209,23 @@ $MULTIPART_ALLOWED_ACTIONS = [
     'superadmin_tenant_import_db',
     'plans_upload_fond',
     'plans_import',
+    'ext_televerser',   // paquets .larka (extensions communautaires)
+    'ext_importer',     // dépôt d'un paquet depuis l'écran Extensions
+    'thematique_importer',  // thèmes et traductions, déposés depuis Apparence
+    'fond_televerser',      // image de fond, déposée depuis Apparence
+    'ext_fichier_importer', // fichiers d'un module (dossiers déclarés)
+    'urgences_media_upload',// pièces jointes des procédures d'urgence
 ];
+
+// ⚠️ CETTE LISTE DOIT SUIVRE LES ROUTES.
+// Une action qui lit $_FILES sans figurer ici reçoit un 403
+// « Content-Type non autorisé » AVANT d'être exécutée. Vu de l'utilisateur :
+// le téléversement échoue sans explication utile, et rien dans la route
+// concernée ne permet de comprendre pourquoi — le refus a lieu bien en amont.
+//
+// « ext_fichier_importer » et « urgences_media_upload » manquaient. Pour
+// vérifier la liste après avoir ajouté une route :
+//   grep -rn '\$_FILES' api/routes/ | sed 's/:.*//' | sort -u
 if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'], true)) {
     $ct = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
     $_currentAction = $_GET['action'] ?? $_POST['action'] ?? '';
@@ -410,7 +426,8 @@ $dbOptionalActions = ['auth_config', 'server_url', 'oauth_microsoft_url', 'push_
     'superadmin_tenant_users', 'superadmin_tenant_user_save', 'superadmin_tenant_user_delete',
     'superadmin_local_accounts', 'superadmin_sync_accounts', 'superadmin_monitoring',
     'superadmin_branding_public',
-    'config_serveur'];
+    'config_serveur',
+    'maj_etat', 'maj_verifier', 'maj_installer', 'maj_historique', 'maj_restaurer'];
 
 if (in_array($action, $dbOptionalActions, true)) {
     try {
@@ -421,6 +438,7 @@ if (in_array($action, $dbOptionalActions, true)) {
         require_once __DIR__ . '/routes/chorus.php';   // Chorus Pro proxy
         require_once __DIR__ . '/routes/assistant.php'; // Assistant IA
         require_once __DIR__ . '/routes/push.php';     // Push notifications (vapid_key public)
+        require_once __DIR__ . '/routes/majs.php';     // Mises à jour de l'application
         json_error("Action inconnue : $action", 404);
     } catch (\Throwable $e) {
         json_error('Erreur serveur : ' . $e->getMessage(), 500);
@@ -460,6 +478,18 @@ try {
     require __DIR__ . '/routes/journal.php';     // Journal applicatif + présence
     require __DIR__ . '/routes/urgences.php';    // Médias (photos/vidéos) des procédures d'urgence
     require __DIR__ . '/routes/migration.php';   // Migration inter-drivers (SQLite ↔ PG ↔ MariaDB)
+
+    // ── Extensions communautaires ────────────────────────────────────────────
+    // La couche reste INERTE tant que extensions.actif vaut false dans
+    // config.json : aucun dossier n'est ouvert, aucun code tiers n'est chargé.
+    require_once __DIR__ . '/extensions/Registre.php';
+    ExtRegistre::initialiser($db, $_SESSION['user'] ?? []);
+    require __DIR__ . '/routes/extensions.php';
+
+    // Thématiques : thèmes et traductions. Elles ne sont pas des extensions —
+    // ni écran, ni données, ni permission — mais elles vivent dans la même
+    // zone fonctionnelle, et suivent le même interrupteur de configuration.
+    require __DIR__ . '/routes/thematiques.php';
 
     json_error("Action inconnue : $action", 404);
 

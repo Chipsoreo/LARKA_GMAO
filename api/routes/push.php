@@ -130,7 +130,7 @@ if ($action === 'push_test' && $method === 'POST') {
         'title'   => '🔔 Test Larka',
         'body'    => 'Les notifications fonctionnent ! — ' . date('H:i'),
         'tag'     => 'gmao-test-' . time(),
-        'icon'    => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/apple-touch-icon.png',
+        'icon'    => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/icon.png',
         'data'    => ['page' => 'dashboard'],
     ], JSON_UNESCAPED_UNICODE);
 
@@ -230,7 +230,7 @@ if ($action === 'push_send' && $method === 'POST') {
         'title' => $title,
         'body'  => $message,
         'tag'   => 'gmao-' . time(),
-        'icon'  => '/apple-touch-icon.png',
+        'icon'  => '/icon.png',
         'data'  => $notifData,
     ], JSON_UNESCAPED_UNICODE);
 
@@ -312,7 +312,7 @@ if ($action === 'push_config' && $method === 'GET') {
         'actif'                         => defined('PUSH_ACTIF') ? PUSH_ACTIF : true,
         'notif_demande_titre'           => defined('PUSH_NOTIF_DEMANDE_TITRE') ? PUSH_NOTIF_DEMANDE_TITRE : '📝 Nouvelle demande d\'intervention',
         'notif_demande_corps'           => defined('PUSH_NOTIF_DEMANDE_CORPS') ? PUSH_NOTIF_DEMANDE_CORPS : '{demandeur} a soumis une demande d\'intervention.',
-        'notif_demande_icon'            => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/apple-touch-icon.png',
+        'notif_demande_icon'            => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/icon.png',
         'notif_demande_image'           => defined('PUSH_NOTIF_DEMANDE_IMAGE') ? PUSH_NOTIF_DEMANDE_IMAGE : '',
         'notif_demande_roles'           => defined('PUSH_NOTIF_DEMANDE_ROLES') ? PUSH_NOTIF_DEMANDE_ROLES : ['Admin', 'Gestionnaire'],
         'notif_demande_require_interaction' => defined('PUSH_NOTIF_DEMANDE_REQUIRE_INTERACTION') ? PUSH_NOTIF_DEMANDE_REQUIRE_INTERACTION : false,

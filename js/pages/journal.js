@@ -48,7 +48,18 @@ async function renderJournal() {
     return;
   }
 
-  if (!['Admin', 'Gestionnaire'].includes(App.currentUser?.Role)) {
+  // ⚠️ CETTE GARDE NE CONNAISSAIT QUE LES RÔLES DE TENANT.
+  // J'avais ouvert la route serveur au super administrateur en oubliant qu'un
+  // second contrôle, côté client, refusait l'écran avant même de l'appeler.
+  // Résultat : le message d'interdiction s'affichait à celui à qui l'on venait
+  // de confier le journal. Deux gardes pour une même règle, et une seule
+  // corrigée — c'est le risque quand la règle est écrite à deux endroits.
+  // Le mode super administrateur est déclenché par « ?superadmin » dans l'URL
+  // et n'expose aucun état global : c'est donc l'URL qui fait foi. Le serveur
+  // revérifie de toute façon la session — ce test ne fait que choisir quoi
+  // afficher, il n'accorde aucun droit.
+  const estSuperAdmin = window.location.search.includes('superadmin');
+  if (!estSuperAdmin && !['Admin', 'Gestionnaire'].includes(App.currentUser?.Role)) {
     c.innerHTML = `<div class="card" style="padding:24px;text-align:center;color:var(--gray-text)">
       Le journal est réservé aux administrateurs et gestionnaires.</div>`;
     return;

@@ -502,47 +502,6 @@ async function _refreshEnergieStatsOnly() {
   });
 }
 
-function _syncStatsPanelBtns() {
-  const g = EnergieStatsState.graphType;
-  const m = EnergieStatsState.metrique;
-  const p = EnergieStatsState.periode;
-
-  [['barres','var(--blue)'],['ligne','var(--blue)'],['area','var(--blue)'],['comparaison','var(--blue)']].forEach(([id, col]) => {
-    const btn = document.getElementById('fsGraph_' + id);
-    if (!btn) return;
-    const on = g === id;
-    btn.style.background  = on ? col : 'white';
-    btn.style.color       = on ? 'white' : 'var(--gray-text)';
-    btn.style.borderColor = on ? col : 'var(--gray-border)';
-    btn.style.fontWeight  = on ? '600' : '400';
-  });
-
-  [['conso','var(--teal)'],['cout','var(--teal)'],['prixUnit','var(--teal)']].forEach(([id, col]) => {
-    const btn = document.getElementById('fsMet_' + id);
-    if (!btn) return;
-    const on = m === id;
-    btn.style.background  = on ? col : 'white';
-    btn.style.color       = on ? 'white' : 'var(--gray-text)';
-    btn.style.borderColor = on ? col : 'var(--gray-border)';
-    btn.style.fontWeight  = on ? '600' : '400';
-  });
-
-  [['3','#9b59b6'],['6','#9b59b6'],['12','#9b59b6'],['all','#9b59b6']].forEach(([id, col]) => {
-    const btn = document.getElementById('fsBtn_' + id);
-    if (!btn) return;
-    const on = p === id;
-    btn.style.background  = on ? col : 'white';
-    btn.style.color       = on ? 'white' : 'var(--gray-text)';
-    btn.style.borderColor = on ? col : 'var(--gray-border)';
-    btn.style.fontWeight  = on ? '600' : '400';
-  });
-
-  // Checkboxes relevés / factures
-  const elR = document.getElementById('fs_showReleve');
-  const elF = document.getElementById('fs_showFacture');
-  if (elR) elR.checked = EnergieStatsState.showReleve !== false;
-  if (elF) elF.checked = EnergieStatsState.showFacture !== false;
-}
 
 async function _renderEnergieStats(type, compteurs, cfg) {
   const tousReleves = [];
@@ -980,7 +939,6 @@ async function _renderEnergieStats(type, compteurs, cfg) {
       <td style="color:#16a34a">${d.carbone>0?fmtNum(d.carbone)+' kgCO₂':'—'}</td>
     </tr>`;
   }).join('');
-
 
 
   const nbMoisTotal = tousLesMois.length;
@@ -1849,22 +1807,6 @@ function _bcExportCsv() {
   if (typeof toast === 'function') toast('Export CSV téléchargé.', 'success');
 }
 
-function updateBilanCarbonePrix(val) {
-  const v = parseFloat(val);
-  if (!isNaN(v) && v > 0) BilanCarboneState.prixCO2 = v;
-  const px = BilanCarboneState.prixCO2;
-  const totalC = parseFloat(document.getElementById('_bc_totalCarbone')?.dataset?.value || 0);
-  const fmtMon = v => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v||0);
-  const el = document.getElementById('_bc_coutCarbone');
-  if (el) el.textContent = fmtMon(totalC / 1000 * px);
-}
-
-function updateBilanCarboneCoeff(val) {
-  const v = parseFloat(val);
-  if (!isNaN(v) && v > 0) BilanCarboneState.coeffCO2Chauffage = v;
-  // Re-render complet pour recalculer le CO₂ chauffage avec le nouveau coeff
-  _refreshEnergieStatsOnly();
-}
 
 async function _renderBilanCarbone(c) {
   const compteurs = await EnergieApi.getCompteurs();
@@ -2292,19 +2234,6 @@ function _bcFacteursFooterHtml(facteurs, typeIcons, anneeFacteur) {
   h += '  </div>';
   h += '</div>';
   return h;
-}
-
-// ── Switch entre les 3 vues du Bilan Carbone ─────────────────────────────────
-function switchBCVue(vueId) {
-  ['bc_vue_annee','bc_vue_croise','bc_vue_evol'].forEach(id => {
-    const el = document.getElementById(id);
-    const tab = document.getElementById('tab_'+id);
-    if (el) el.style.display = id === vueId ? 'block' : 'none';
-    if (tab) {
-      tab.style.borderBottom = id === vueId ? '3px solid #16a34a' : '3px solid transparent';
-      tab.style.color = id === vueId ? '#16a34a' : 'var(--gray-text)';
-    }
-  });
 }
 
 

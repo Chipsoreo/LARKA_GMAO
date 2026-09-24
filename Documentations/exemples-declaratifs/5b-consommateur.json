@@ -1,0 +1,44 @@
+{
+  "identifiant": "acme.cles-liees",
+  "format": "declaratif/1",
+  "nom": "Clés avec stock",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Affiche, pour chaque clé, le stock de doubles tenu par un autre module.",
+
+  "donnees": {
+    "cles": {
+      "libelle": "Clé",
+      "champs": {
+        "numero":     { "type": "texte", "libelle": "Numéro",
+                        "obligatoire": true, "unique": true },
+        "nomination": { "type": "texte", "libelle": "Désignation", "obligatoire": true }
+      }
+    }
+  },
+
+  "calculs": {
+    "doubles_en_stock": {
+      "type": "somme",
+      "de": "acme.stock-doubles/doubles_par_cle",
+      "champ": "quantite",
+      "ou": { "reference": "@numero" },
+      "libelle": "Doubles en armoire"
+    }
+  },
+
+  "pages": [
+    {
+      "cle": "cles",
+      "titre": "Clés avec stock",
+      "icone": "key",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "liste", "source": "cles",
+        "colonnes": ["numero", "nomination"],
+        "recherche": ["numero", "nomination"],
+        "actions": ["creer", "modifier", "supprimer", "exporter"]
+      }
+    }
+  ]
+}

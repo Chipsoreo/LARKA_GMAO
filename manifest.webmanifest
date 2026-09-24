@@ -2,7 +2,7 @@
   "name": "LARKA",
   "short_name": "Larka",
   "description": "Gestion de Maintenance Assistée par Ordinateur",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -11,10 +11,22 @@
   "background_color": "#0a1628",
   "icons": [
     {
-      "src": "/apple-touch-icon.png",
+      "src": "/icon.png",
       "sizes": "180x180",
       "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ],
   "categories": [

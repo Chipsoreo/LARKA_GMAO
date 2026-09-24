@@ -54,6 +54,7 @@
   // beaucoup de pages (getRequiredFields, fmt*) ont été extraites dans des
   // fichiers du cœur (js/required-fields.js, js/ui.js).
   const PAGE_SCRIPTS = {
+    extensions:        ['js/pages/extensions.js'],
     dashboard:         ['js/pages/demandes.js', 'js/pages/interventions.js', 'js/pages/dashboard.js'],
     biens:             ['js/pages/biens-import.js', 'js/pages/biens.js'],
     equipements:       ['js/pages/biens-import.js', 'js/pages/equipements.js'],

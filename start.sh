@@ -22,6 +22,7 @@
 #   ./start.sh setup         Prépare base + .env + config.json (sans installer de paquet)
 #   ./start.sh reset         Recrée les bases depuis zéro (DESTRUCTIF)
 #   ./start.sh doctor        Diagnostic de l'environnement (+ --fix : auto-réparation)
+#   ./start.sh epreuves      Vérifie les protections du moteur (auto avant « prod »)
 #   ./start.sh autostart on|off|status   Démarrage automatique au boot (systemd)
 #   ./start.sh prod          Installation production (Nginx + PHP-FPM + HTTPS)
 #   ./start.sh prod-start    Démarre Nginx + PHP-FPM (prod)
@@ -91,7 +92,11 @@ LICENSE_MARKER="data/.license_accepted"
 AUTOSTART_UNIT="larka.service"   # unité systemd posée par « autostart on »
 
 # Extensions PHP requises (nom du module tel que listé par `php -m`)
-REQUIRED_EXT=(pgsql pdo_pgsql mbstring curl gd xml)
+# zip : requis par les paquets .larka (modules communautaires). Il était
+# installé par setup mais jamais VÉRIFIÉ : sur une installation antérieure
+# ou une distribution qui ne l'embarque pas, l'absence ne se découvrait
+# qu'au moment d'importer un module, avec un message tardif.
+REQUIRED_EXT=(pgsql pdo_pgsql mbstring curl gd xml zip)
 
 # ── Lecture de la commande + options ────────────────────────────────────────
 COMMAND="${1:-menu}"
@@ -133,9 +138,36 @@ config_read_server() {
     if command -v php >/dev/null 2>&1; then
         php -r '$c=json_decode(@file_get_contents("config.json"),true);
                 $v=$c["serveur"][$argv[1]]??""; if(is_scalar($v)) echo $v;' "$1" 2>/dev/null
-    else  # repli sans PHP : extraction naïve mais suffisante pour host/port
-        grep -oP '"'"$1"'"\s*:\s*"?\K[^",}]+' config.json 2>/dev/null | head -1
+        return 0
     fi
+
+    # ── Repli sans PHP ───────────────────────────────────────────────────
+    #
+    # ⚠️ IL LISAIT N'IMPORTE QUELLE SECTION.
+    # « grep "port" | head -1 » rendait le PREMIER "port" du fichier entier.
+    # La section « serveur » n'en déclare pas (le défaut 8000 vient du code) :
+    # le premier trouvé était donc celui de « superadmin_db », soit 5432.
+    # Sur une machine sans PHP en ligne de commande, start.sh tentait d'écouter
+    # sur le port de PostgreSQL — soit un échec, soit pire, une collision.
+    #
+    # Le même piège guettait « host » : il tombait juste par hasard, parce que
+    # « serveur » est la première section du fichier. Déplacer une section
+    # l'aurait cassé.
+    #
+    # On borne donc la lecture à la section « serveur » : de son accolade
+    # ouvrante à la première accolade fermante.
+    awk -v cle="$1" '
+        /"serveur"[[:space:]]*:[[:space:]]*\{/ { dans = 1; next }
+        dans && /^[[:space:]]*\}/              { exit }
+        dans {
+            motif = "\"" cle "\"[[:space:]]*:[[:space:]]*\"?[^\",}]+"
+            if (match($0, motif)) {
+                v = substr($0, RSTART, RLENGTH)
+                sub(/^.*:[[:space:]]*"?/, "", v)
+                gsub(/[[:space:]]+$/, "", v)
+                print v; exit
+            }
+        }' config.json 2>/dev/null
 }
 
 load_saved_settings() {
@@ -146,6 +178,14 @@ load_saved_settings() {
     if [[ "$PORT_EXPLICIT" != "true" ]]; then
         v="$(config_read_server port)"; [[ "$v" =~ ^[0-9]+$ ]] && PORT="$v"
     fi
+    # ⚠️ FIX : « return 0 » indispensable. Le script tourne sous « set -e », et
+    # cette fonction est appelée au NIVEAU GLOBAL. Sans config.json (première
+    # installation, dépôt fraîchement cloné, archive décompressée), les deux
+    # tests « [[ … ]] && VAR=… » échouent, la fonction renvoie 1, et le script
+    # s'arrête AVANT le dispatch — sans le moindre message.
+    # Symptôme : « ./start.sh install » ou « ./start.sh help » ne fait rien et
+    # rend le code 1. Impossible à diagnostiquer sans bash -x.
+    return 0
 }
 
 save_server_settings() {
@@ -528,11 +568,90 @@ generate_config() {
     "plans_presence": { "actif": false },
     "smtp": { "host": "", "port": 587, "secure": "tls", "from": "", "from_name": "Larka" },
     "push": { "actif": false, "vapid_public_key": "", "vapid_subject": "" },
-    "assistant": { "actif": false, "fournisseur": "anthropic", "model": "", "api_url": "" }
+    "assistant": { "actif": false, "fournisseur": "anthropic", "model": "", "api_url": "" },
+    "extensions": { "actif": false }
 }
 EOCFG
     chmod 640 config.json 2>/dev/null || true
     ok "config.json généré"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHAREPOINT — option choisie au premier lancement
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sans SharePoint, les documents sont stockés dans la base de Larka et la
+# connexion Microsoft (si elle est utilisée) ne demande pas l'accès aux fichiers.
+# Avec, on peut lier des fichiers SharePoint/OneDrive aux fiches. Le choix vit
+# dans config.json → "sharepoint": { "actif": true|false } ; il est demandé une
+# fois (setup, premier « start »), puis modifiable : ./start.sh sharepoint on|off
+# ou console → Maintenance.
+
+sp_config_file() {
+    # La configuration effective : celle de la production si elle est installée.
+    if prod_installed 2>/dev/null && [[ -f "$(prod_dir)/config.json" ]]; then
+        echo "$(prod_dir)/config.json"
+    else
+        echo "${SCRIPT_DIR}/config.json"
+    fi
+}
+
+sp_state() {
+    # true | false | vide (jamais choisi)
+    local f; f="$(sp_config_file)"
+    [[ -f "$f" ]] && command -v php >/dev/null 2>&1 || return 0
+    php -r '$c=json_decode(@file_get_contents($argv[1]),true);
+            if (isset($c["sharepoint"]["actif"])) echo $c["sharepoint"]["actif"] ? "true" : "false";' "$f" 2>/dev/null || true
+}
+
+sp_write() {
+    local v="$1" f; f="$(sp_config_file)"
+    [[ -f "$f" ]] || { warn "config.json absent — lancez d'abord ./start.sh setup"; return 1; }
+    local -a run=(php); [[ -w "$f" ]] || run=(as_root php)
+    "${run[@]}" -r '$f=$argv[1]; $c=json_decode(file_get_contents($f),true);
+        if (!is_array($c)) { fwrite(STDERR, "config.json illisible\n"); exit(1); }
+        $c["sharepoint"]=["actif"=>$argv[2]==="true"];
+        file_put_contents($f, json_encode($c, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n");' "$f" "$v" \
+        || { warn "Impossible d'écrire ${f}"; return 1; }
+    if [[ "$v" == "true" ]]; then
+        ok "SharePoint activé (${f})"
+        info "Il fonctionne avec la connexion Microsoft (microsoft_oauth.actif) ; les utilisateurs se reconnectent pour autoriser l'accès à leurs fichiers."
+    else
+        ok "SharePoint désactivé (${f}) — documents stockés dans Larka"
+    fi
+}
+
+ask_sharepoint() {
+    # Ne demande qu'une fois : si le choix figure déjà dans config.json, rien à faire.
+    [[ -n "$(sp_state)" ]] && return 0
+    [[ -f "$(sp_config_file)" ]] || return 0
+    local v=false rep=""
+    if [[ -t 0 && "$ASSUME_YES" != "true" ]]; then
+        echo
+        echo -e "  ${BOLD}Documents : utiliser SharePoint ?${NC}"
+        echo    "    • Non (conseillé sans Microsoft 365) : les documents sont stockés dans Larka."
+        echo    "    • Oui : on peut aussi lier des fichiers SharePoint / OneDrive aux fiches"
+        echo    "      (exige la connexion Microsoft ; accès aux fichiers autorisé par chaque utilisateur)."
+        read -r -p "  Activer SharePoint ? [o/N] " rep || true
+        [[ "$rep" =~ ^[OoYy] ]] && v=true
+    else
+        info "SharePoint désactivé par défaut (mode non interactif) — ./start.sh sharepoint on pour l'activer."
+    fi
+    sp_write "$v" || true
+}
+
+cmd_sharepoint() {
+    case "${SUBCOMMAND:-etat}" in
+        on|oui|activer)       sp_write true ;;
+        off|non|desactiver)   sp_write false ;;
+        etat|status|"")
+            case "$(sp_state)" in
+                true)  ok "SharePoint : activé   ($(sp_config_file))" ;;
+                false) ok "SharePoint : désactivé — documents stockés dans Larka   ($(sp_config_file))" ;;
+                *)     info "SharePoint : pas encore choisi (actif par défaut avec la connexion Microsoft)."
+                       info "Choisir : ./start.sh sharepoint on   ou   ./start.sh sharepoint off" ;;
+            esac ;;
+        *) die 2 "Usage : ./start.sh sharepoint [on|off|etat]" ;;
+    esac
 }
 
 ensure_data_dirs() {
@@ -639,6 +758,7 @@ cmd_setup() {
     generate_env
     create_databases || die 22 "Échec de création du rôle ou des bases PostgreSQL."
     generate_config
+    ask_sharepoint
     ensure_data_dirs
     ok "Répertoires data/ prêts"
 
@@ -663,17 +783,31 @@ cmd_setup() {
 # sur un serveur de production casse le site : la réinstallation prod, elle,
 # passe par deploy/install.sh qui conserve la configuration existante.
 prod_guard_dev_command() {
+    # ── Ce qui prouve VRAIMENT une installation de production ────────────
+    #
+    # « env: prod » dans config.json déclenchait à lui seul ce garde-fou, au
+    # motif que c'était « le signal le plus fiable ». Ce n'en est pas un : c'est
+    # une valeur de configuration, pas une preuve d'installation. Et
+    # config.example.json la portait par défaut — quiconque copiait l'exemple
+    # voyait donc ses commandes de développement traitées comme dangereuses, sur
+    # une machine où rien n'était installé.
+    #
+    # Les vraies preuves sont matérielles : un vhost Nginx et un pool PHP-FPM
+    # existent, ou le code est déployé sous /var/www.
     local isProd=false
     prod_installed && isProd=true
     [[ "$SCRIPT_DIR" == /var/www/* ]] && isProd=true
-    # Un config.json déjà en "env": "prod" est le signal le plus fiable.
-    if [[ -f config.json ]] && grep -qE '"env"[[:space:]]*:[[:space:]]*"prod"' config.json 2>/dev/null; then
-        isProd=true
-    fi
     [[ "$isProd" == "true" ]] || return 0
 
+    # « env: prod » reste utile à MENTIONNER une fois qu'on est sûr : il indique
+    # que la configuration présente est celle du site en service.
+    local _env=""
+    if [[ -f config.json ]] && grep -qE '"env"[[:space:]]*:[[:space:]]*"prod"' config.json 2>/dev/null; then
+        _env=" et son config.json est en « env: prod »"
+    fi
+
     echo
-    warn "Cette machine porte une installation de ${BOLD}PRODUCTION${NC}${YELLOW} (${SCRIPT_DIR})."
+    warn "Cette machine porte une installation de ${BOLD}PRODUCTION${NC}${YELLOW} (${SCRIPT_DIR})${_env}."
     warn "« ${COMMAND} » est une commande de DÉVELOPPEMENT : elle prépare une base"
     warn "locale et peut régénérer config.json en mode dev (env: dev, allowed_origin: \"*\")."
     echo
@@ -711,20 +845,29 @@ cmd_install() {
 }
 
 cmd_start() {
-    # ⚠️ Production installée (Nginx + pool PHP-FPM « gmao ») : c'est ELLE qui
-    # sert l'application. Lancer ici un « php -S » créerait un second serveur
-    # concurrent, sur un autre port, avec une autre configuration — d'où
-    # l'impression de devoir tout reconfigurer et retaper l'adresse.
-    if prod_installed 2>/dev/null && [[ "${FORCE_DEV:-false}" != "true" ]]; then
-        info "Installation de production détectée (Nginx + PHP-FPM)."
-        info "Démarrage des services plutôt que du serveur de développement."
-        info "Pour forcer le serveur intégré : ${BOLD}FORCE_DEV=true ./start.sh start${NC}"
+    # ── PRODUCTION INSTALLÉE : ON PRÉVIENT, ON NE SUBSTITUE PAS ─────────
+    #
+    # « start » démarrait la PRODUCTION dès qu'une installation était détectée.
+    # On tapait « start » en attendant le serveur de développement, et on
+    # obtenait autre chose — sans l'avoir demandé, et sans moyen évident de
+    # revenir en arrière : l'échappatoire était une variable d'environnement
+    # que personne ne devine.
+    #
+    # Le motif invoqué — « deux serveurs concurrents » — ne tient pas : nginx
+    # écoute sur 80/443, le serveur intégré sur 8000. Ils coexistent très bien,
+    # et lancer les deux est justement ce qu'on veut en développant sur une
+    # machine qui héberge aussi une production.
+    #
+    # On exécute donc la commande demandée, et l'on signale l'autre.
+    if prod_installed 2>/dev/null; then
+        local _u; _u="$(prod_url "$(prod_dir)" 2>/dev/null)" || true
+        info "Une installation de production existe aussi sur cette machine${_u:+ (${_u})}."
+        info "Elle n'est pas touchée. Pour la piloter : ${BOLD}./start.sh prod-start${NC}"
         echo
-        cmd_prod_start
-        return $?
     fi
 
     require_setup
+    ask_sharepoint            # premier lancement : SharePoint oui/non (une seule fois)
     ensure_data_dirs
     save_server_settings      # --host/--port explicites → mémorisés (config.json)
     ensure_ready_to_serve     # PostgreSQL relancé automatiquement si besoin
@@ -794,10 +937,15 @@ cmd_start() {
 }
 
 cmd_stop() {
-    if prod_installed 2>/dev/null && [[ "${FORCE_DEV:-false}" != "true" ]] && ! is_running; then
-        info "Installation de production détectée — arrêt des services."
-        cmd_prod_stop
-        return $?
+    # Même principe qu'au démarrage : « stop » arrêtait la PRODUCTION dès que le
+    # serveur de développement ne tournait pas. Couper les services d'un serveur
+    # en service parce qu'on voulait arrêter un « php -S » déjà éteint est une
+    # surprise coûteuse. On le dit, on n'agit pas à la place de l'utilisateur.
+    if prod_installed 2>/dev/null && ! is_running && ! autostart_active; then
+        info "Le serveur de développement n'est pas démarré."
+        info "La production, elle, tourne toujours. Pour l'arrêter :"
+        info "  ${BOLD}./start.sh prod-stop${NC}"
+        return 0
     fi
     if autostart_active; then
         info "Arrêt du service systemd ${AUTOSTART_UNIT}…"
@@ -1267,11 +1415,85 @@ cmd_autostart() {
     esac
 }
 
+# ── Épreuves de sécurité ─────────────────────────────────────────────────────
+#
+# Elles vivent dans outils/epreuves/ et ne partent pas en production. Elles
+# vérifient que les protections du moteur tiennent encore : formules qui ne
+# peuvent pas atteindre PHP, opérateurs fermés, invariants de sécurité.
+#
+# POURQUOI C'EST BRANCHÉ ICI, ET PAS LAISSÉ À LA BONNE VOLONTÉ
+# Une vérification qu'il faut penser à lancer n'est jamais lancée. Elle l'est
+# donc AUTOMATIQUEMENT avant chaque mise en production — le seul moment où elle
+# compte vraiment, et le seul où l'on accepte d'attendre trois secondes.
+#
+# Quatre suites sur onze exigent une base. Elles sont ignorées ici : faire
+# échouer un déploiement parce qu'un poste n'a pas de base, c'est apprendre aux
+# gens à passer outre — et une alarme qu'on contourne par habitude ne sert plus
+# à rien.
+#
+# « autorisations » en fait partie, et c'est un regret : c'est elle qui vérifie
+# que les rôles déclarés par un module font frontière. Pour l'exécuter, lancez
+# la suite complète sur un poste où une base est configurée :
+#   bash outils/epreuves/toutes.sh
+cmd_epreuves() {
+    [[ -d outils/epreuves ]] || { warn "outils/epreuves absent — rien à vérifier."; return 0; }
+    command -v php >/dev/null 2>&1 || { warn "PHP absent — épreuves ignorées."; return 0; }
+
+    local echec=0 nom
+    # « layout » rejoint les rapides : la mise en page est la primitive la plus
+    # proche du rendu, donc celle par laquelle on tenterait d'y faire entrer du
+    # style ou du comportement. Elle ne demande aucune base et coûte un instant.
+    for nom in invariants expressions conditions layout reference; do
+        local f="outils/epreuves/test-${nom}.php"
+        [[ -f "$f" ]] || continue
+        if php "$f" >/dev/null 2>&1; then
+            printf "   \033[32m✓\033[0m %s\n" "$nom"
+        else
+            printf "   \033[31m✗\033[0m %s\n" "$nom"
+            echec=1
+        fi
+    done
+
+    if command -v node >/dev/null 2>&1; then
+        if [[ -f outils/epreuves/verif-globales.js ]]; then
+            if node outils/epreuves/verif-globales.js >/dev/null 2>&1; then
+                printf "   \033[32m✓\033[0m liaisons globales\n"
+            else
+                printf "   \033[31m✗\033[0m liaisons globales\n"; echec=1
+            fi
+        fi
+        # Le RENDU de la mise en page : la seule épreuve qui lit le HTML
+        # réellement produit. Elle tourne sans navigateur, donc elle tourne.
+        if [[ -f outils/epreuves/test-rendu-layout.js ]]; then
+            if node outils/epreuves/test-rendu-layout.js >/dev/null 2>&1; then
+                printf "   \033[32m✓\033[0m rendu de la mise en page\n"
+            else
+                printf "   \033[31m✗\033[0m rendu de la mise en page\n"; echec=1
+            fi
+        fi
+    fi
+    return $echec
+}
+
 cmd_prod() {
     [[ -f deploy/install.sh ]] || die 30 "deploy/install.sh introuvable (lancez la commande depuis la racine du projet)."
     [[ $EUID -ne 0 && ! "$(command -v sudo)" ]] && die 50 "Le mode production nécessite les droits root (su - puis bash start.sh prod, ou installez sudo)."
+
+    # ── Contrôle avant mise en production ────────────────────────────────
+    # Bloquant, et c'est le but : livrer un moteur dont les protections sont
+    # tombées est pire que ne pas livrer. « --sans-epreuves » existe pour le
+    # cas d'urgence, mais il faut l'écrire — donc le décider.
+    if [[ " $* " != *" --sans-epreuves "* ]]; then
+        title "Vérification des protections"
+        if ! cmd_epreuves; then
+            echo
+            die 60 "Une protection du moteur ne répond plus.\n   → Lancez « bash outils/epreuves/toutes.sh » pour le détail.\n   → Pour passer outre malgré tout : ./start.sh prod --sans-epreuves"
+        fi
+        echo
+    fi
+
     title "Larka — Installation production (Nginx + PHP-FPM + HTTPS)"
-    as_root bash deploy/install.sh "$@"
+    as_root bash deploy/install.sh "${@/--sans-epreuves/}"
 }
 
 cmd_help() {
@@ -1315,7 +1537,11 @@ ${BOLD}Maintenance${NC}
   setup        Prépare base + .env + config.json (sans installer de paquet système)
   reset        Recrée les bases depuis zéro (DESTRUCTIF)
   doctor       Diagnostic complet   ·   doctor --fix : auto-réparation
+  epreuves     Vérifie que les protections du moteur tiennent encore
+               (lancé automatiquement avant « prod »)
   prod ...     Installation production (délègue à deploy/install.sh)
+  sharepoint on|off|etat
+               SharePoint (liens vers fichiers Microsoft 365) — demandé au 1er lancement
 
 ${BOLD}Production (services déjà installés)${NC}
   bump-assets  Force les navigateurs à reprendre les JS/CSS (après un déploiement)
@@ -1345,6 +1571,10 @@ ${BOLD}Exemples${NC}
   ./start.sh setup --fix-pg-auth        Répare l'authentification PostgreSQL
   sudo ./start.sh prod-restart          Redémarre nginx + php-fpm et affiche l'URL
   sudo ./start.sh prod --domain gmao.example.com
+                                        Production avec certificat Let's Encrypt (Certbot)
+  sudo ./start.sh prod --domain gmao.example.com --cert fullchain.pem --key privkey.pem
+                                        Production avec un certificat existant (sans Certbot)
+                                        (autres choix : --no-certbot, --behind-proxy)
 EOHELP
 }
 
@@ -1429,19 +1659,50 @@ prod_journal() {
 }
 
 prod_health() {
-    local url="$1" code code2
+    local url="$1" code code2 hote local_code
     command -v curl &>/dev/null || { warn "curl absent — contrôle de santé ignoré."; return 0; }
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null)" || true
+
+    # ── D'ABORD EN LOCAL, ET C'EST LE CONTRÔLE QUI COMPTE ────────────────
+    #
+    # Le contrôle partait directement sur l'URL publique. Derrière un tunnel —
+    # Cloudflare, ngrok — ou avec un DNS à découpage, la machine ne se joint pas
+    # elle-même par cette adresse : curl attendait jusqu'au délai maximal, puis
+    # annonçait « aucune réponse » alors que nginx et PHP-FPM répondaient très
+    # bien. Un faux négatif qui arrive à chaque démarrage finit par être ignoré,
+    # et le jour où la panne est réelle, personne ne la voit.
+    #
+    # On interroge donc 127.0.0.1 en passant le nom de domaine dans l'en-tête
+    # Host : nginx sert le bon vhost, et l'on teste ce que l'on veut vraiment
+    # tester — le serveur, pas le chemin réseau qui y mène.
+    hote="${url#*://}"; hote="${hote%%/*}"; hote="${hote%%:*}"
+    local_code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 \
+                  -H "Host: ${hote}" "https://127.0.0.1/" 2>/dev/null)" || true
+    if [[ -z "$local_code" || "$local_code" == "000" ]]; then
+        local_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+                      -H "Host: ${hote}" "http://127.0.0.1/" 2>/dev/null)" || true
+    fi
+
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null)" || true
     if [[ -z "$code" || "$code" == "000" ]]; then
-        # Second essai sans vérifier le certificat : permet de distinguer
-        # « site injoignable » de « certificat non valide ».
-        code2="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null)" || true
+        # Sans vérifier le certificat : distingue « injoignable » de
+        # « certificat non valide ».
+        code2="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null)" || true
         if [[ -n "$code2" && "$code2" != "000" ]]; then
             warn "Le site répond (HTTP ${code2}) mais son certificat TLS n'est pas validé"
             warn "(auto-signé, expiré, ou émis pour un autre domaine) → certbot renew ?"
             return 0
         fi
-        warn "Aucune réponse de ${url} — DNS, pare-feu, ou Nginx n'écoute pas ce domaine ?"
+        # Le serveur va bien, seule l'adresse publique n'est pas joignable
+        # DEPUIS CETTE MACHINE. C'est le cas normal derrière un tunnel : on
+        # informe, on n'alarme pas.
+        if [[ -n "$local_code" && "$local_code" != "000" ]]; then
+            ok "Le serveur répond en local (HTTP ${local_code})."
+            echo -e "  ${BLUE}ℹ${NC} ${url} n'est pas joignable depuis cette machine —"
+            echo -e "    normal derrière un tunnel ou avec un DNS à découpage."
+            echo -e "    Vérifiez depuis l'extérieur : ${CYAN}${url}${NC}"
+            return 0
+        fi
+        warn "Aucune réponse, ni sur ${url} ni en local — Nginx ou PHP-FPM sont-ils démarrés ?"
         return 1
     fi
     case "$code" in
@@ -2043,6 +2304,11 @@ menu_maint() {
 
         labels=(); actions=()
         labels+=("Diagnostic de l'environnement");                    actions+=(doctor)
+        # Les épreuves tournaient déjà avant chaque « prod », mais rien ne les
+        # proposait au menu : pour les lancer en dehors d'un déploiement, il
+        # fallait connaître la commande. Un contrôle qu'on ne trouve pas est un
+        # contrôle qu'on n'utilise pas.
+        labels+=("Vérifier les protections du moteur");                actions+=(epreuves)
         if [[ "$isProd" == "true" ]]; then
             labels+=("Réparer la base et .env  ${BOLD}(dév)${NC}");   actions+=(setup)
             labels+=("Installer les dépendances système  ${BOLD}(dév)${NC}"); actions+=(install)
@@ -2050,6 +2316,11 @@ menu_maint() {
             labels+=("Préparer / réparer la base et la config");      actions+=(setup)
             labels+=("Installer les dépendances système (PHP, PostgreSQL…)"); actions+=(install)
         fi
+        case "$(sp_state)" in
+            true)  labels+=("SharePoint : ${GREEN}activé${NC} — désactiver");  actions+=(sp_off) ;;
+            false) labels+=("SharePoint : désactivé — activer");              actions+=(sp_on) ;;
+            *)     labels+=("SharePoint : à choisir");                        actions+=(sp_ask) ;;
+        esac
         labels+=("⚠ Réinitialiser les bases (DESTRUCTIF)");           actions+=(reset)
         labels+=("Retour");                                           actions+=(back)
 
@@ -2059,9 +2330,16 @@ menu_maint() {
         echo
         case "${actions[$MENU_CHOICE]}" in
             doctor)  ( cmd_doctor ) || true ;;
+            epreuves) ( title "Vérification des protections"
+                        if cmd_epreuves; then ok "Toutes les protections répondent."
+                        else warn "Une protection ne répond plus — détail :"
+                             echo "    bash outils/epreuves/toutes.sh"; fi ) || true ;;
             setup)   ( COMMAND=setup;   cmd_setup ) || true ;;
             install) ( COMMAND=install; cmd_install ) || true ;;
             reset)   ( COMMAND=reset;   cmd_reset ) || true ;;
+            sp_on)   sp_write true  || true ;;
+            sp_off)  sp_write false || true ;;
+            sp_ask)  ask_sharepoint || true ;;
             back)    return 0 ;;
         esac
         menu_pause
@@ -2123,19 +2401,20 @@ case "$COMMAND" in
     setup)              cmd_setup ;;
     start)              cmd_start ;;
     stop)               cmd_stop ;;
-    restart)            if prod_installed 2>/dev/null && [[ "${FORCE_DEV:-false}" != "true" ]]; then
-                            cmd_prod_restart
-                        else
-                            cmd_stop; DAEMON=true; cmd_start
-                        fi ;;
+    # « restart » redémarrait la production dès qu'elle était installée. Comme
+    # « start » et « stop », il porte maintenant sur le serveur de
+    # développement : « prod-restart » existe pour l'autre.
+    restart)            cmd_stop; DAEMON=true; cmd_start ;;
     status)             cmd_status ;;
     logs)               cmd_logs ;;
     journal)            SUBCOMMAND="${SUBCOMMAND:-suivre}"; cmd_journal ;;
     reset)              cmd_reset ;;
     doctor)             cmd_doctor ;;
+    epreuves|test)      title "Vérification des protections"; cmd_epreuves && ok "Toutes les protections répondent." || die 60 "Une protection ne répond plus. → bash outils/epreuves/toutes.sh" ;;
     autostart)          cmd_autostart ;;
     prod)               cmd_prod ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} ;;
     bump-assets)        bump_assets ;;
+    sharepoint)         cmd_sharepoint ;;
     prod-start)         cmd_prod_start ;;
     prod-stop)          cmd_prod_stop ;;
     prod-restart)       cmd_prod_restart ;;

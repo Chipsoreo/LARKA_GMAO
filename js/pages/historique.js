@@ -475,19 +475,6 @@ function toggleHisto(type, val) {
   App.renderCurrentPage();
 }
 
-function filtreHisto(key, val) {
-  // Conservé pour rétro-compatibilité éventuelle
-  FiltresEngine.setValue('historique', key, val);
-  App.renderCurrentPage();
-}
-
-function resetFiltresHisto() {
-  FiltresEngine.reset('historique');
-  App.searchTerm = '';
-  const si = document.querySelector('.search-input');
-  if (si) si.value = '';
-  App.renderCurrentPage();
-}
 
 // ── Vue détail fiche compta clôturée ─────────────────────────────────────────
 async function voirFicheComptaCloture(id) {

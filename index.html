@@ -17,7 +17,9 @@
   <title>Larka</title>
 
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="180x180" href="/icon.png">
+  <link rel="apple-touch-icon" href="/icon.png">
 
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Larka">
@@ -28,13 +30,27 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/base.css?v=202608041400">
-  <link rel="stylesheet" href="css/login.css?v=202608041400">
-  <link rel="stylesheet" href="css/layout.css?v=202608041400">
-  <link rel="stylesheet" href="css/components.css?v=202608041400">
-  <link rel="stylesheet" href="css/responsive.css?v=202608041400">
-  <link rel="stylesheet" href="css/dark-mode.css?v=202608041400">
-  <link rel="stylesheet" href="css/assistant.css?v=202608041400">
+  <!-- ⚠️ « ?v= » EST À BUMPER À CHAQUE LIVRAISON.
+       Ces paramètres figeaient une date du 4 août : le navigateur servait donc
+       les fichiers en cache, et des corrections livrées depuis n'atteignaient
+       jamais l'utilisateur. On croyait le code inchangé alors qu'il l'était
+       — sur le serveur, pas dans le navigateur.
+       Toutes les ressources partagent la même valeur : une seule à changer. -->
+  <link rel="stylesheet" href="css/base.css?v=202609241626">
+  <link rel="stylesheet" href="css/login.css?v=202609241626">
+  <link rel="stylesheet" href="css/layout.css?v=202609241626">
+  <link rel="stylesheet" href="css/components.css?v=202609241626">
+  <link rel="stylesheet" href="css/responsive.css?v=202609241626">
+  <!-- En DERNIER : ce fichier branche les variables qu'un module de thème
+       pose. Chargé plus tôt, les règles existantes l'emporteraient et le
+       thème resterait sans effet visible. -->
+  <link rel="stylesheet" href="css/apparence.css?v=202609241626">
+  <!-- Chargée en dernier : ses règles @media print doivent primer sur celles
+       des feuilles précédentes, à spécificité égale. -->
+  <link rel="stylesheet" href="css/declaratif-liste.css?v=202609241626">
+  <link rel="stylesheet" href="css/impression.css?v=202609241626">
+  <link rel="stylesheet" href="css/dark-mode.css?v=202609241626">
+  <link rel="stylesheet" href="css/assistant.css?v=202609241626">
 </head>
 <body>
 
@@ -232,7 +248,7 @@
        modifiable depuis l'interface ; le CSS perso (scopé à #loginFx) ne peut
        pas la cibler. -->
   <!-- ▼ Lien GitHub : remplace l'URL du href ci-dessous par celle de ton dépôt. ▼ -->
-  <div id="loginLegal">© 2025-2026 Mickaël Larcin (Chipsoreo) · <a id="loginGithub" href="https://github.com/Chipsoreo/LARKA_GMAO" target="_blank" rel="noopener noreferrer">Tous droits réservés</a> · <a id="loginTerms" href="LICENSE">Conditions d'utilisation</a></div>
+  <div id="loginLegal"><span id="loginVersion">V.Beta 2.0.0</span> · © 2025-2026 Mickaël Larcin (Chipsoreo) · <a id="loginGithub" href="https://github.com/Chipsoreo/LARKA_GMAO" target="_blank" rel="noopener noreferrer">Tous droits réservés</a> · <a id="loginTerms" href="LICENSE">Conditions d'utilisation</a></div>
   <a id="loginSupport" href="https://ko-fi.com/chipsoreo" target="_blank" rel="noopener noreferrer">♥ Soutenir le développement</a>
 </div>
 
@@ -460,14 +476,89 @@ grad.addColorStop(0,    `rgba(100,180,255,${0.80 * e})`);
 }
 </script>
 <script>
-function toggleDarkMode() {
-  document.body.classList.toggle('dark-mode');
-  const btn = document.getElementById('btnDarkMode');
-  const on  = document.body.classList.contains('dark-mode');
-  if (btn) btn.innerHTML = `<span class="icon">${on ? '☀️' : '🌙'}</span> ${on ? 'Mode clair' : 'Mode sombre'}`;
-  localStorage.setItem('darkMode', on ? '1' : '0');
+/**
+ * Un THÈME est-il appliqué ?
+ *
+ * « _perso » désigne de simples retouches personnelles — une couleur, un fond
+ * d'écran — qui cohabitent très bien avec le mode sombre. Un vrai thème, non :
+ * il pose une palette complète.
+ */
+function larkaThemeActif() {
+  const t = document.body.getAttribute('data-theme');
+  return !!t && t !== '_perso';
 }
-// Restaure la préférence
+
+/**
+ * Le thème en place sait-il se mettre en sombre ?
+ *
+ * Un thème qui déclare « valeurs_sombre » porte ses deux palettes : le bouton
+ * garde alors tout son sens, et bascule de l'une à l'autre. Sans variante, le
+ * bouton reste refusé — activer dark-mode.css par-dessus un thème donnerait un
+ * affichage incohérent.
+ */
+function larkaThemeAVariante() {
+  return document.body.hasAttribute('data-variante');
+}
+
+/** Remet le libellé du bouton d'accord avec l'état réel de la page. */
+function larkaMajBoutonSombre() {
+  const btn = document.getElementById('btnDarkMode');
+  if (!btn) return;
+  if (larkaThemeActif() && larkaThemeAVariante()) {
+    const on = document.body.getAttribute('data-variante') === 'sombre';
+    btn.innerHTML = `<span class="icon">${on ? '☀️' : '🌙'}</span> ${on ? 'Mode clair' : 'Mode sombre'}`;
+    btn.title = ''; btn.style.opacity = '';
+    return;
+  }
+  if (larkaThemeActif()) {
+    btn.innerHTML = '<span class="icon">🎨</span> Couleurs du thème';
+    btn.title = 'Un thème est appliqué : il définit ses propres couleurs. '
+              + 'Retirez-le depuis Apparence pour revenir au mode clair/sombre.';
+    btn.style.opacity = '.55';
+    return;
+  }
+  const on = document.body.classList.contains('dark-mode');
+  btn.innerHTML = `<span class="icon">${on ? '☀️' : '🌙'}</span> ${on ? 'Mode clair' : 'Mode sombre'}`;
+  btn.title = '';
+  btn.style.opacity = '';
+}
+
+/**
+ * ⚠️ LE MODE SOMBRE ET LES THÈMES SE BATTAIENT.
+ *
+ * dark-mode.css écrit ses couleurs en dur, avec plus de cent « !important ».
+ * Quand un thème est appliqué, la couche extensions retire donc « dark-mode ».
+ * Mais la préférence restait à « 1 » dans le stockage local, et rien
+ * n'empêchait de la réactiver : un clic remettait la classe, les deux couches
+ * se superposaient, et le thème rendait n'importe quoi.
+ *
+ * Le bouton refuse maintenant tant qu'un thème est là, et dit pourquoi — plutôt
+ * que de produire un affichage cassé sans explication.
+ */
+function toggleDarkMode() {
+  // Le thème gère lui-même le sombre : on bascule sa variante, pas la feuille.
+  if (larkaThemeActif() && larkaThemeAVariante()) {
+    const on = document.body.getAttribute('data-variante') === 'sombre';
+    localStorage.setItem('darkMode', on ? '0' : '1');
+    if (typeof LarkaExtensions !== 'undefined') LarkaExtensions.appliquerHabillage();
+    larkaMajBoutonSombre();
+    return;
+  }
+  if (larkaThemeActif()) {
+    if (typeof toast === 'function') {
+      toast('Un thème est appliqué : il définit ses propres couleurs. '
+          + 'Retirez-le depuis Apparence pour utiliser le mode sombre.', 'info');
+    }
+    return;
+  }
+  document.body.classList.toggle('dark-mode');
+  localStorage.setItem('darkMode',
+    document.body.classList.contains('dark-mode') ? '1' : '0');
+  larkaMajBoutonSombre();
+}
+
+// Restaure la préférence. Si un thème prend la main ensuite, la couche
+// extensions retirera la classe et rafraîchira le bouton.
 if (localStorage.getItem('darkMode') === '1') {
   document.body.classList.add('dark-mode');
 }
@@ -477,41 +568,44 @@ if (localStorage.getItem('darkMode') === '1') {
      SCRIPTS
 ════════════════════════════════════ -->
 <!-- documents.js : utilisé transversalement (modales documents partout) -->
-<script defer src="js/pages/documents.js?v=202608041400"></script>
+<script defer src="js/pages/documents.js?v=202609241626"></script>
 
 <!-- Filtres : moteurs partagés par plusieurs pages, chargés au boot -->
-<script defer src="js/filtres/filtres-engine.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-biens.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-equipements.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-interventions.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-demandes.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-stock.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-contrats.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-gestion-materiel.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-utilisateurs.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-historique.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-energie.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-mobilite.js?v=202608041400"></script>
-<script defer src="js/filtres/filtres-bilan-carbone.js?v=202608041400"></script>
+<script defer src="js/filtres/filtres-engine.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-biens.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-equipements.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-interventions.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-demandes.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-stock.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-contrats.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-gestion-materiel.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-utilisateurs.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-historique.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-energie.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-mobilite.js?v=202609241626"></script>
+<script defer src="js/filtres/filtres-bilan-carbone.js?v=202609241626"></script>
 
 <!-- ⚡ Lazy-loader : les pages js/pages/*.js sont désormais chargées à la demande
      par navigate() via window.PageLoader.ensure(). Voir js/page-loader.js. -->
-<script defer src="js/page-loader.js?v=202608041400"></script>
+<script defer src="js/page-loader.js?v=202609241626"></script>
 <!-- JS principal — découpé en 3 fichiers thématiques (ordre important) -->
-<script defer src="js/journal-client.js?v=202608041400"></script> <!-- Erreurs JS → journal -->
-<script defer src="js/journal-interactions.js?v=202608041400"></script> <!-- Clics/saisies (désactivé par défaut) --> <!-- Capture des erreurs JS → journal serveur -->
-<script defer src="js/api.js?v=202608041400"></script>     <!-- Client API (apiRequest, Auth, toutes les Api*) -->
-<script defer src="js/required-fields.js?v=202608041400"></script> <!-- Helpers globaux getRequiredFields/reqLabel/reqAttr (cache 30s) -->
-<script defer src="js/ui.js?v=202608041400"></script>      <!-- Helpers UI (fmt, badge, toast, modal, renderTable) -->
-<script defer src="js/components/person-autocomplete.js?v=202608041400"></script>  <!-- [PHASE 1] PersonPicker (autocomplétion + avatar) -->
-<script defer src="js/auth.js?v=202608041400"></script>    <!-- Authentification (doLogin, OAuth Google/Microsoft) -->
-<script defer src="js/profile.js?v=202608041400"></script> <!-- Modal "Mon profil" (édition libre des infos perso + MDP) -->
-<script defer src="js/feedback.js?v=202608041400"></script> <!-- Modal "Un problème ? Une suggestion ?" + envoi SMTP -->
+<script defer src="js/journal-client.js?v=202609241626"></script> <!-- Erreurs JS → journal -->
+<script defer src="js/journal-interactions.js?v=202609241626"></script> <!-- Clics/saisies (désactivé par défaut) --> <!-- Capture des erreurs JS → journal serveur -->
+<script defer src="js/api.js?v=202609241626"></script>     <!-- Client API (apiRequest, Auth, toutes les Api*) -->
+<script defer src="js/required-fields.js?v=202609241626"></script> <!-- Helpers globaux getRequiredFields/reqLabel/reqAttr (cache 30s) -->
+<script defer src="js/ui.js?v=202609241626"></script>      <!-- Helpers UI (fmt, badge, toast, modal, renderTable) -->
+<script defer src="js/components/person-autocomplete.js?v=202609241626"></script>  <!-- [PHASE 1] PersonPicker (autocomplétion + avatar) -->
+<script defer src="js/auth.js?v=202609241626"></script>    <!-- Authentification (doLogin, OAuth Google/Microsoft) -->
+<script defer src="js/profile.js?v=202609241626"></script> <!-- Modal "Mon profil" (édition libre des infos perso + MDP) -->
+<script defer src="js/feedback.js?v=202609241626"></script> <!-- Modal "Un problème ? Une suggestion ?" + envoi SMTP -->
 <!-- superadmin-auth.js : chargé à la demande par init.js uniquement sur ?superadmin -->
-<script defer src="js/ui-prefs.js?v=202608041400"></script>    <!-- Préférences interface (position sidebar, onglets) -->
-    <script defer src="js/nav.js?v=202608041400"></script>     <!-- Navigation (PAGES, navigate, buildSidebar, badge demandes) -->
-<script defer src="js/push.js?v=202608041400"></script>     <!-- Push notifications (SW, VAPID, soft-prompt) -->
-<script defer src="js/init.js?v=202608041400"></script>    <!-- Contrôleur App, initApp, helpers rôles, boot -->
+<script defer src="js/ui-prefs.js?v=202609241626"></script>
+<script defer src="js/maj.js?v=202609241626"></script>          <!-- Mises à jour (détection auto, installation validée) -->    <!-- Préférences interface (position sidebar, onglets) -->
+    <script defer src="js/nav.js?v=202609241626"></script>     <!-- Navigation (PAGES, navigate, buildSidebar, badge demandes) -->
+<script defer src="js/push.js?v=202609241626"></script>     <!-- Push notifications (SW, VAPID, soft-prompt) -->
+<script defer src="js/declaratif.js?v=202609241626"></script>  <!-- Rendu des modules déclaratifs -->
+<script defer src="js/extensions.js?v=202609241626"></script> <!-- Extensions communautaires (chargement des pages tierces) -->
+<script defer src="js/init.js?v=202609241626"></script>    <!-- Contrôleur App, initApp, helpers rôles, boot -->
 <!-- assistant.js : chargé à la demande par initApp(), uniquement si l'assistant IA est activé -->
 
 <script>

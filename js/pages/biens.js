@@ -63,7 +63,7 @@ async function renderBiens() {
         { key:'NomPrenom',   label:'Affecté à' },
       ],
       addBtnFn: canEdit() ? 'editBien' : null,
-      extraButtons: canEdit() ? '<button class="btn btn-secondary" onclick="openImportBiens()" style="margin-right:8px" title="Importer des biens depuis un fichier Excel">📥 Importer</button>' : '',
+      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportBiens()" title="Importer des biens depuis un fichier Excel">📥 Importer</button>' : '',
       searchTerm: App.searchTerm, currentFilter: App.currentFilter,
       canEdit: canEdit(), canDelete: canDelete(),
     });
@@ -196,6 +196,8 @@ async function editBien(id, readOnly = false) {
       ${isNew ? docsPanelHtml('Bien', 0, 'Bien') : docsPanelHtml('Bien', id)}
     </div>` : ''}
 
+    ${!isNew ? '<div id="bienAncrageModules"></div>' : ''}
+
   </div>`, readOnly ? null : async () => {
     // Validation champs obligatoires
     const fieldMap = { Numero:'f_numero', NumeroSerie:'f_numeroSerie', Batiment:'f_batiment', Etage:'f_etage', NumeroBureau:'f_numeroBureau', NomPrenom:'f_nomPrenom', Prix:'f_prix' };
@@ -234,6 +236,14 @@ async function editBien(id, readOnly = false) {
 
   // Charger les documents après ouverture du modal
   setTimeout(() => {
+    // Blocs des modules communautaires sur la fiche d'un bien.
+    if (typeof LarkaExtensions !== 'undefined' && document.getElementById('bienAncrageModules')) {
+      try {
+        LarkaExtensions.rendrePoint('bien.fiche',
+          document.getElementById('bienAncrageModules'), { bienId: id });
+      } catch (e) { console.warn('Extensions (fiche bien) :', e); }
+    }
+
     if (!readOnly) {
       if (isNew) { window._docsPending['Bien'] = []; }
       initDocsPanel('Bien', id, 'Bien');

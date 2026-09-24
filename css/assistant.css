@@ -203,6 +203,20 @@
 #assistantSendBtn:hover {
   background: #1d6ad4;
 }
+/* Pendant une réponse, le bouton d'envoi devient « Stop » */
+#assistantSendBtn.is-stop {
+  background: var(--red, #dc2626);
+}
+#assistantSendBtn.is-stop:hover {
+  background: #b91c1c;
+}
+/* Durée / vitesse sous la réponse (discret) */
+.assistant-stats {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--gray-text, #64748b);
+  opacity: .75;
+}
 
 /* ── Responsive ── */
 @media (max-width: 600px) {

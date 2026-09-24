@@ -1,0 +1,131 @@
+{
+  "identifiant": "acme.cles-ancrees",
+  "format": "declaratif/1",
+  "nom": "Clés ancrées",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "S'insère dans les écrans de Larka : tuile, repères sur plan, bloc de fiche.",
+  "logo": "assets/logo.png",
+  "donnees": {
+    "cles": {
+      "libelle": "Clé",
+      "champs": {
+        "numero": {
+          "type": "texte",
+          "libelle": "Numéro",
+          "obligatoire": true,
+          "unique": true
+        },
+        "nomination": {
+          "type": "texte",
+          "libelle": "Désignation",
+          "obligatoire": true
+        },
+        "detenteur": {
+          "type": "texte",
+          "libelle": "Détenteur"
+        },
+        "statut": {
+          "type": "choix",
+          "libelle": "Statut",
+          "valeurs": [
+            "En armoire",
+            "Attribuée",
+            "Perdue"
+          ],
+          "defaut": "En armoire"
+        },
+        "etage_id": {
+          "type": "entier",
+          "libelle": "Étage du plan",
+          "aide": "Renseigné en posant le repère"
+        },
+        "lat": {
+          "type": "decimal",
+          "libelle": "Position (lat)"
+        },
+        "lng": {
+          "type": "decimal",
+          "libelle": "Position (lng)"
+        },
+        "equipement_id": {
+          "type": "entier",
+          "libelle": "Équipement concerné"
+        }
+      }
+    }
+  },
+  "ancrages": [
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "cles",
+      "libelle": "Clés attribuées",
+      "filtre": {
+        "statut": "Attribuée"
+      },
+      "couleur": "#b91c1c"
+    },
+    {
+      "emplacement": "plans.barre_outils",
+      "type": "marqueurs",
+      "source": "cles",
+      "champ_etage": "etage_id",
+      "champ_lat": "lat",
+      "champ_lng": "lng",
+      "etiquette": "numero",
+      "icone": "🔑",
+      "libelle": "Clés sur ce plan"
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "cles",
+      "champ_lien": "equipement_id",
+      "colonnes": [
+        "numero",
+        "nomination",
+        "detenteur"
+      ],
+      "libelle": "Clés de cet équipement"
+    }
+  ],
+  "pages": [
+    {
+      "cle": "cles",
+      "titre": "Clés",
+      "icone": "key",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "cles",
+        "colonnes": [
+          "numero",
+          "nomination",
+          "detenteur",
+          "statut"
+        ],
+        "recherche": [
+          "numero",
+          "nomination",
+          "detenteur"
+        ],
+        "filtres": [
+          {
+            "champ": "statut"
+          }
+        ],
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ]
+      }
+    }
+  ]
+}

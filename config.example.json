@@ -3,9 +3,10 @@
   "_2_secrets": "Aucun secret ni identifiant OAuth ici : tout cela vit dans .env (voir .env.example), prioritaire sur ce fichier. Une valeur, un seul endroit.",
   "_3_principe": "Ce fichier ne contient QUE ce qui doit être décidé par vous. Toute clé absente reprend le défaut de api/config.php — et continuera d'évoluer avec l'application, ce qu'une clé recopiée ne fait pas. Les interrupteurs \"actif\" sont conservés même à false : ils sont le seul moyen de savoir qu'un module existe.",
   "serveur": {
-    "_": "Autre clé disponible : port (défaut 8000).",
-    "host": "0.0.0.0",
-    "env": "prod"
+    "_": "host : 127.0.0.1 = ce poste seulement · 0.0.0.0 = exposé au réseau local. env : dev pendant le développement (les erreurs PHP sont journalisées), prod ensuite (journal muet). « start.sh prod » et deploy/install.sh écrivent prod tout seuls.",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "env": "dev"
   },
   "base_de_donnees": {
     "_": "Défaut du code = sqlite. Pour PostgreSQL, driver + user suffisent : host 127.0.0.1, port 5432, dbname gmao et sslmode prefer sont déjà les défauts. Mot de passe -> .env : GMAO_DB_PASSWORD",
@@ -22,7 +23,7 @@
     "sslmode": "prefer"
   },
   "securite": {
-    "_": "À RENSEIGNER : le défaut de allowed_origin est \"*\". Sert aussi à détecter HTTPS (drapeau Secure du cookie) et à cadrer le CORS. Clé secrète -> .env : GMAO_SECRET_KEY. Autres clés : session_duree_heures (24), debug_errors (false — DEV uniquement), trusted_proxies ([127.0.0.1, ::1]), allow_remote_setup (false).",
+    "_": "À RENSEIGNER : le défaut de allowed_origin est \"*\". Sert aussi à détecter HTTPS (drapeau Secure du cookie) et à cadrer le CORS. Clé secrète -> .env : GMAO_SECRET_KEY — elle signe aussi les noms de dossier des fonds d'écran personnels : la changer rend les images déjà déposées orphelines (chacun redépose la sienne), la laisser au défaut annule leur anonymat. Autres clés : session_duree_heures (24), debug_errors (false — DEV uniquement), trusted_proxies ([127.0.0.1, ::1]), allow_remote_setup (false).",
     "allowed_origin": "https://gmao.example.com"
   },
   "securite_http": {
@@ -51,12 +52,16 @@
     "_": "Paramétrage complet dans .env : GMAO_GOOGLE_CLIENT_ID / _CLIENT_SECRET / _REDIRECT_URI.",
     "actif": false
   },
+  "sharepoint": {
+    "_": "Option distincte de la connexion Microsoft, choisie au premier lancement (start.sh / deploy/install.sh --sharepoint on|off). true : lier des fichiers SharePoint/OneDrive aux fiches (raccourcis, sans copie) ; exige microsoft_oauth.actif et ajoute les autorisations Files.Read.All + Sites.Read.All au login Microsoft. false : documents stockés dans Larka uniquement. Changer ensuite : ./start.sh sharepoint on|off ou Configuration → Serveur. Clé absente : actif avec Microsoft (comportement historique).",
+    "actif": false
+  },
   "plans_presence": {
     "_": "[PHASE 2] Présence + agenda sur les plans. Exige microsoft_oauth.actif. 1) Azure > API permissions : Presence.Read.All et Calendars.Read.Shared en DÉLÉGUÉ, puis « Grant admin consent ». 2) actif:true ici. 3) IMPORTANT : chaque utilisateur doit se DÉCONNECTER/RECONNECTER via Microsoft — les scopes ne sont demandés que si ce flag est vrai AU MOMENT du login.",
     "actif": false
   },
   "assistant": {
-    "_": "Assistant IA. Clé API -> .env : GMAO_ASSISTANT_API_KEY. Autres clés : fournisseur (anthropic | openai | ollama | lmstudio | vllm), model, api_url (fournisseur local), temperature (0.2), top_p (0.9).",
+    "_": "Assistant IA. Clé API -> .env : GMAO_ASSISTANT_API_KEY. fournisseur : anthropic | openai | mistral | gemini | copilot (distants) · ollama | lmstudio | local (OpenAI-compatible, ex. llama.cpp). model vide = le plus rapide/économique du fournisseur (claude-haiku-4-5, gpt-4o-mini, mistral-small-latest, gemini-3.1-flash-lite, ministral-3:3b). Autres clés : api_url, timeout_seconds (240 local / 90 distant), max_tokens (1024) et max_tokens_local (512), num_ctx (8192, Ollama), keep_alive (-1), pre_recherche (auto | on | off), prechauffage (true), reflexion_locale (auto | off | on), gemini_reflexion (auto | minimal | low | off), cache_prompt (true, Anthropic), max_resultats (6 local / 12 distant), temperature (0.2), top_p (0.9).",
     "actif": false
   },
   "push": {
@@ -84,5 +89,15 @@
     "_2": "ATTENTION — seule section dont les secrets restent EN CLAIR ici : api/routes/chorus.php relit config.json directement (cpro_cfg), ce qui contourne l'injection .env et le déchiffrement. Gardez config.json en chmod 640.",
     "actif": false
   },
-  "_4_non_listees": "Existent aussi, laissées à leur défaut : acces.domaine_email_autorise (restreint les comptes OAuth à un domaine), cors (inutile en mono-domaine, le défaut suit allowed_origin), session (cookie_secure auto-détecté, samesite Strict), documents (4 par catégorie, 25 Mo, pdf/png/jpeg/webp), urgences (photo_max_mo 15, video_max_mo 150 — plafonds des médias des procédures d'urgence ; pensez aussi a upload_max_filesize/post_max_size), oauth_relay (installation sans domaine public). Détail : api/config.php."
+  "_4_non_listees": "Existent aussi, laissées à leur défaut : acces.domaine_email_autorise (restreint les comptes OAuth à un domaine), cors (inutile en mono-domaine, le défaut suit allowed_origin), session (cookie_secure auto-détecté, samesite Strict), documents (4 par catégorie, 25 Mo, pdf/png/jpeg/webp), urgences (photo_max_mo 15, video_max_mo 150 — plafonds des médias des procédures d'urgence ; pensez aussi a upload_max_filesize/post_max_size), oauth_relay (installation sans domaine public). Détail : api/config.php.",
+  "mises_a_jour": {
+    "_": "Détection automatique des nouvelles versions (installation TOUJOURS validée par l'administrateur ; data/, config.json et .env jamais touchés). source : github (défaut, dépôt « depot ») | manifeste (url_manifeste HTTPS vers un latest.json). canal : beta | stable. frequence_heures (12). cle_publique : clé Ed25519 de l'éditeur (outils/publier-version.php --generer-cles) — si renseignée, toute version non signée est refusée. Dépôt privé : jeton -> .env : GMAO_MAJ_GITHUB_TOKEN.",
+    "actif": true,
+    "depot": "Chipsoreo/LARKA_GMAO"
+  },
+  "extensions": {
+    "_": "Modules complémentaires. Un module est un « module de données » : un fichier JSON décrivant des données et des écrans, que Larka interprète. Aucun code d'auteur n'est exécuté.",
+    "actif": false,
+    "_actif": "true pour permettre l'installation de modules. Ils s'ajoutent ensuite un par un depuis l'écran Modules."
+  }
 }

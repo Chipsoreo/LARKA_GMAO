@@ -28,3 +28,13 @@ data/.license_accepted
 *.log
 *.bak
 *.orig
+
+# Extensions installées : relèvent de l'exploitation, pas du dépôt de code.
+# (Le code déplié, les paquets reçus et le stockage privé vivent ici.)
+data/extensions/
+
+# Bases jetables du banc d'essai du SDK
+.banc/
+
+# Paquets de publication (outils/publier-version.php) : joints aux releases, pas au dépôt
+dist/

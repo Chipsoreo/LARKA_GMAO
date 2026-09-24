@@ -1,0 +1,52 @@
+{
+  "$ref": "parties/vehicule.json",
+  "date": {
+    "type": "date",
+    "libelle": "Date",
+    "obligatoire": true,
+    "groupe": "Créneau",
+    "min_jours": 7,
+    "max_jours": 60,
+    "aide": "Au plus tôt dans 7 jours : la semaine en cours est déjà planifiée.",
+    "largeur_px": 170
+  },
+  "horaire": {
+    "type": "choix",
+    "libelle": "Horaire",
+    "obligatoire": true,
+    "liste": "RechargePlage",
+    "groupe": "Créneau",
+    "modifiable": 1,
+    "libre": false,
+    "valeurs_initiales": [
+      "08:00 – 10:00",
+      "10:00 – 12:00",
+      "12:00 – 14:00",
+      "14:00 – 16:00",
+      "16:00 – 18:00",
+      "Nuit (18:00 – 08:00)"
+    ]
+  },
+  "duree_h": {
+    "type": "decimal",
+    "libelle": "Durée",
+    "defaut": 2,
+    "min": 0.5,
+    "max": 14,
+    "groupe": "Créneau",
+    "unite": "h",
+    "largeur_px": 110
+  },
+  "semaine": {
+    "type": "formule",
+    "libelle": "Semaine",
+    "groupe": "Créneau",
+    "expression": "{{concat(year(record.date), \" — S\", padStart(weekNumber(record.date), 2, \"0\"))}}"
+  },
+  "jour": {
+    "type": "formule",
+    "libelle": "Jour",
+    "groupe": "Créneau",
+    "expression": "{{dayName(record.date)}}"
+  }
+}

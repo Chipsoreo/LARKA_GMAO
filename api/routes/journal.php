@@ -20,8 +20,24 @@
 
 // ── Liste filtrée ────────────────────────────────────────────────────────────
 if ($action === 'journal' && $method === 'GET') {
-    $user = require_auth();
-    require_role($user, ['Admin', 'Gestionnaire']);
+    /**
+     * ⚠️ LE SUPER ADMIN N'Y AVAIT PAS ACCÈS.
+     *
+     * Le journal a rejoint la Super Administration — c'est la trace de ce que
+     * TOUT LE MONDE a fait, administrateurs de tenant compris, et la laisser à
+     * portée de ceux qu'elle surveille lui ôtait sa raison d'être. Mais la
+     * route, elle, ne connaissait que les rôles de tenant : le super admin,
+     * qui n'en porte aucun, recevait un 403 sur l'écran qu'on venait de lui
+     * confier.
+     *
+     * Sa session est une identité distincte, pas un rôle : on la teste à part.
+     */
+    if (!empty($_SESSION['superadmin']['authenticated'])) {
+        // Identité reconnue : on poursuit sans exiger de rôle de tenant.
+    } else {
+        $user = require_auth();
+        require_role($user, ['Admin', 'Gestionnaire']);
+    }
 
     $where = [];
     $p     = [];
@@ -84,8 +100,12 @@ if ($action === 'journal' && $method === 'GET') {
 
 // ── Statistiques de synthèse ─────────────────────────────────────────────────
 if ($action === 'journal_stats' && $method === 'GET') {
-    $user = require_auth();
-    require_role($user, ['Admin', 'Gestionnaire']);
+    // Même identité que la route « journal » : sans cela l'écran s'ouvre et
+    // ses compteurs échouent en 403, ce qui est pire qu'un refus franc.
+    if (empty($_SESSION['superadmin']['authenticated'])) {
+        $user = require_auth();
+        require_role($user, ['Admin', 'Gestionnaire']);
+    }
 
     $depuis = date('Y-m-d H:i:s', strtotime('-' . max(1, (int)($_GET['jours'] ?? 7)) . ' days'));
     try {
@@ -104,8 +124,12 @@ if ($action === 'journal_stats' && $method === 'GET') {
 
 // ── Toutes les entrées d'une même requête ────────────────────────────────────
 if ($action === 'journal_detail' && $method === 'GET') {
-    $user = require_auth();
-    require_role($user, ['Admin', 'Gestionnaire']);
+    // Même identité que la route « journal » : sans cela l'écran s'ouvre et
+    // ses compteurs échouent en 403, ce qui est pire qu'un refus franc.
+    if (empty($_SESSION['superadmin']['authenticated'])) {
+        $user = require_auth();
+        require_role($user, ['Admin', 'Gestionnaire']);
+    }
     $rid = trim((string)($_GET['requestId'] ?? ''));
     if ($rid === '') json_error('requestId requis.', 400);
     try {

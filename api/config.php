@@ -27,11 +27,16 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 // ── Version applicative ────────────────────────────────────────────────────
-// Source de vérité unique pour la version du produit. Ne pas confondre avec
-// le « ?v= » d'index.html, qui est un simple horodatage de cache navigateur
-// régénéré à chaque déploiement par start.sh.
-define('LARKA_VERSION', '1.0.0');
-define('LARKA_VERSION_LABEL', 'V1');
+// Source de vérité unique : version.json (lu par api/Version.php), que
+// l'outil de publication et les mises à jour tiennent à jour. Ne pas confondre
+// avec le « ?v= » d'index.html, simple horodatage de cache navigateur.
+//   LARKA_VERSION        numéro sémantique (« 2.0.0 ») — contrôle larka_min des modules
+//   LARKA_VERSION_LABEL  libellé affiché (« V.Beta 2.0.0 »)
+require_once __DIR__ . '/Version.php';
+$_lv = LarkaVersion::lire();
+define('LARKA_VERSION', $_lv['version']);
+define('LARKA_VERSION_LABEL', LarkaVersion::libelle($_lv));
+unset($_lv);
 
 // ── Lecture du config.json ─────────────────────────────────────────────────
 $_cfgFile = __DIR__ . '/../config.json';
@@ -41,12 +46,12 @@ if (!file_exists($_cfgFile)) {
     if (file_exists($_cfgExample)) {
         header('Content-Type: application/json; charset=utf-8');
         http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Fichier config.json introuvable. Lancez "bash dev.sh" ou copiez config.example.json en config.json et adaptez les valeurs.']);
+        echo json_encode(['success' => false, 'error' => 'Fichier config.json introuvable. Lancez "./start.sh setup" (recommandé : il le génère pour vous) ou copiez config.example.json en config.json et adaptez les valeurs.']);
         exit;
     }
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Fichier config.json introuvable. Lancez "bash dev.sh" pour générer la configuration automatiquement.']);
+    echo json_encode(['success' => false, 'error' => 'Fichier config.json introuvable. Lancez "./start.sh setup" pour générer la configuration automatiquement.']);
     exit;
 }
 $_cfg = json_decode(file_get_contents($_cfgFile), true);
@@ -156,7 +161,22 @@ define('SESSION_COOKIE_HTTPONLY', (bool)(cfg('session', 'cookie_httponly') ?? tr
 // Side-effect connu : si un email contient un lien vers l'app, le clic
 // arrive sans cookie → l'utilisateur doit se reconnecter. Pour réautoriser
 // ce flow, mettre cookie_samesite='Lax' dans config.json.
-define('SESSION_COOKIE_SAMESITE', cfg('session', 'cookie_samesite')        ?? 'Strict');
+// ⚠️ VALEUR BORNÉE À Strict OU Lax.
+// La protection CSRF de ce projet ne repose pas sur un jeton : elle tient à
+// deux choses — le Content-Type JSON imposé sur les requêtes mutantes, et ce
+// réglage. Or sept actions de téléversement sont dispensées du contrôle de
+// Content-Type (multipart/form-data est un type « simple » CORS, envoyable
+// depuis un autre site sans requête préalable). Pour celles-là, SameSite est la
+// SEULE barrière.
+// Une faute de frappe ou un « None » recopié d'un tutoriel les ouvrirait donc
+// toutes, en silence. On refuse la valeur plutôt que de faire confiance.
+$_samesite = cfg('session', 'cookie_samesite') ?? 'Strict';
+if (!in_array($_samesite, ['Strict', 'Lax'], true)) {
+    error_log('[SECURITY] session.cookie_samesite = "' . $_samesite . '" refusé '
+        . '(Strict ou Lax uniquement) — repli sur Strict.');
+    $_samesite = 'Strict';
+}
+define('SESSION_COOKIE_SAMESITE', $_samesite);
 define('SESSION_COOKIE_PATH',     cfg('session', 'cookie_path')            ?? '/');
 
 // ── Dossier de sessions dédié ──────────────────────────────────
@@ -363,9 +383,16 @@ define('MICROSOFT_REDIRECT_URI_MOBILE',
 );
 
 // ── SharePoint (via Microsoft Graph — autodétection par compte) ───────────
-// Activé automatiquement dès que Microsoft OAuth est actif.
+// OPTION DISTINCTE de la connexion Microsoft : config.json → "sharepoint": { "actif": true|false }.
+// Choisie au premier lancement (start.sh / deploy/install.sh), modifiable ensuite par
+// « ./start.sh sharepoint on|off », la console de start.sh, ou Configuration → Serveur.
+// Sans SharePoint, les documents sont stockés dans la base de Larka (comme toujours) et la
+// connexion Microsoft ne demande plus l'accès aux fichiers (Files.Read.All, Sites.Read.All).
+// Clé absente (installation antérieure) : comportement historique, actif avec Microsoft.
 // Aucune config site/drive nécessaire : tout est découvert via le compte de l'utilisateur.
-define('SHAREPOINT_ENABLED', MICROSOFT_ENABLED);
+$_spActif = cfg('sharepoint', 'actif');
+define('SHAREPOINT_ENABLED', MICROSOFT_ENABLED && ($_spActif === null ? true : (bool)$_spActif));
+unset($_spActif);
 
 // ── Présence + agenda sur les plans (Microsoft Graph) ─────────
 // Ajoute les scopes Presence.Read.All + Calendars.Read.Shared au login Microsoft.
@@ -420,7 +447,11 @@ define('VAPID_PRIVATE_PEM', $_vapidPem);
 define('PUSH_ACTIF',                    (bool)(cfg('push', 'actif') ?? true));
 define('PUSH_NOTIF_DEMANDE_TITRE',      cfg('push', 'notif_demande_titre')  ?? '📝 Nouvelle demande d\'intervention');
 define('PUSH_NOTIF_DEMANDE_CORPS',      cfg('push', 'notif_demande_corps')  ?? '{demandeur} a soumis une demande d\'intervention.');
-define('PUSH_NOTIF_DEMANDE_ICON',       cfg('push', 'notif_demande_icon')   ?? '/apple-touch-icon.png');
+// Icône : « /icon.png » (logo Larka). L'ancien nom « /apple-touch-icon.png »,
+// encore présent dans des config.json existants, est ramené au nouveau.
+$_pushIcon = cfg('push', 'notif_demande_icon') ?: '/icon.png';
+if ($_pushIcon === '/apple-touch-icon.png') $_pushIcon = '/icon.png';
+define('PUSH_NOTIF_DEMANDE_ICON',       $_pushIcon);
 define('PUSH_NOTIF_DEMANDE_IMAGE',      cfg('push', 'notif_demande_image')  ?? '');
 $_pushRoles = cfg('push', 'notif_demande_roles') ?? ['Admin', 'Gestionnaire'];
 define('PUSH_NOTIF_DEMANDE_ROLES',      is_array($_pushRoles) ? $_pushRoles : ['Admin', 'Gestionnaire']);

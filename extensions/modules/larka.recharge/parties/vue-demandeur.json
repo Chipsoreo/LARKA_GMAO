@@ -1,0 +1,111 @@
+{
+  "type": "liste",
+  "source": "creneaux",
+  "actions": [
+    "supprimer"
+  ],
+  "recherche": [
+    "immatriculation"
+  ],
+  "filtres": [
+    {
+      "champ": "statut"
+    }
+  ],
+  "tri": {
+    "date": "DESC"
+  },
+  "par_page": 20,
+  "tri_utilisateur": false,
+  "colonnes": [
+    "date",
+    "horaire",
+    "place",
+    "immatriculation",
+    "statut"
+  ],
+  "surligner": [
+    {
+      "si": {
+        "champ": "statut",
+        "operateur": "egal",
+        "valeur": "Accepté"
+      },
+      "couleur": "#16a34a",
+      "libelle": "Créneau accordé"
+    },
+    {
+      "si": {
+        "champ": "statut",
+        "operateur": "egal",
+        "valeur": "Refusé"
+      },
+      "couleur": "#dc2626",
+      "libelle": "Demande refusée"
+    },
+    {
+      "si": {
+        "champ": "statut",
+        "operateur": "egal",
+        "valeur": "Demandé"
+      },
+      "couleur": "#f59e0b",
+      "libelle": "En attente de réponse"
+    }
+  ],
+  "largeurs": {
+    "date": 100,
+    "horaire": 130,
+    "place": 170,
+    "immatriculation": 120,
+    "statut": 110
+  },
+  "layout": {
+    "type": "grille",
+    "colonnes": 4,
+    "espacement": "normal",
+    "responsive": [
+      {
+        "sous": "telephone",
+        "colonnes": 1
+      }
+    ],
+    "composants": [
+      {
+        "texte": "Qui recharge, quand, et avec quel véhicule.",
+        "style": "aide",
+        "largeur": 4
+      },
+      {
+        "champ": "demandeur",
+        "x": 1,
+        "y": 2,
+        "largeur": 4
+      },
+      {
+        "champ": "date",
+        "x": 1,
+        "y": 3,
+        "largeur": 2
+      },
+      {
+        "champ": "horaire",
+        "x": 3,
+        "y": 3,
+        "largeur": 2
+      },
+      {
+        "champ": "immatriculation",
+        "x": 1,
+        "y": 4,
+        "largeur": 2
+      },
+      {
+        "champ": "place",
+        "x": 3,
+        "y": 4,
+        "largeur": 2
+      }
+    ]
+  }
+}

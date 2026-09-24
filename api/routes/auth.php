@@ -147,9 +147,12 @@ if ($action === 'oauth_check' && $method === 'GET') {
 
 // ── Configuration OAuth publique (sans secrets) ───────────────────────────────
 if ($action === 'auth_config' && $method === 'GET') {
+    require_once __DIR__ . '/../Version.php';
     json_ok([
         'microsoft' => MICROSOFT_ENABLED && MICROSOFT_CLIENT_ID !== '',
         'google'    => GOOGLE_ENABLED    && GOOGLE_CLIENT_ID    !== '',
+        // Affichée sous le formulaire de connexion (« V.Beta 2.0.0 »).
+        'version'   => LarkaVersion::libelle(),
     ]);
 }
 

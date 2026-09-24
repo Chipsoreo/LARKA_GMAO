@@ -94,14 +94,6 @@ function _urgEscape(s) {
   }[ch]));
 }
 
-/**
- * Construit le href tel: à partir d'un numéro saisi librement (espaces, points...).
- */
-function _urgTelHref(tel) {
-  if (!tel) return '';
-  const clean = String(tel).replace(/[^\d+]/g, '');
-  return clean ? 'tel:' + clean : '';
-}
 
 /**
  * Construit un lien d'appel selon l'application choisie par l'utilisateur.

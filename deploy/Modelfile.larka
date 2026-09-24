@@ -1,12 +1,13 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # Larka — Modèle dérivé pour l'assistant (AUCUNE modification de la conf Ollama)
 #
-# Pourquoi : l'endpoint OpenAI-compatible d'Ollama (/v1/chat/completions), utilisé
-# par Larka, IGNORE les paramètres `options`/`keep_alive` envoyés par requête.
-# La fenêtre de contexte reste donc à 4096 par défaut → le prompt système + les
-# schémas d'outils + l'historique sont TRONQUÉS silencieusement, et chaque tour
-# de tool calling re-traite le contexte. Un Modelfile règle ça AU NIVEAU DU
-# MODÈLE : propre, versionnable, réversible, zéro changement du service Ollama.
+# Pourquoi : garantir les mêmes réglages quel que soit le client (y compris un
+# test à la main via `ollama run`). Depuis la v3 de l'assistant, Larka parle à
+# l'API NATIVE d'Ollama (/api/chat) et y envoie lui-même num_ctx, num_predict et
+# keep_alive — ce Modelfile n'est donc plus indispensable, mais il reste utile
+# pour figer la quantization et servir de référence. Gardez num_ctx identique
+# au réglage Larka (assistant.num_ctx, 8192 par défaut) : une valeur différente
+# d'une requête à l'autre force Ollama à RECHARGER le modèle.
 #
 # Installation :
 #   ollama list                                  # vérifier le tag exact du modèle
@@ -28,9 +29,9 @@ FROM ministral-3:3b
 PARAMETER num_ctx 8192
 
 # Plafond de génération : le prompt exige des réponses de 1-5 lignes.
-# Borne la durée d'un tour à ~30-60 s max sur CPU (au lieu de plusieurs minutes
-# si le modèle part en réponse fleuve).
-PARAMETER num_predict 768
+# Borne la durée d'un tour à ~20-40 s max sur CPU (au lieu de plusieurs minutes
+# si le modèle part en réponse fleuve). Même valeur que assistant.max_tokens_local.
+PARAMETER num_predict 512
 
 # Sampling factuel (redondant avec ce qu'envoie Larka, mais garantit les mêmes
 # valeurs si le modèle est testé à la main via `ollama run`).
