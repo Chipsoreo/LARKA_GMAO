@@ -41,6 +41,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+require_once __DIR__ . '/AssistantLangue.php';
+
 class AssistantTools {
     private Database $db;
     private ?string $msToken;
@@ -453,6 +455,557 @@ class AssistantTools {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // ── Accès pour le moteur déterministe (AssistantMoteur) ──
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Mêmes données, mêmes droits, même anonymisation que les outils du
+    // modèle — mais sans passer par lui. Le moteur reçoit des lignes complètes
+    // et CLASSÉES, et en tire lui-même la réponse.
+
+    /** Colonnes lues par type (liste, comptage, filtres). Aucune donnée personnelle. */
+    private const TABLES = [
+        'biens' => ['Biens', 'Id,Numero,Famille,SousFamille,Statut,Etat,InfoProduit,Batiment,Etage,NumeroBureau,NumeroSerie,DateCommande,DateLivraison,CreatedAt',
+                    'DateSuppression IS NULL', 'Numero', ['DateLivraison', 'DateCommande', 'CreatedAt']],
+        'equipements' => ['Equipements', 'Id,Numero,InfoProduit,Famille,SousFamille,Statut,Etat,Marque,Modele,Batiment,Etage,NumeroBureau,Fournisseur,DateInstallation,CreatedAt',
+                    'DateSuppression IS NULL', 'Numero', ['DateInstallation', 'CreatedAt']],
+        'interventions' => ['Interventions', 'Id,Numero,Type,Priorite,Statut,Description,DateIntervention,DateRealisation,DateProchaine,SocieteManuelle,Montant,MontantHT,MontantPieces,MontantMainOeuvre,EquipementsIds,BienId,DemandeId,CreatedAt',
+                    '', 'Id', ['DateIntervention', 'DateRealisation', 'CreatedAt']],
+        'contrats' => ['Contrats', 'Id,Numero,Societe,Type,Statut,DateDebut,DateFin,MontantAnnuel,Description,Perimetre,Frequence',
+                    '', 'DateFin', ['DateDebut']],
+        'demandes' => ['DemandesIntervention', 'Id,Titre,Description,Statut,Urgence,Batiment,Bureau,DateCreation,Categorie',
+                    '', 'Id', ['DateCreation']],
+        'stock' => ['Stock', 'Id,Reference,Designation,Categorie,Quantite,SeuilAlerte,PrixUnitaire,Emplacement,Marque,Modele,Fournisseur',
+                    '', 'Designation', []],
+        'documents' => ['Documents', 'Id,EntiteType,EntiteId,NomFichier,Categorie,DateAjout',
+                    '', 'Id', ['DateAjout']],
+        'plans' => ['PlanElements el LEFT JOIN PlanEtages et ON el.EtageId = et.Id LEFT JOIN PlanBatiments b ON et.BatimentId = b.Id',
+                    'el.Id AS Id, el.TypeElement AS TypeElement, el.SousType AS SousType, el.Calque AS Calque, el.Nom AS Nom, el.Description AS Description, el.EtageId AS EtageId, et.Nom AS EtageNom, et.Niveau AS Niveau, b.Nom AS BatimentNom',
+                    '', 'el.Id', []],
+        'archives' => ['ArchivesDossier', 'Id,NumeroDossier,NumeroBoite,Service,Annee,Description,Emplacement,Statut,DateSolde',
+                    '', 'NumeroDossier', []],
+    ];
+
+    /** Filtres qui ont un sens pour chaque type (les autres sont signalés, pas appliqués en silence). */
+    public const FILTRES_APPLICABLES = [
+        'batiment'     => ['biens', 'equipements', 'demandes', 'plans', 'interventions', 'documents'],
+        'etage'        => ['biens', 'equipements', 'plans', 'interventions', 'documents'],
+        'bureau'       => ['biens', 'equipements', 'demandes'],
+        'statut'       => ['interventions', 'demandes', 'contrats', 'biens', 'equipements', 'archives'],
+        'etat'         => ['biens', 'equipements'],
+        'type_interv'  => ['interventions'],
+        'urgence'      => ['demandes', 'interventions'],
+        'annee'        => ['biens', 'equipements', 'interventions', 'contrats', 'demandes', 'documents'],
+        'mois'         => ['biens', 'equipements', 'interventions', 'contrats', 'demandes', 'documents'],
+        'semaine'      => ['interventions', 'demandes', 'documents'],
+        'jour'         => ['interventions', 'demandes', 'documents'],
+        'type_element' => ['plans'],
+        'famille'      => ['biens', 'equipements', 'stock'],
+    ];
+
+    /** Racines des statuts, par clé canonique (comparées au texte normalisé des valeurs réelles). */
+    private const STATUTS = [
+        'en_cours'     => ['en cours', 'commence', 'demarre'],
+        'planifie'     => ['planifi', 'programm', 'prevu', 'a venir'],
+        'realise'      => ['realis', 'effectu'],
+        'termine'      => ['termin', 'valid', 'realis', 'clotur', 'fini', 'achev', 'clos'],
+        'archive'      => ['archiv'],
+        'nouveau'      => ['nouveau', 'nouvelle', 'relanc', 'attente', 'a traiter'],
+        'traite'       => ['traite', 'resolu', 'clotur', 'regle'],
+        'refuse'       => ['refus', 'rejet'],
+        'relance'      => ['relanc'],
+        'actif'        => ['actif', 'active', 'vigueur'],
+        'expire'       => ['expir', 'echu', 'perime'],
+        'resilie'      => ['resili'],
+        'hors_service' => ['hors service', 'hs', 'panne', 'defectu', 'casse', 'reform'],
+        'utilise'      => ['utilis', 'service', 'install', 'en place', 'affect'],
+        'stock'        => ['stock'],
+        'jete'         => ['jete', 'recycl', 'rebut', 'reform', 'don', 'vendu'],
+    ];
+
+    /** Clés à remettre en CamelCase (PostgreSQL rend les alias en minuscules). */
+    private const CLES = ['EtageNom', 'BatimentNom', 'ElementNom', 'ElementId', 'EtageId', 'Niveau', 'NumeroDossier',
+        'NumeroBoite', 'DateSolde', 'TypeElement', 'SousType', 'Calque', 'DateProchaine', 'MontantHT', 'DemandeId',
+        'EquipementsIds', 'BienId', 'Annee', 'EtageNiveau', 'BatimentId', 'SurfaceM2', 'LongueurM', 'VuSurPlan',
+        'ElementsLies', 'Intitule', 'AssetId', 'AssetType'];
+
+    private static function remap(array $row): array {
+        static $map = null;
+        $map ??= array_combine(array_map('strtolower', self::CLES), self::CLES);
+        $out = [];
+        foreach ($row as $k => $v) $out[is_string($k) ? ($map[$k] ?? $k) : $k] = $v;
+        return $out;
+    }
+
+    /**
+     * Vocabulaire du site pour la compréhension : bâtiments (avec leur forme
+     * courte : « Bâtiment A » → « a »), statuts, familles, catégories… lus en
+     * base, une fois par requête.
+     */
+    private ?array $siteCache = null;
+    public function vocabulaireSite(): array {
+        if ($this->siteCache !== null) return $this->siteCache;
+        $q = function (string $sql): array {
+            try { return array_values(array_filter(array_map(fn($r) => trim((string)($r['v'] ?? '')), $this->db->fetchAll($sql)), fn($v) => $v !== '')); }
+            catch (\Throwable $_) { return []; }
+        };
+        $bats = [];
+        // Ordre de priorité de la graphie retenue : listes de référence, plans, puis données.
+        foreach ([
+            "SELECT Valeur AS v FROM Listes WHERE Categorie = 'Batiment' AND (Actif = 1 OR Actif IS NULL) ORDER BY Ordre, Valeur",
+            "SELECT Nom AS v FROM PlanBatiments ORDER BY Nom",
+            "SELECT DISTINCT Batiment AS v FROM Biens WHERE DateSuppression IS NULL ORDER BY Batiment",
+            "SELECT DISTINCT Batiment AS v FROM Equipements WHERE DateSuppression IS NULL ORDER BY Batiment",
+            "SELECT DISTINCT Batiment AS v FROM DemandesIntervention ORDER BY Batiment",
+        ] as $sql) {
+            foreach ($q($sql . ' LIMIT 500') as $b) {
+                $n = AssistantLangue::preparer($b);
+                $court = trim(preg_replace('/^(?:batiments?|bat|bati|bt)\s+/', '', $n));
+                if ($court === '') continue;
+                $cle = $court;
+                if (!isset($bats[$cle])) $bats[$cle] = ['canon' => $b, 'norm' => $n, 'court' => $court];
+            }
+        }
+        $parCanon = [];
+        foreach ($bats as $b) $parCanon[$b['canon']] = ['norm' => $b['norm'], 'court' => $b['court']];
+
+        $site = [
+            'batiments'  => $parCanon,
+            'mots'       => $this->vocab(),
+            'categories_demandes' => array_values(array_unique(array_merge(
+                $q("SELECT Valeur AS v FROM Listes WHERE Categorie = 'CategorieDemande' AND (Actif = 1 OR Actif IS NULL) ORDER BY Ordre, Valeur LIMIT 60"),
+                $q("SELECT DISTINCT Categorie AS v FROM DemandesIntervention ORDER BY Categorie LIMIT 60")))),
+            'familles_biens' => array_values(array_unique(array_merge(
+                $q("SELECT DISTINCT Famille AS v FROM Biens WHERE DateSuppression IS NULL ORDER BY Famille LIMIT 60"),
+                $q("SELECT Valeur AS v FROM Listes WHERE Categorie = 'FamilleBien' ORDER BY Ordre LIMIT 60")))),
+            'familles_equipements' => array_values(array_unique(array_merge(
+                $q("SELECT DISTINCT Famille AS v FROM Equipements WHERE DateSuppression IS NULL ORDER BY Famille LIMIT 60"),
+                $q("SELECT Valeur AS v FROM Listes WHERE Categorie = 'FamilleEquipement' ORDER BY Ordre LIMIT 60")))),
+            'categories_stock' => $q("SELECT DISTINCT Categorie AS v FROM Stock ORDER BY Categorie LIMIT 60"),
+        ];
+        return $this->siteCache = $site;
+    }
+
+    /** Deux noms de bâtiment désignent-ils le même bâtiment ? (« Bât. A » = « Bâtiment A ») */
+    public static function memeBatiment(?string $valeur, ?string $filtre): bool {
+        $a = AssistantLangue::preparer((string)$valeur); $b = AssistantLangue::preparer((string)$filtre);
+        if ($a === '' || $b === '') return false;
+        if ($a === $b) return true;
+        $ca = trim(preg_replace('/^(?:batiments?|bat|bati|bt)\s+/', '', $a));
+        $cb = trim(preg_replace('/^(?:batiments?|bat|bati|bt)\s+/', '', $b));
+        return $ca !== '' && $ca === $cb;
+    }
+
+    /** Valeur de date d'une ligne pour les filtres temporels. */
+    private static function dateLigne(string $type, array $row): string {
+        foreach (self::TABLES[$type][4] ?? [] as $c) if (!empty($row[$c])) return substr((string)$row[$c], 0, 10);
+        return '';
+    }
+
+    /** La ligne satisfait-elle un statut canonique (« termine », « en_cours »…) ? */
+    private function statutCorrespond(string $type, array $row, string $cle): bool {
+        // Même mot, sens différent selon le type : une demande « terminée » est « Traité »,
+        // un contrat « terminé » est « Expiré ».
+        if ($type === 'demandes' && in_array($cle, ['termine', 'realise'], true)) $cle = 'traite';
+        if ($type === 'contrats' && in_array($cle, ['termine', 'realise'], true)) $cle = 'expire';
+        if ($type === 'contrats' && $cle === 'en_cours') $cle = 'actif';
+        if ($type === 'interventions' && $cle === 'nouveau') $cle = 'planifie';
+        $racines = self::STATUTS[$cle] ?? [$cle];
+        $vals = in_array($type, ['biens', 'equipements'], true)
+            ? [(string)($row['Etat'] ?? ''), (string)($row['Statut'] ?? '')]
+            : [(string)($row['Statut'] ?? '')];
+        foreach ($vals as $v) {
+            $n = ' ' . AssistantLangue::preparer($v) . ' ';
+            if (trim($n) === '') continue;
+            foreach ($racines as $r) {
+                if (self::debutDeMot($n, $r)) {
+                    // « Non traité » n'est pas « traité ».
+                    if ($cle === 'traite' && str_contains($n, 'non traite')) continue;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Filtres réellement applicables à un type (les autres sont renvoyés à part). */
+    public static function filtresPour(string $type, array $filtres): array {
+        $ok = []; $ignores = [];
+        foreach ($filtres as $k => $v) {
+            if ($v === null || $v === '' || $v === []) continue;
+            if (in_array($type, self::FILTRES_APPLICABLES[$k] ?? [], true)) $ok[$k] = $v; else $ignores[$k] = $v;
+        }
+        return [$ok, $ignores];
+    }
+
+    /** La ligne satisfait-elle tous les filtres (canoniques) ? */
+    public function correspond(string $type, array $row, array $f): bool {
+        [$f] = self::filtresPour($type, $f);
+        foreach ($f as $k => $v) {
+            switch ($k) {
+                case 'batiment':
+                    // Plusieurs bâtiments possibles (intervention sur des équipements de sites différents).
+                    $ok = false;
+                    foreach (explode('|', (string)($row['Batiment'] ?? $row['BatimentNom'] ?? '')) as $b) if (self::memeBatiment($b, (string)$v)) { $ok = true; break; }
+                    if (!$ok) return false;
+                    break;
+                case 'etage':
+                    if ($type === 'plans') {
+                        $niv = isset($row['Niveau']) && $row['Niveau'] !== '' && $row['Niveau'] !== null ? (int)$row['Niveau'] : AssistantLangue::niveau((string)($row['EtageNom'] ?? ''));
+                        if ($niv !== (int)$v) return false;
+                    } else {
+                        $ok = false;
+                        foreach (explode('|', (string)($row['Etage'] ?? '')) as $e) if (AssistantLangue::niveau($e) === (int)$v) { $ok = true; break; }
+                        if (!$ok) return false;
+                    }
+                    break;
+                case 'bureau':
+                    $val = AssistantLangue::preparer((string)($row['NumeroBureau'] ?? $row['Bureau'] ?? ''));
+                    if (!preg_match('/(?<![a-z0-9])' . preg_quote(AssistantLangue::preparer((string)$v), '/') . '(?![a-z0-9])/', $val)) return false;
+                    break;
+                case 'statut':
+                    if (!$this->statutCorrespond($type, $row, (string)$v)) return false;
+                    break;
+                case 'etat':
+                    if (!$this->statutCorrespond($type, $row, (string)$v)) return false;
+                    break;
+                case 'type_interv':
+                    $t = AssistantLangue::preparer((string)($row['Type'] ?? ''));
+                    $r = ['preventive' => 'preventi', 'curative' => 'curati', 'reglementaire' => 'reglementaire'][$v] ?? (string)$v;
+                    if (!str_contains($t, $r)) return false;
+                    break;
+                case 'urgence':
+                    $u = AssistantLangue::preparer((string)($row['Urgence'] ?? $row['Priorite'] ?? ''));
+                    $ok = match ((string)$v) {
+                        'urgente' => str_contains($u, 'urgent'),
+                        'haute'   => str_contains($u, 'haute') || str_contains($u, 'elevee') || str_contains($u, 'urgent'),
+                        'basse'   => str_contains($u, 'basse') || str_contains($u, 'faible'),
+                        default   => str_contains($u, (string)$v),
+                    };
+                    if (!$ok) return false;
+                    break;
+                case 'annee':
+                    if (!str_starts_with(self::dateLigne($type, $row), (string)$v)) return false;
+                    break;
+                case 'mois':
+                    if (!str_starts_with(self::dateLigne($type, $row), (string)$v)) return false;
+                    break;
+                case 'semaine':
+                    $d = self::dateLigne($type, $row);
+                    if ($d === '' || date('o-\WW', strtotime($d)) !== (string)$v) return false;
+                    break;
+                case 'jour':
+                    if (self::dateLigne($type, $row) !== (string)$v) return false;
+                    break;
+                case 'type_element':
+                    if (AssistantLangue::norm((string)($row['TypeElement'] ?? '')) !== (string)$v) return false;
+                    break;
+                case 'famille':
+                    $fam = ' ' . AssistantLangue::preparer(($row['Famille'] ?? '') . ' ' . ($row['SousFamille'] ?? '') . ' ' . ($row['Categorie'] ?? '')) . ' ';
+                    if (!self::debutDeMot($fam, AssistantLangue::preparer((string)$v))) return false;
+                    break;
+            }
+        }
+        return true;
+    }
+
+    /** La ligne contient-elle chaque groupe de mots (l'une des variantes au moins) ? */
+    private static function contientGroupes(array $row, array $groups, array $nums = []): bool {
+        if (!$groups && !$nums) return true;
+        $hay = ' ' . self::norm(implode(' ', array_map(fn($v) => is_scalar($v) ? (string)$v : '', $row))) . ' ';
+        foreach ($groups as $g) {
+            $ok = false;
+            foreach ($g as $k) if (self::debutDeMot($hay, self::norm((string)$k))) { $ok = true; break; }
+            if (!$ok) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Interventions : bâtiment et étage déduits des équipements / biens liés
+     * (la table n'a pas ces colonnes). « interventions au bâtiment A » devient
+     * possible sans rien demander au modèle.
+     */
+    private ?array $liensCache = null;
+    private function enrichirInterventions(array $rows): array {
+        if ($this->liensCache === null) {
+            $eq = []; $bi = [];
+            try { foreach ($this->db->fetchAll("SELECT Id, Numero, InfoProduit, Batiment, Etage FROM Equipements WHERE DateSuppression IS NULL") as $r) $eq[(int)$r['Id']] = $r; } catch (\Throwable $_) {}
+            try { foreach ($this->db->fetchAll("SELECT Id, Numero, InfoProduit, Batiment, Etage FROM Biens WHERE DateSuppression IS NULL") as $r) $bi[(int)$r['Id']] = $r; } catch (\Throwable $_) {}
+            $this->liensCache = [$eq, $bi];
+        }
+        [$eq, $bi] = $this->liensCache;
+        return $this->lierInterventions($rows, $eq, $bi);
+    }
+
+    /**
+     * Documents : bâtiment, étage et libellé de l'élément auquel chacun est
+     * rattaché (« documents du bâtiment A » = ceux de ses biens et équipements).
+     */
+    private function enrichirDocuments(array $rows): array {
+        if ($this->liensCache === null) $this->enrichirInterventions([]);
+        [$eq, $bi] = $this->liensCache;
+        $autres = ['contrat' => [], 'intervention' => [], 'demande' => []];
+        try { foreach ($this->db->fetchAll("SELECT Id, Numero, Societe FROM Contrats") as $r) $autres['contrat'][(int)$r['Id']] = trim(($r['Numero'] ?? '') . ' ' . ($r['Societe'] ?? '')); } catch (\Throwable $_) {}
+        try { foreach ($this->db->fetchAll("SELECT Id, Titre, Batiment FROM DemandesIntervention") as $r) $autres['demande'][(int)$r['Id']] = $r; } catch (\Throwable $_) {}
+        $interv = [];
+        foreach ($rows as $r) if (AssistantLangue::norm((string)($r['EntiteType'] ?? '')) === 'intervention') $interv[(int)$r['EntiteId']] = true;
+        if ($interv) {
+            try {
+                $ivs = $this->db->fetchAll("SELECT Id, Numero, EquipementsIds, BienId FROM Interventions");
+                foreach ($this->lierInterventions($ivs, $eq, $bi) as $iv) $autres['intervention'][(int)$iv['Id']] = $iv;
+            } catch (\Throwable $_) {}
+        }
+        foreach ($rows as &$r) {
+            $t = AssistantLangue::norm((string)($r['EntiteType'] ?? '')); $id = (int)($r['EntiteId'] ?? 0);
+            $cible = match ($t) { 'equipement', 'equipements' => $eq[$id] ?? null, 'bien', 'biens' => $bi[$id] ?? null, default => null };
+            if ($cible) {
+                $r['Batiment'] = (string)$cible['Batiment']; $r['Etage'] = (string)$cible['Etage'];
+                $r['Element'] = trim(($cible['Numero'] ?? '') . ' ' . ($cible['InfoProduit'] ?? ''));
+            } elseif ($t === 'intervention' && isset($autres['intervention'][$id])) {
+                $iv = $autres['intervention'][$id];
+                $r['Batiment'] = $iv['Batiment']; $r['Etage'] = $iv['Etage']; $r['Element'] = trim((string)($iv['Numero'] ?? ''));
+            } elseif ($t === 'demande' && isset($autres['demande'][$id])) {
+                $r['Batiment'] = (string)($autres['demande'][$id]['Batiment'] ?? ''); $r['Element'] = 'demande #' . $id;
+            } elseif ($t === 'contrat' && isset($autres['contrat'][$id])) {
+                $r['Element'] = $autres['contrat'][$id];
+            }
+        }
+        unset($r);
+        return $rows;
+    }
+
+    private function lierInterventions(array $rows, array $eq, array $bi): array {
+        foreach ($rows as &$r) {
+            $liens = [];
+            foreach (preg_split('/[\s,;]+/', (string)($r['EquipementsIds'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) as $id) if (isset($eq[(int)$id])) $liens[] = $eq[(int)$id];
+            if (!empty($r['BienId']) && isset($bi[(int)$r['BienId']])) $liens[] = $bi[(int)$r['BienId']];
+            $r['Batiment'] = implode('|', array_values(array_unique(array_filter(array_map(fn($l) => (string)$l['Batiment'], $liens)))));
+            $r['Etage'] = implode('|', array_values(array_unique(array_filter(array_map(fn($l) => (string)$l['Etage'], $liens)))));
+            $r['Elements'] = implode(', ', array_slice(array_map(fn($l) => trim(($l['Numero'] ?? '') . ' ' . ($l['InfoProduit'] ?? '')), $liens), 0, 6));
+        }
+        unset($r);
+        return $rows;
+    }
+
+    /**
+     * Lignes d'un type, filtrées et (facultatif) restreintes aux mots-clés, avec
+     * le total EXACT (pas de plafond de recherche). Sert au comptage, aux listes
+     * et aux sommes.
+     *
+     * @param array $options  tri ('recent'|'avenir'|null), limite (int), brut (bool : lignes non compactées)
+     * @return array{total:int, lignes:array, ignores:array}
+     */
+    public function lignes(string $type, array $filtres = [], array $mots = [], array $options = []): array {
+        $type = self::normType($type);
+        if (!isset(self::TABLES[$type])) return ['total' => 0, 'lignes' => [], 'ignores' => []];
+        [$from, $select, $where, $order, $dates] = self::TABLES[$type];
+        [$fOk, $ignores] = self::filtresPour($type, $filtres);
+        try {
+            $rows = $this->db->fetchAll("SELECT $select FROM $from" . ($where ? " WHERE $where" : '') . " ORDER BY $order LIMIT 20000");
+        } catch (\Throwable $e) {
+            error_log('[Larka][assistant] lignes: ' . $e->getMessage());
+            return ['total' => 0, 'lignes' => [], 'ignores' => $ignores, 'erreur' => true];
+        }
+        $rows = array_map([self::class, 'remap'], $rows);
+        // « les demandes de Paul Durand » : l'auteur filtre sans que son identifiant sorte dans les lignes.
+        if ($type === 'demandes' && !empty($options['auteur_id'])) {
+            try {
+                $ids = array_flip(array_map('intval', array_column($this->db->fetchAll(
+                    "SELECT Id FROM DemandesIntervention WHERE UtilisateurId = :u", ['u' => (int)$options['auteur_id']]), 'Id')));
+            } catch (\Throwable $_) { $ids = []; }
+            $rows = array_values(array_filter($rows, fn($r) => isset($ids[(int)$r['Id']])));
+        }
+        if ($type === 'interventions') $rows = $this->enrichirInterventions($rows);
+        if ($type === 'documents') $rows = $this->enrichirDocuments($rows);
+        $t = $mots ? $this->terms(implode(' ', $mots)) : ['groups' => [], 'nums' => []];
+        $rows = array_values(array_filter($rows, fn($r) => $this->correspond($type, $r, $fOk) && self::contientGroupes($r, $t['groups'])));
+
+        $tri = $options['tri'] ?? null;
+        if ($tri && $dates) {
+            $auj = date('Y-m-d');
+            if ($tri === 'avenir') {
+                $rows = array_values(array_filter($rows, fn($r) => self::dateLigne($type, $r) >= $auj));
+                usort($rows, fn($a, $b) => [self::dateLigne($type, $a), (int)$a['Id']] <=> [self::dateLigne($type, $b), (int)$b['Id']]);
+            } else {
+                usort($rows, fn($a, $b) => [self::dateLigne($type, $b), (int)$b['Id']] <=> [self::dateLigne($type, $a), (int)$a['Id']]);
+            }
+        }
+        $total = count($rows);
+        if (empty($options['brut'])) {
+            $lim = (int)($options['limite'] ?? $this->maxResults);
+            $rows = array_slice($rows, 0, max(1, $lim));
+            $rows = $this->compact($this->anonymize($rows), 240);
+        }
+        return ['total' => $total, 'lignes' => $rows, 'ignores' => $ignores, 'corrections' => $t['corrections'] ?? []];
+    }
+
+    /**
+     * Recherche classée sur un type : lignes triées par pertinence (toutes,
+     * pas seulement les premières) et informations de classement (meilleur
+     * candidat, correspondance complète, ex æquo).
+     */
+    public function rechercheClassee(string $type, string $query, array $filtres = []): array {
+        $type = self::normType($type);
+        $vide = ['type' => $type, 'total' => 0, 'lignes' => [], 'info' => ['score' => 0, 'complet' => false, 'ex_aequo' => 0], 'corrections' => [], 'ignores' => []];
+        if (!isset(self::SEARCH_MAP[$type])) return $vide;
+        $t = $this->terms($query);
+        [$fOk, $ignores] = self::filtresPour($type, $filtres);
+        $vide['ignores'] = $ignores; $vide['corrections'] = $t['corrections'];
+        if (!$t['sql']) return $vide;
+        $key = self::SEARCH_MAP[$type];
+        $all = $this->db->searchForAssistant($t['sql'], true, [$key], 200);
+        $rows = array_map([self::class, 'remap'], $all[$key] ?? []);
+        if ($type === 'interventions') $rows = $this->enrichirInterventions($rows);
+        if ($type === 'documents') $rows = $this->enrichirDocuments($rows);
+        $rows = array_values(array_filter($rows, fn($r) => $this->correspond($type, $r, $fOk)));
+        $rows = $this->rank($rows, $t, $info);
+        // Le LIKE SQL ratisse large (variantes, synonymes) : on ne garde que les
+        // lignes où un mot ou le numéro demandé se retrouve vraiment.
+        $garde = [];
+        foreach ($rows as $i => $r) if (($info['scores'][$i] ?? 0) > 0) $garde[] = $r;
+        $info['scores'] = array_slice($info['scores'], 0, count($garde));
+        $info['complets'] = array_slice($info['complets'] ?? [], 0, count($garde));
+        return ['type' => $type, 'total' => count($garde), 'minimum' => count($all[$key] ?? []) >= 200,
+                'lignes' => $this->compact($this->anonymize($garde), 240), 'info' => $info,
+                'corrections' => $t['corrections'], 'ignores' => $ignores, 'termes' => $t];
+    }
+
+    /**
+     * Recherche sur plusieurs types d'un coup (et dans les modules installés),
+     * blocs triés par pertinence puis par ordre fixe des types — jamais par
+     * hasard d'exécution.
+     *
+     * @param array|null $types  types à interroger (null = tous)
+     */
+    public function rechercheGlobale(string $query, ?array $types = null, array $filtres = [], bool $avecModules = true): array {
+        $t = $this->terms($query);
+        $types ??= array_keys(self::SEARCH_MAP);
+        $blocs = [];
+        if ($t['sql']) {
+            $keys = array_values(array_intersect_key(self::SEARCH_MAP, array_flip($types)));
+            $all = $this->db->searchForAssistant($t['sql'], true, $keys, 200);
+            foreach ($types as $ordre => $type) {
+                $key = self::SEARCH_MAP[$type] ?? null;
+                if (!$key || empty($all[$key])) continue;
+                $rows = array_map([self::class, 'remap'], $all[$key]);
+                if ($type === 'interventions') $rows = $this->enrichirInterventions($rows);
+                if ($type === 'documents') $rows = $this->enrichirDocuments($rows);
+                [$fOk] = self::filtresPour($type, $filtres);
+                $rows = array_values(array_filter($rows, fn($r) => $this->correspond($type, $r, $fOk)));
+                if (!$rows) continue;
+                $rows = $this->rank($rows, $t, $info);
+                $garde = [];
+                foreach ($rows as $i => $r) if (($info['scores'][$i] ?? 0) > 0) $garde[] = $r;
+                if (!$garde) continue;
+                $info['scores'] = array_slice($info['scores'], 0, count($garde));
+                $info['complets'] = array_slice($info['complets'] ?? [], 0, count($garde));
+                $blocs[] = ['type' => $type, 'ordre' => $ordre, 'total' => count($garde), 'info' => $info,
+                            'lignes' => $this->compact($this->anonymize(array_slice($garde, 0, 50)), 240)];
+            }
+        }
+        // Modules complémentaires installés (mêmes règles que searchAll).
+        if ($avecModules && $this->modules && class_exists('ExtMoteurDeclaratif')) {
+            $origMod = array_values(array_filter($t['orig'], fn($w) => mb_strlen($w) >= 3));
+            foreach (array_slice($this->modules, 0, 6, true) as $mid => $m) {
+                foreach ($m['jeux'] as $jeu => $j) {
+                    if (!$origMod) break 2;
+                    try { [$rows] = $this->moduleRows($mid, $jeu, $origMod); } catch (\Throwable $_) { continue; }
+                    if (!$rows) continue;
+                    $rows = $this->rank($rows, $t, $infoM);
+                    $blocs[] = ['type' => 'module', 'module' => $mid, 'jeu' => $jeu, 'libelle' => $j['libelle'] ?? $jeu,
+                                'ordre' => 100, 'total' => count($rows), 'info' => $infoM,
+                                'lignes' => array_map(fn($r) => $this->maskModuleRow($r, $j['formats'] ?? []), array_slice($rows, 0, 20))];
+                }
+            }
+        }
+        usort($blocs, fn($a, $b) => [$b['info']['score'], $a['ordre']] <=> [$a['info']['score'], $b['ordre']]);
+        return ['blocs' => $blocs, 'corrections' => $t['corrections'], 'termes' => $t];
+    }
+
+    /**
+     * Alertes complètes pour le moteur : TOUTES les lignes (il filtre et compte
+     * lui-même), anonymisées. $args['jours'] null = fenêtre propre à chaque
+     * contrat (AlerteJoursAvant, comme le tableau de bord) ; un nombre = horizon
+     * demandé explicitement (« contrats qui expirent dans 60 jours »).
+     */
+    public function alertesCompletes(array $args): array {
+        $cat = strtolower((string)($args['categorie'] ?? 'toutes')) ?: 'toutes';
+        $jours = isset($args['jours']) && $args['jours'] !== null ? max(1, min(3650, (int)$args['jours'])) : null;
+        $out = [];
+        $auj = date('Y-m-d');
+        if ($cat === 'toutes' || $cat === 'contrats') {
+            try {
+                if ($jours === null) {
+                    $rows = $this->db->getContratsEnAlerte();
+                } else {
+                    $limite = date('Y-m-d', strtotime("+$jours days"));
+                    $rows = array_values(array_filter($this->db->fetchAll("SELECT * FROM Contrats WHERE Statut = 'Actif' AND DateFin IS NOT NULL AND DateFin != '' ORDER BY DateFin"),
+                        fn($r) => substr((string)$r['DateFin'], 0, 10) <= $limite));
+                }
+                usort($rows, fn($a, $b) => [substr((string)$a['DateFin'], 0, 10), (int)$a['Id']] <=> [substr((string)$b['DateFin'], 0, 10), (int)$b['Id']]);
+                $out['contrats_expirent'] = ['count' => count($rows), 'items_complets' => array_map(fn($r) => [
+                    'id' => (int)$r['Id'], 'numero' => $r['Numero'] ?? '', 'societe' => $r['Societe'] ?? '', 'type' => $r['Type'] ?? '',
+                    'date_fin' => substr((string)($r['DateFin'] ?? ''), 0, 10), 'montant_annuel' => $r['MontantAnnuel'] ?? null,
+                    'description' => $r['Description'] ?? '',
+                ], $rows)];
+            } catch (\Throwable $_) {}
+        }
+        if ($cat === 'toutes' || $cat === 'stock') {
+            try {
+                $rows = $this->db->getStockEnAlerte();
+                usort($rows, fn($a, $b) => [(string)$a['Designation'], (int)$a['Id']] <=> [(string)$b['Designation'], (int)$b['Id']]);
+                $out['stock_en_alerte'] = ['count' => count($rows), 'items_complets' => array_map(fn($r) => [
+                    'id' => (int)$r['Id'], 'designation' => $r['Designation'] ?? '', 'reference' => $r['Reference'] ?? '',
+                    'categorie' => $r['Categorie'] ?? '', 'emplacement' => $r['Emplacement'] ?? '',
+                    'quantite' => $r['Quantite'] ?? 0, 'seuil' => $r['SeuilAlerte'] ?? 0,
+                ], $rows)];
+            } catch (\Throwable $_) {}
+        }
+        if ($cat === 'toutes' || $cat === 'interventions') {
+            try {
+                $rows = $this->db->fetchAll(
+                    "SELECT Id, Numero, Type, Statut, Priorite, DateIntervention, Description, SocieteManuelle
+                     FROM Interventions
+                     WHERE Statut IN ('Planifiée','En cours')
+                       AND DateIntervention IS NOT NULL AND DateIntervention != ''
+                       AND DateIntervention < :today
+                     ORDER BY DateIntervention, Id LIMIT 500",
+                    ['today' => $auj]
+                );
+                $out['interventions_en_retard'] = ['count' => count($rows), 'items_complets' => $this->anonymize($rows)];
+            } catch (\Throwable $_) {}
+        }
+        if ($cat === 'toutes' || $cat === 'demandes') {
+            try {
+                $rows = $this->db->fetchAll(
+                    "SELECT Id, Titre, Urgence, Statut, DateCreation, Batiment, Bureau, Categorie
+                     FROM DemandesIntervention
+                     WHERE Statut IN ('Nouveau','Demandeur','Relancé')
+                     ORDER BY DateCreation, Id LIMIT 500"
+                );
+                $out['demandes_non_traitees'] = ['count' => count($rows), 'items_complets' => $this->anonymize($rows)];
+            } catch (\Throwable $_) {}
+        }
+        return $out;
+    }
+
+    /** Étages dessinés (plans) d'un bâtiment, du plus bas au plus haut. */
+    public function etagesPlan(string $batiment): array {
+        try {
+            $rows = array_map([self::class, 'remap'], $this->db->fetchAll(
+                "SELECT et.Id AS EtageId, et.Nom AS EtageNom, et.Niveau AS Niveau, b.Nom AS BatimentNom
+                 FROM PlanEtages et JOIN PlanBatiments b ON et.BatimentId = b.Id ORDER BY b.Nom, et.Niveau, et.Id"));
+        } catch (\Throwable $_) { return []; }
+        return array_values(array_filter($rows, fn($r) => self::memeBatiment((string)($r['BatimentNom'] ?? ''), $batiment)));
+    }
+
+    /** Fiche complète d'un élément, pour le moteur (anonymisée, textes plus longs). */
+    public function fiche(string $type, int $id): ?array {
+        $r = $this->execute('get_fiche', ['type' => rtrim(self::normType($type), 's'), 'id' => $id]);
+        return isset($r['fiche']) ? self::remap($r['fiche']) : null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // ── Implémentation des outils ──
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -569,40 +1122,42 @@ class AssistantTools {
 
     /**
      * Classe les lignes par pertinence :
-     *   - chaque mot de la question (ou sa correction orthographique) trouvé : 2 pts
-     *   - synonyme métier trouvé : 1 pt
+     *   - chaque mot de la question (ou l'une de ses variantes : correction,
+     *     singulier, synonyme métier) trouvé en DÉBUT DE MOT : 2 pts
      *   - numéro demandé présent dans le numéro/nom (« extincteur 2 » ↔ « EXT-002 ») : 3 pts
      *   - numéro/référence/nom identique à un mot : 3 pts
      * $info reçoit : score du meilleur, meilleure ligne, « complet » (tous les
      * mots ET le numéro trouvés) et le nombre d'ex æquo complets.
-     * Tri stable : l'ordre SQL départage les égalités.
+     *
+     * Début de mot plutôt que sous-chaîne : « clim » trouve « climatiseur »,
+     * mais « ssi » ne trouve plus « possible ».
+     * Tri stable : l'ordre SQL départage les égalités — le classement ne dépend
+     * que des données, jamais du modèle qui a posé la question.
      */
     private function rank(array $rows, array $t, ?array &$info = null): array {
-        $info = ['score' => 0, 'best' => null, 'complet' => false, 'ex_aequo' => 0];
+        $info = ['score' => 0, 'best' => null, 'complet' => false, 'ex_aequo' => 0, 'scores' => []];
         if (!$rows) return [];
-        $groups = array_map(fn($g) => array_map([self::class, 'norm'], $g), $t['groups']);
-        $all = array_merge(...array_values($groups ?: [[]]));
-        $synN = array_values(array_diff(array_map([self::class, 'norm'], $t['sql']), $all));
+        $groups = array_values(array_filter(array_map(fn($g) => array_values(array_unique(array_filter(array_map([self::class, 'norm'], $g), fn($k) => $k !== ''))), $t['groups'])));
+        $all = $groups ? array_merge(...$groups) : [];
         $nums = $t['nums'];
         $scored = [];
         foreach ($rows as $i => $row) {
-            $hay = self::norm(implode(' ', array_map(fn($v) => is_scalar($v) ? (string)$v : '', $row)));
+            $hay = ' ' . self::norm(implode(' ', array_map(fn($v) => is_scalar($v) ? (string)$v : '', $row))) . ' ';
             $score = 0; $trouves = 0;
             foreach ($groups as $g) {
                 foreach ($g as $k) {
-                    if ($k !== '' && str_contains($hay, $k)) { $score += 2; $trouves++; break; }
+                    if (self::debutDeMot($hay, $k)) { $score += 2; $trouves++; break; }
                 }
             }
-            foreach ($synN as $k) if ($k !== '' && str_contains($hay, $k)) $score += 1;
             $numOk = !$nums;
             if ($nums) {
                 $ident = implode(' ', array_map(fn($c) => (string)($row[$c] ?? ''),
-                    ['Numero', 'InfoProduit', 'Nom', 'Designation', 'Reference', 'Intitule', 'Titre', 'numero', 'nomination']));
+                    ['Numero', 'InfoProduit', 'Nom', 'Designation', 'Reference', 'Intitule', 'Titre', 'NumeroDossier', 'NumeroBoite', 'numero', 'nomination']));
                 preg_match_all('/\d+/', $ident, $m);
                 $presents = array_map('intval', $m[0]);
                 foreach ($nums as $n) if (in_array((int)$n, $presents, true)) { $score += 3; $numOk = true; break; }
             }
-            foreach (['Numero', 'Reference', 'NumeroSerie', 'Nom'] as $c) {
+            foreach (['Numero', 'Reference', 'NumeroSerie', 'Nom', 'NumeroDossier'] as $c) {
                 if (!empty($row[$c]) && in_array(self::norm((string)$row[$c]), $all, true)) $score += 3;
             }
             $complet = $numOk && $groups && $trouves === count($groups);
@@ -612,11 +1167,24 @@ class AssistantTools {
         $top = $scored[0];
         $info['score'] = $top[0];
         $info['best'] = $top[2];
+        $info['scores'] = array_column($scored, 0);
+        $info['complets'] = array_column($scored, 3);
         if ($top[3]) {
             $info['complet'] = true;
             foreach ($scored as $sc) if ($sc[3] && $sc[0] === $top[0]) $info['ex_aequo']++;
         }
         return array_column($scored, 2);
+    }
+
+    /** $k apparaît-il au début d'un mot de $hay (normalisé, entouré d'espaces) ? */
+    private static function debutDeMot(string $hay, string $k): bool {
+        if ($k === '') return false;
+        $p = 0;
+        while (($p = strpos($hay, $k, $p)) !== false) {
+            if ($p === 0 || !ctype_alnum($hay[$p - 1])) return true;
+            $p++;
+        }
+        return false;
     }
 
     private function tool_get_fiche(array $args): array {
@@ -771,7 +1339,8 @@ class AssistantTools {
         $colWhitelist = [
             'Biens'                => ['Famille','Batiment','Etage','Etat','TypeBien','Categorie'],
             'Equipements'          => ['Famille','Batiment','Etage','Etat','TypeEquipement','Marque'],
-            'Interventions'        => ['Statut','Type','Categorie','Priorite','Batiment'],
+            // (pas de colonne Batiment sur Interventions : le filtre faisait échouer la requête)
+            'Interventions'        => ['Statut','Type','Priorite'],
             'Contrats'             => ['Statut','Societe','Type','Categorie'],
             'DemandesIntervention' => ['Statut','Urgence','Categorie','Batiment'],
             'Stock'                => ['Categorie','Famille','Emplacement'],
@@ -978,27 +1547,31 @@ class AssistantTools {
             $where[] = "Role = :role";
             $params['role'] = $role;
         }
-        if ($query !== '') {
-            [$kw] = $this->keywords($query);
-            if ($kw) {
-                foreach (array_values($kw) as $i => $w) {
-                    $k = ":kw$i";
-                    $params["kw$i"] = '%' . mb_strtolower($w) . '%';
-                    $where[] = "(LOWER(Nom) LIKE $k OR LOWER(Prenom) LIKE $k OR LOWER(Login) LIKE $k "
-                             . "OR LOWER(Service) LIKE $k OR LOWER(Poste) LIKE $k OR LOWER(Role) LIKE $k)";
-                }
-            } else {
-                $params['raw'] = '%' . mb_strtolower($query) . '%';
-                $where[] = "(LOWER(Nom) LIKE :raw OR LOWER(Prenom) LIKE :raw OR LOWER(Login) LIKE :raw)";
-            }
-        }
         try {
+            // L'annuaire est petit : on filtre en PHP, sans accents ni casse
+            // (« plombier » trouve « Plombière », « benali » trouve « Benali »).
             $rows = $this->db->fetchAll("SELECT $select FROM Utilisateurs WHERE " . implode(' AND ', $where)
-                                        . " ORDER BY Nom, Prenom LIMIT 30", $params);
+                                        . " ORDER BY Nom, Prenom, Id LIMIT 2000", $params);
         } catch (\Throwable $e) {
             error_log('[Larka][assistant] annuaire error: ' . $e->getMessage());
             return ['error' => 'Erreur lors de la lecture de l\'annuaire.'];
         }
+        if ($query !== '') {
+            [$kw] = $this->keywords($query);
+            $kw = $kw ?: [$query];
+            $rows = array_values(array_filter($rows, function ($r) use ($kw) {
+                $hay = ' ' . self::norm(implode(' ', [$r['Nom'] ?? '', $r['Prenom'] ?? '', $r['Login'] ?? '', $r['Service'] ?? '',
+                                                       $r['Poste'] ?? '', $r['Role'] ?? '', $r['OfficeLocation'] ?? ''])) . ' ';
+                foreach ($kw as $w) {
+                    $n = self::norm((string)$w);
+                    $ok = self::debutDeMot($hay, $n);
+                    foreach (self::singuliers($n) as $sg) $ok = $ok || self::debutDeMot($hay, $sg);
+                    if (!$ok) return false;
+                }
+                return true;
+            }));
+        }
+        $rows = array_slice($rows, 0, 30);
         if (!$rows) return ['count' => 0, 'results' => [], 'message' => 'Aucun utilisateur trouvé.'];
         return [
             'count'   => count($rows),
@@ -1169,14 +1742,9 @@ class AssistantTools {
     // ── Helpers ──
     // ═══════════════════════════════════════════════════════════════════════
 
-    /** Minuscules sans accents — comparaisons tolérantes. */
+    /** Minuscules sans accents — comparaisons tolérantes (une seule définition : AssistantLangue). */
     public static function norm(string $s): string {
-        $s = mb_strtolower($s);
-        return strtr($s, [
-            'à'=>'a','â'=>'a','ä'=>'a','á'=>'a','ã'=>'a','ç'=>'c','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e',
-            'î'=>'i','ï'=>'i','í'=>'i','ô'=>'o','ö'=>'o','ó'=>'o','ù'=>'u','û'=>'u','ü'=>'u','ú'=>'u',
-            'ÿ'=>'y','œ'=>'oe','æ'=>'ae','’'=>"'",
-        ]);
+        return AssistantLangue::norm($s);
     }
 
     /**
@@ -1194,66 +1762,102 @@ class AssistantTools {
      * correction ne peut qu'ajouter des résultats, jamais en retirer.
      */
     public function terms(string $q): array {
-        [$orig, $expanded, $nums] = $this->keywords($q);
-        $groups = []; $corr = []; $sql = $expanded;
-        $vocab = null;
+        [$orig, , $nums] = $this->keywords($q);
+        $groups = []; $corr = []; $sql = [];
+        $vocab = $this->vocab();
         foreach ($orig as $w) {
-            $g = [$w];
             $n = self::norm($w);
-            if (mb_strlen($n) >= 4 && !ctype_digit($n)) {
-                $vocab ??= $this->vocab();
-                if ($vocab && !isset($vocab[$n])) {
-                    $best = null; $bestD = PHP_INT_MAX;
-                    $max = mb_strlen($n) <= 5 ? 1 : (mb_strlen($n) <= 8 ? 2 : 3);
-                    foreach ($vocab as $v => $_) {
-                        if (abs(strlen($v) - strlen($n)) > $max) continue;
-                        $d = levenshtein($n, $v);
-                        if ($d < $bestD) { $bestD = $d; $best = $v; if ($d === 1) break; }
-                    }
-                    if ($best !== null && $bestD <= $max) {
-                        $g[] = $best; $corr[$w] = $best; $sql[] = $best;
-                    }
+            // Variantes du mot : lui-même, ses singuliers, ses synonymes métier.
+            $g = [$n];
+            foreach (self::singuliers($n) as $s) $g[] = $s;
+            foreach ($g as $x) foreach (AssistantLangue::SYNONYMES[$x] ?? [] as $syn) $g[] = $syn;
+            // Faute de frappe : rapprochée du vocabulaire RÉEL du site, seulement
+            // si ni le mot ni ses singuliers n'y figurent déjà.
+            $connu = false;
+            foreach ($g as $x) if (isset($vocab[$x])) { $connu = true; break; }
+            if (!$connu && mb_strlen($n) >= 4 && !ctype_digit($n) && !preg_match('/\d/', $n)) {
+                $best = AssistantLangue::plusProche($n, $vocab);
+                if ($best !== null && $best !== $n) {
+                    $g[] = $best; $corr[$w] = $best;
+                    foreach (AssistantLangue::SYNONYMES[$best] ?? [] as $syn) $g[] = $syn;
                 }
             }
+            $g = array_values(array_unique($g));
             $groups[] = $g;
+            // Mots envoyés au LIKE : chaque variante ET ses graphies réelles en
+            // base (« ecran » → « Écran »). Sans cela, sous SQLite (LOWER() ne
+            // connaît que l'ASCII), une question tapée sans accent ne trouvait
+            // rien — « écran » et « ecran » ne donnaient pas le même résultat.
+            if ($w !== $n) $sql[] = $w;
+            foreach ($g as $x) {
+                $sql[] = $x;
+                foreach ($vocab[$x] ?? [] as $o) if ($o !== true) $sql[] = $o;
+            }
         }
-        return ['orig' => $orig, 'groups' => $groups, 'sql' => array_values(array_unique($sql)),
+        // Question réduite à des numéros (« intervention 5 ») : on cherche les numéros eux-mêmes.
+        if (!$sql && $nums) foreach ($nums as $x) $sql[] = $x;
+        return ['orig' => $orig, 'groups' => $groups, 'sql' => array_slice(array_values(array_unique($sql)), 0, 24),
                 'nums' => $nums, 'corrections' => $corr];
     }
 
-    /** Vocabulaire du site (mots normalisés), construit une fois par requête. */
+    /** Singuliers plausibles d'un mot normalisé (« bureaux » → « bureau », « locaux » → « local »). */
+    public static function singuliers(string $n): array {
+        $out = [];
+        if (strlen($n) > 4 && str_ends_with($n, 's') && !str_ends_with($n, 'ss')) $out[] = substr($n, 0, -1);
+        if (strlen($n) > 4 && str_ends_with($n, 'eaux')) $out[] = substr($n, 0, -1);
+        if (strlen($n) > 4 && str_ends_with($n, 'aux') && !str_ends_with($n, 'eaux')) $out[] = substr($n, 0, -3) . 'al';
+        if (strlen($n) > 4 && str_ends_with($n, 'x') && !str_ends_with($n, 'aux')) $out[] = substr($n, 0, -1);
+        return $out;
+    }
+
+    /**
+     * Vocabulaire du site : mot normalisé → graphies réelles en base (casse et
+     * accents d'origine, 3 au plus). Construit une fois par requête.
+     */
     private ?array $vocabCache = null;
     private function vocab(): array {
         if ($this->vocabCache !== null) return $this->vocabCache;
         $sources = [
             "SELECT DISTINCT Famille AS v FROM Equipements", "SELECT DISTINCT SousFamille AS v FROM Equipements",
             "SELECT DISTINCT InfoProduit AS v FROM Equipements", "SELECT DISTINCT Batiment AS v FROM Equipements",
-            "SELECT DISTINCT Marque AS v FROM Equipements",
+            "SELECT DISTINCT Marque AS v FROM Equipements", "SELECT DISTINCT Modele AS v FROM Equipements",
             "SELECT DISTINCT Famille AS v FROM Biens", "SELECT DISTINCT SousFamille AS v FROM Biens",
             "SELECT DISTINCT InfoProduit AS v FROM Biens", "SELECT DISTINCT Batiment AS v FROM Biens",
             "SELECT DISTINCT Designation AS v FROM Stock", "SELECT DISTINCT Categorie AS v FROM Stock",
+            "SELECT DISTINCT Emplacement AS v FROM Stock",
             "SELECT DISTINCT Societe AS v FROM Contrats", "SELECT DISTINCT Type AS v FROM Contrats",
-            "SELECT DISTINCT Type AS v FROM Interventions", "SELECT DISTINCT Categorie AS v FROM DemandesIntervention",
+            "SELECT DISTINCT Description AS v FROM Contrats",
+            "SELECT DISTINCT Type AS v FROM Interventions", "SELECT DISTINCT Description AS v FROM Interventions",
+            "SELECT DISTINCT SocieteManuelle AS v FROM Interventions",
+            "SELECT DISTINCT Categorie AS v FROM DemandesIntervention", "SELECT DISTINCT Titre AS v FROM DemandesIntervention",
+            "SELECT DISTINCT NomFichier AS v FROM Documents",
             "SELECT DISTINCT Nom AS v FROM PlanElements", "SELECT DISTINCT Calque AS v FROM PlanElements",
             "SELECT DISTINCT Nom AS v FROM PlanBatiments", "SELECT DISTINCT Nom AS v FROM PlanEtages",
+            "SELECT DISTINCT Valeur AS v FROM Listes",
         ];
         $v = [];
         foreach ($sources as $sql) {
             try { $rows = $this->db->fetchAll($sql . " LIMIT 3000"); } catch (\Throwable $_) { continue; }
             foreach ($rows as $r) {
-                foreach (preg_split('/[^\p{L}]+/u', self::norm((string)($r['v'] ?? '')), -1, PREG_SPLIT_NO_EMPTY) as $w) {
-                    if (strlen($w) < 4) continue;
-                    $v[$w] = true;
-                    if (str_ends_with($w, 's')) $v[substr($w, 0, -1)] = true;
+                foreach (preg_split('/[^\p{L}\p{N}]+/u', (string)($r['v'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) as $o) {
+                    $w = self::norm($o);
+                    if (strlen($w) < 3 || ctype_digit($w)) continue;
+                    foreach (array_merge([$w], self::singuliers($w)) as $k) {
+                        $v[$k] ??= [];
+                        if (count($v[$k]) < 3 && !in_array($o, $v[$k], true)) $v[$k][] = $o;
+                    }
                 }
             }
             if (count($v) > 20000) break;
         }
         // Vocabulaire métier courant, même absent de la base.
         foreach (['extincteur','sprinkler','alarme','incendie','desenfumage','ascenseur','chaudiere','climatisation',
-                  'ventilation','luminaire','eclairage','prise','porte','poignee','fenetre','serrure','fuite',
-                  'robinet','toilette','lavabo','radiateur','tableau','electrique','onduleur','groupe','electrogene',
-                  'pompe','compteur','vanne','store','volet','plafond','peinture','vitre','badge','cle'] as $w) $v[$w] = true;
+                  'climatiseur','ventilation','luminaire','eclairage','ampoule','prise','porte','poignee','fenetre',
+                  'serrure','fuite','robinet','toilette','toilettes','lavabo','radiateur','tableau','electrique',
+                  'onduleur','groupe','electrogene','pompe','compteur','vanne','store','volet','plafond','peinture',
+                  'vitre','badge','cle','ordinateur','ecran','imprimante','chaise','fauteuil','bureau','armoire',
+                  'refrigerateur','chauffage','plomberie','electricite','serrurerie','menuiserie','nettoyage'] as $w) $v[$w] ??= [];
+        ksort($v, SORT_STRING);
         return $this->vocabCache = $v;
     }
 

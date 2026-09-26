@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")/../.." || exit 2
 echec=0
 
-for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference; do
+for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant; do
   f="outils/epreuves/test-$e.php"
   [[ -f "$f" ]] || continue
   echo

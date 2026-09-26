@@ -555,12 +555,21 @@ function _assistantStatsHtml(done) {
   if (!done || !done.usage || App.currentUser?.Role === 'Demandeur') return '';
   const u = done.usage;
   const parts = [];
-  if (u.ms) parts.push((u.ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' s');
+  // Le moteur répond en quelques millisecondes : « 0 s » serait faux, on affiche des ms.
+  if (u.ms) parts.push(u.ms < 1000 ? Math.max(1, Math.round(u.ms)) + ' ms'
+                                   : (u.ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' s');
+  // Mode fiable : c'est le moteur Larka qui a répondu (même réponse quel que soit le modèle).
+  const mode = String(done.mode || '');
+  if (mode === 'moteur') parts.push('moteur Larka');
+  else if (mode === 'moteur+ia') parts.push('moteur Larka + reformulation IA');
   if (u.tok_s) parts.push(u.tok_s.toLocaleString('fr-FR') + ' tok/s');
   if (u.cached && u.in) parts.push('cache ' + Math.round(100 * u.cached / u.in) + ' %');
   if (done.tool_calls_count) parts.push(done.tool_calls_count + ' recherche' + (done.tool_calls_count > 1 ? 's' : ''));
   if (!parts.length) return '';
-  return '<div class="assistant-stats" title="' + _escAttr((done.fournisseur || '') + ' · ' + (done.model || '')) + '">⚡ ' + _escHtml(parts.join(' · ')) + '</div>';
+  const titre = mode.startsWith('moteur')
+    ? 'Réponse du moteur Larka : identique quel que soit le modèle configuré (' + (done.model || '') + ')'
+    : (done.fournisseur || '') + ' · ' + (done.model || '');
+  return '<div class="assistant-stats" title="' + _escAttr(titre) + '">⚡ ' + _escHtml(parts.join(' · ')) + '</div>';
 }
 
 /**
@@ -688,14 +697,15 @@ function _openPrefilledDemande(fields, descAvecTag) {
       }
     }
 
+    // Comparaison sans casse ni accents : « Batiment A » choisit bien « Bâtiment A ».
+    const _n = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     const setField = (id, value) => {
       if (value === undefined || value === '') return;
       const el = document.getElementById(id);
       if (!el) return;
       if (el.tagName === 'SELECT') {
         const opt = Array.from(el.options).find(o =>
-          o.value.toLowerCase() === value.toLowerCase() ||
-          o.textContent.trim().toLowerCase() === value.toLowerCase()
+          _n(o.value) === _n(value) || _n(o.textContent) === _n(value)
         );
         if (opt) el.value = opt.value;
       } else {
@@ -736,7 +746,12 @@ function _openPrefilledDemande(fields, descAvecTag) {
       // Champs spécifiques technique
       setField('f_titre',     fields.titre);
       setField('f_categorie', fields.categorie);
-      setField('f_urgence',   fields.urgence);
+      // Le formulaire propose Basse / Normale / Haute / Urgente. Les anciens
+      // libellés (« Élevée », « Faible ») n'y figuraient pas : l'urgence
+      // proposée par l'assistant était perdue sans bruit.
+      const _urg = { elevee: 'Haute', eleve: 'Haute', haute: 'Haute', importante: 'Haute', faible: 'Basse', basse: 'Basse',
+                     urgente: 'Urgente', urgent: 'Urgente', normale: 'Normale', normal: 'Normale' };
+      setField('f_urgence', _urg[_n(fields.urgence)] || fields.urgence);
       // Focus sur le titre pour relecture
       try { document.getElementById('f_titre')?.focus(); } catch(_) {}
     }

@@ -435,7 +435,11 @@ function animateLogin(callback) {
   const dur   = 1500;
 
   function frame(now) {
-    const p = Math.min((now - start) / dur, 1);
+    // L'horodatage d'une image (requestAnimationFrame) peut PRÉCÉDER le
+    // performance.now() pris juste avant : p était alors négatif, le rayon aussi,
+    // createRadialGradient levait une exception… et la connexion restait bloquée
+    // sur la roue d'attente (callback jamais appelé). On borne p à [0, 1].
+    const p = Math.max(0, Math.min((now - start) / dur, 1));
     const e = p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2,3)/2;
 
     tctx.clearRect(0, 0, tc.width, tc.height);
