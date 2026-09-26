@@ -135,12 +135,21 @@ const LarkaMaj = (() => {
             + (e && e.disponible ? bouton('cfgMajVoir', 'Voir et installer ' + esc(e.distante.libelle), true, !_occupe) : '')
             + bouton('cfgMajHist', 'Historique / restaurer', false, peut && !_occupe);
     const derniere = e && e.verifie_le ? `Dernière vérification : ${esc(dateFr(e.verifie_le))}` : '';
+    // PHP du serveur : compatible, à mettre à jour, ou extensions manquantes — avec la commande.
+    let php = '';
+    if (e && e.php && e.droits !== false) {
+      const p = e.php;
+      php = p.conseil
+        ? `<div style="margin-top:8px;font-size:12.5px;color:${p.ok && !p.perime ? '#15803d' : (p.ok ? '#b45309' : '#b91c1c')}">${p.ok ? '⚠️' : '❌'} PHP ${esc(p.version)} — ${esc(p.conseil)}`
+          + (p.commande ? `<div style="margin-top:4px"><code style="user-select:all;font-size:12px">${esc(p.commande)}</code></div>` : '') + '</div>'
+        : `<div style="margin-top:8px;font-size:12px;color:var(--gray-text,#64748b)">PHP ${esc(p.version)} ✓ compatible${p.fin_support ? ' (support jusqu\'au ' + esc(new Date(p.fin_support).toLocaleDateString('fr-FR')) + ')' : ''}</div>`;
+    }
     el.innerHTML = `
       <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px">
         <span>Version installée : <strong>${esc(e && e.locale ? e.locale.libelle : '…')}</strong></span>
         <span style="font-size:12px;color:var(--gray-text,#64748b)">${derniere}</span>
       </div>
-      <div style="margin-bottom:10px;font-size:13.5px">${etat}</div>
+      <div style="margin-bottom:10px;font-size:13.5px">${etat}${php}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">${boutons}</div>`;
     el.querySelector('#cfgMajVerifier')?.addEventListener('click', verifier);
     el.querySelector('#cfgMajVoir')?.addEventListener('click', ouvrir);

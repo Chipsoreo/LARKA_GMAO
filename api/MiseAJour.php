@@ -64,6 +64,13 @@ class LarkaMiseAJour
      *  (deploy/install.sh ne les copie pas en production). */
     private const SI_PRESENTS = ['outils', 'Documentations', 'deploy', 'tests'];
     private const TAILLE_MAX = 250 * 1024 * 1024;
+    /** Version de PHP minimale de Larka (start.sh vérifie la même). Une version publiée peut en exiger une plus récente (« php_min »). */
+    public const PHP_MIN = '8.1';
+    /** Fin du support de sécurité de chaque branche de PHP (php.net/supported-versions). */
+    private const PHP_FIN_SUPPORT = ['8.1' => '2025-12-31', '8.2' => '2026-12-31', '8.3' => '2027-12-31',
+                                     '8.4' => '2028-12-31', '8.5' => '2029-12-31'];
+    /** Extensions dont la mise à jour a besoin (sodium seulement si une signature est exigée). */
+    private const EXTENSIONS = ['curl' => 'curl_init', 'zip' => 'ZipArchive', 'openssl' => 'openssl_verify'];
 
     private string $racine;
     private string $dossier;
@@ -95,6 +102,55 @@ class LarkaMiseAJour
     //  État et détection
     // ═══════════════════════════════════════════════════════════════════════
 
+    /**
+     * PHP du serveur : version, compatibilité, fin de support, extensions
+     * manquantes et, si besoin, la commande pour le mettre à jour. La mise à
+     * jour fonctionne sur toute version supportée ; sinon elle le DIT, avec la
+     * marche à suivre, au lieu d'échouer sur une erreur obscure.
+     */
+    public function php(?string $requis = null): array
+    {
+        $branche = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+        $min = $requis && version_compare($requis, self::PHP_MIN, '>') ? $requis : self::PHP_MIN;
+        $ok = version_compare(PHP_VERSION, $min, '>=');
+        $fin = self::PHP_FIN_SUPPORT[$branche] ?? null;
+        $perime = $fin !== null && date('Y-m-d') > $fin;
+        $manquantes = [];
+        foreach (self::EXTENSIONS as $ext => $symbole) {
+            if (!function_exists($symbole) && !class_exists($symbole)) $manquantes[] = $ext;
+        }
+        if ((string)self::cfg('cle_publique', '') !== '' && !function_exists('sodium_crypto_sign_verify_detached')) $manquantes[] = 'sodium';
+        $conseil = null;
+        if (!$ok) $conseil = "PHP $branche est trop ancien : il faut PHP $min ou plus récent. Mettez PHP à jour, puis relancez la vérification.";
+        elseif ($manquantes) $conseil = 'Extension(s) PHP manquante(s) : ' . implode(', ', $manquantes) . '. Installez-les, puis redémarrez PHP.';
+        elseif ($perime) $conseil = "PHP $branche ne reçoit plus de correctifs de sécurité depuis le " . date('d/m/Y', strtotime($fin)) . ' : pensez à le mettre à jour.';
+        return [
+            'version' => PHP_VERSION, 'branche' => $branche, 'minimum' => $min, 'ok' => $ok && !$manquantes,
+            'fin_support' => $fin, 'perime' => $perime, 'extensions_manquantes' => $manquantes,
+            'conseil' => $conseil, 'commande' => $conseil ? self::commandePhp($manquantes) : null,
+        ];
+    }
+
+    /** Commande de mise à jour de PHP adaptée au système (lue dans /etc/os-release). */
+    private static function commandePhp(array $extensions = []): string
+    {
+        $os = @parse_ini_file('/etc/os-release') ?: [];
+        $id = strtolower(($os['ID'] ?? '') . ' ' . ($os['ID_LIKE'] ?? ''));
+        $ext = $extensions ? ' ' . implode(' ', array_map(fn($e) => "php-$e", $extensions)) : '';
+        if (preg_match('/\b(fedora|rhel|centos|rocky|almalinux|nobara)\b/', $id)) return "sudo dnf upgrade --refresh 'php*'" . ($ext ? " && sudo dnf install$ext" : '');
+        if (preg_match('/\b(debian|ubuntu)\b/', $id)) return 'sudo apt update && sudo apt install --only-upgrade php php-cli php-fpm' . ($ext ? " && sudo apt install$ext" : '')
+            . '   (version récente : dépôt « deb.sury.org » sur Debian, « ppa:ondrej/php » sur Ubuntu)';
+        if (preg_match('/\barch\b/', $id)) return 'sudo pacman -Syu php';
+        if (preg_match('/\b(opensuse|suse)\b/', $id)) return 'sudo zypper update php*';
+        return 'Mettez PHP à jour avec le gestionnaire de paquets du système, puis redémarrez PHP-FPM / le serveur web.';
+    }
+
+    /** « PHP ≥ 8.2 » écrit dans les notes d'une version publiée. */
+    private static function phpMinDesNotes(string $notes): ?string
+    {
+        return preg_match('/\bPHP\s*(?:≥|>=|>|minimum\s*:?|min\.?\s*:?|requis\s*:?)\s*(\d+\.\d+)/iu', $notes, $m) ? $m[1] : null;
+    }
+
     /** État en cache (sans appel réseau). a_verifier = le cache est périmé. */
     public function etat(): array
     {
@@ -103,7 +159,9 @@ class LarkaMiseAJour
         $locale = $this->locale();
         $dispo = !empty($e['distante']['version'])
             && version_compare($e['distante']['version'], $locale['version'], '>');
+        $requis = $dispo ? ($e['distante']['php_min'] ?? null) : null;
         return [
+            'php'         => $this->php($requis),
             'actif'       => $this->actif(),
             'locale'      => $locale,
             'distante'    => $dispo ? $e['distante'] : null,
@@ -112,7 +170,7 @@ class LarkaMiseAJour
             'erreur'      => $e['erreur'] ?? null,
             'a_verifier'  => $this->actif() && (time() - (int)($e['ts'] ?? 0)) > $freq,
             'signature_exigee' => (string)self::cfg('cle_publique', '') !== '',
-            'installable' => $this->installable(),
+            'installable' => $this->installable($requis),
         ];
     }
 
@@ -121,6 +179,9 @@ class LarkaMiseAJour
     {
         $e = ['ts' => time(), 'verifie_le' => date('c')];
         try {
+            if (!function_exists('curl_init')) {
+                throw new RuntimeException("Extension PHP « curl » absente : impossible d'interroger la source des versions. " . self::commandePhp(['curl']));
+            }
             $e['distante'] = self::cfg('source', 'github') === 'manifeste'
                 ? $this->depuisManifeste()
                 : $this->depuisGithub();
@@ -173,6 +234,7 @@ class LarkaMiseAJour
                 'sha256'   => $sha,
                 'signature'=> $sig ?: null,
                 'page'     => (string)($rel['html_url'] ?? ''),
+                'php_min'  => self::phpMinDesNotes((string)($rel['body'] ?? '')),
             ];
             if (!$best || version_compare($cand['version'], $best['version'], '>')) $best = $cand;
         }
@@ -198,6 +260,7 @@ class LarkaMiseAJour
             'sha256'   => strtolower((string)($m['sha256'] ?? '')) ?: null,
             'signature'=> $m['signature'] ?? null,
             'page'     => (string)($m['page'] ?? ''),
+            'php_min'  => preg_match('/^\d+\.\d+/', (string)($m['php_min'] ?? ''), $x) ? $x[0] : self::phpMinDesNotes((string)($m['notes'] ?? '')),
         ];
         $d['libelle'] = LarkaVersion::libelle($d);
         return $d;
@@ -208,10 +271,15 @@ class LarkaMiseAJour
     // ═══════════════════════════════════════════════════════════════════════
 
     /** L'application peut-elle écrire ses propres fichiers ? */
-    public function installable(): array
+    public function installable(?string $phpRequis = null): array
     {
         $raisons = [];
-        if (!class_exists('ZipArchive')) $raisons[] = "Extension PHP « zip » absente.";
+        $php = $this->php($phpRequis);
+        if (version_compare(PHP_VERSION, $php['minimum'], '<')) {
+            $raisons[] = "Cette version demande PHP {$php['minimum']} ou plus récent ; ce serveur a PHP " . PHP_VERSION . ". Mettez d'abord PHP à jour : " . self::commandePhp() . '.';
+        }
+        if (!class_exists('ZipArchive')) $raisons[] = "Extension PHP « zip » absente (" . self::commandePhp(['zip']) . ').';
+        if (!function_exists('curl_init')) $raisons[] = "Extension PHP « curl » absente (" . self::commandePhp(['curl']) . ').';
         foreach (['', '/api', '/js', '/css', '/index.html', '/version.json'] as $p) {
             $f = $this->racine . $p;
             if (file_exists($f) && !is_writable($f)) { $raisons[] = "Pas de droit d'écriture sur " . ($p ?: '/') . '.'; break; }
@@ -234,11 +302,14 @@ class LarkaMiseAJour
         if (!$verrou || !flock($verrou, LOCK_EX | LOCK_NB)) throw new RuntimeException('Une installation est déjà en cours.');
 
         try {
-            $etat = $this->etat();
+            // Métadonnées fraîches : si le paquet a été republié (empreinte changée)
+            // depuis la dernière détection, on installe ce qui est publié MAINTENANT.
+            $etat = $this->verifier();
+            if (!$etat['disponible']) $etat = $this->etat();
             $d = $etat['distante'];
             if (!$etat['disponible'] || !$d) throw new RuntimeException('Aucune mise à jour disponible.');
             if ($d['version'] !== $versionConfirmee) throw new RuntimeException('La version disponible a changé : vérifiez de nouveau avant d\'installer.');
-            $inst = $this->installable();
+            $inst = $this->installable($d['php_min'] ?? null);
             if (!$inst['ok']) throw new RuntimeException(implode(' ', $inst['raisons']));
             if (empty($d['sha256'])) throw new RuntimeException('Version publiée sans empreinte SHA-256 : installation refusée.');
 
@@ -255,6 +326,11 @@ class LarkaMiseAJour
             $prefixe = $this->prefixeRacine($zip);
             $nv = json_decode((string)$zip->getFromName($prefixe . 'version.json'), true);
             if (!is_array($nv) || ($nv['version'] ?? '') !== $d['version']) throw new RuntimeException('version.json de l\'archive ne correspond pas à la version annoncée.');
+            // Exigence PHP écrite dans le paquet lui-même : on n'installe pas un code que ce PHP ne saurait pas exécuter.
+            $phpMin = preg_match('/^\d+\.\d+/', (string)($nv['php_min'] ?? ''), $x) ? $x[0] : null;
+            if ($phpMin && version_compare(PHP_VERSION, $phpMin, '<')) {
+                throw new RuntimeException("Cette version demande PHP $phpMin ou plus récent ; ce serveur a PHP " . PHP_VERSION . ". Rien n'a été installé. Mettez d'abord PHP à jour : " . self::commandePhp() . '.');
+            }
             if (!version_compare($d['version'], $this->locale()['version'], '>')) throw new RuntimeException('Cette version n\'est pas plus récente que celle installée.');
             $plan = $this->planifier($zip, $prefixe);
 
