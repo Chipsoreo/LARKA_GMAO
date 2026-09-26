@@ -937,7 +937,6 @@ final class AssistantLLM implements AssistantModeleJson
         $errno = curl_errno($ch);
         $err = curl_error($ch);
         $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: $status;
-        curl_close($ch);
 
         if ($onLine && $buffer !== '' && $http < 400) {
             foreach (explode("\n", $buffer) as $line) { $line = rtrim($line, "\r"); if ($line !== '') $onLine($line); }

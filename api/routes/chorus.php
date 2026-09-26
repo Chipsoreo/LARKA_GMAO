@@ -104,13 +104,11 @@ function cpro_http(string $method, string $url, array $headers = [], $body = nul
         $raw = curl_exec($ch);
         if ($raw === false) {
             $err = curl_error($ch);
-            curl_close($ch);
             json_error('Erreur réseau Chorus Pro : ' . $err, 502);
         }
         $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
         $status     = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         $respBody   = substr($raw, $headerSize);
-        curl_close($ch);
     } else {
         $ssl = [
             'verify_peer'      => $tls['verify'],
