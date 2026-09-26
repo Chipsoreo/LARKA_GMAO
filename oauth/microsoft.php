@@ -249,7 +249,6 @@ curl_setopt_array($ch, [
 $resp    = curl_exec($ch);
 $curlErr = curl_error($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
 
 if ($curlErr) closeError('Erreur réseau : ' . $curlErr);
 $token = json_decode($resp, true);
@@ -273,7 +272,6 @@ curl_setopt_array($ch, [
     CURLOPT_TIMEOUT        => 10,
 ]);
 $profile = json_decode(curl_exec($ch), true);
-curl_close($ch);
 
 $email  = $profile['mail'] ?? $profile['userPrincipalName'] ?? '';
 $prenom = $profile['givenName']  ?? '';
@@ -302,7 +300,6 @@ try {
     $photoData = curl_exec($ch);
     $photoHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $photoContentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-    curl_close($ch);
 
     // Fallback vers la photo par défaut si 96x96 non disponible
     if ($photoHttpCode !== 200) {
@@ -316,7 +313,6 @@ try {
         $photoData = curl_exec($ch);
         $photoHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $photoContentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-        curl_close($ch);
     }
 
     // Max 500KB en binaire pour ne pas surcharger la DB
@@ -340,7 +336,6 @@ try {
     ]);
     $managerResp = curl_exec($ch);
     $managerCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     if ($managerCode === 200) {
         $manager = json_decode($managerResp, true);

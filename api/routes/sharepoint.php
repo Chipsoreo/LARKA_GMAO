@@ -61,7 +61,6 @@ function graphApi(string $endpoint, string $accessToken): array {
     $resp     = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlErr  = curl_error($ch);
-    curl_close($ch);
 
     if ($curlErr) json_error('Erreur réseau Graph : ' . $curlErr, 502);
     $data = json_decode($resp, true);
@@ -92,7 +91,6 @@ function graphTry(string $endpoint, string $accessToken): array {
     $resp   = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err    = curl_error($ch);
-    curl_close($ch);
     if ($err) return ['status' => 0, 'data' => [], 'error' => $err];
     return ['status' => $status, 'data' => json_decode($resp, true) ?: []];
 }
@@ -117,7 +115,6 @@ function graphPost(string $endpoint, string $jsonBody, string $accessToken): arr
     ]);
     $resp   = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     $data = json_decode($resp, true) ?: [];
     if ($status >= 400) json_error($data['error']['message'] ?? "Erreur Graph HTTP $status", $status);
     return $data;
@@ -155,7 +152,6 @@ function ensureMsToken(): string {
         ]);
         $resp = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         if ($code === 200) {
             $newToken = json_decode($resp, true);
@@ -631,7 +627,6 @@ if ($action === 'sharepoint_download' && $method === 'GET') {
         CURLOPT_WRITEFUNCTION  => function ($c, $chunk) { echo $chunk; return strlen($chunk); },
     ]);
     curl_exec($ch);
-    curl_close($ch);
     exit;
 }
 
@@ -692,7 +687,6 @@ if ($action === 'sharepoint_content' && $method === 'GET') {
         CURLOPT_WRITEFUNCTION  => function ($c, $chunk) { echo $chunk; return strlen($chunk); },
     ]);
     curl_exec($ch);
-    curl_close($ch);
     exit;
 }
 
