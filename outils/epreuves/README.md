@@ -50,6 +50,7 @@ rôle donné.
 | `test-reference.php` | La documentation de référence et le code disent la même chose : tout identifiant cité existe, et tout composant du code est documenté. | non |
 | `test-fonctionnalites.php` | Chaque primitive du format produit vraiment son effet. Née d'un défaut réel : le `format` d'un champ calculé était ignoré, la déclaration passait, l'écran s'affichait, et la fonctionnalité manquait — sans rien pour le signaler. | oui |
 | `test-execution.php` | Le chemin complet — installer, examiner, écrire, lire, ancrer — **avertissements PHP transformés en erreurs**. Une variable non définie fait échouer le test au lieu de passer inaperçue. | oui |
+| `test-assistant.php` | L'assistant donne **la même réponse à la même question, quel que soit le modèle local** (0,6B, 1B, 7B… ou aucun). Plus de 120 formulations (fautes, langage parlé, dates relatives, suites de conversation) sont rejouées avec des modèles simulés — parfait, médiocre, aberrant, injoignable — et doivent produire un texte identique à l'octet près, sans même appeler le modèle ; aucun modèle ne peut faire citer un élément inexistant ni injecter un lien. `LARKA_EPREUVE_OLLAMA=<modèle>` y ajoute un vrai modèle Ollama. Hermétique : recopie `api/` et crée sa propre base SQLite jetable. | non (pdo_sqlite) |
 | `verif-globales.js` | Aucun accès `window.X` vers une liaison `const`/`let`. C'est ainsi que l'écran Apparence annonçait « couche extensions indisponible » alors qu'elle était chargée, et que le bouton de dépôt n'apparaissait à personne. | non |
 
 ## Les quatre qui exigent une base
@@ -58,6 +59,17 @@ rôle donné.
 `test-fonctionnalites` et `test-execution` ont besoin d'une base configurée
 (SQLite suffit). Sans elle, elles échouent — ce n'est pas une régression. Toutes
 les autres tournent partout, y compris sur un poste sans serveur.
+
+`test-assistant` est à part : elle ne lit **pas** votre base, elle s'en fabrique
+une (site fictif de `assistant/fixture.php`, supprimé en fin d'épreuve). Il lui
+faut seulement l'extension `pdo_sqlite` ; sans elle, `./start.sh epreuves` la
+signale et l'ignore. Pour interroger le moteur à la main sur ce site fictif :
+
+```bash
+php outils/epreuves/assistant/essai.php -v "où est l'extincteur 2 du centre technique ?"
+php outils/epreuves/assistant/essai.php --role=Demandeur "la clim ne marche plus au 2e"
+LARKA_EPREUVE_OLLAMA=qwen2.5:0.5b php outils/epreuves/test-assistant.php   # avec un vrai modèle
+```
 
 `test-autorisations` installe elle-même les modules dont elle a besoin. Elle a
 d'abord compté sur `test-execution`, qui s'exécute après elle : sur une base

@@ -1488,12 +1488,30 @@ function _renderTabServeur(cfg) {
       </div>
       <div class="srv-grid" style="margin-top:14px">
         <div class="srv-field">
+          <span class="srv-label">Mode de réponse</span>
+          <select class="form-control" id="ai_mode">
+            ${[['fiable','Fiable — même réponse quel que soit le modèle (recommandé)'],['agent','Agent libre — le modèle choisit ses recherches']].map(([v,l]) =>
+              '<option value="'+v+'" '+((ai.mode||'fiable')===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select>
+          <span class="srv-desc"><strong>Fiable</strong> : le moteur Larka comprend la question, fait les recherches et rédige la réponse lui-même. Un modèle de 0,6 B, 3 B ou 70 B, local ou distant, donne exactement la même réponse — en quelques millisecondes, même sans modèle joignable. <strong>Agent libre</strong> : l'ancien fonctionnement ; plus souple avec un grand modèle, mais la réponse dépend du modèle.</span>
+        </div>
+        <div class="srv-field">
+          <span class="srv-label">Recours au modèle (mode fiable)</span>
+          <select class="form-control" id="ai_interpretation">
+            ${[['off','Jamais — même réponse quel que soit le modèle (recommandé)'],['auto','Si le moteur ne trouve rien — modèle de 7 B ou plus']].map(([v,l]) =>
+              '<option value="'+v+'" '+((ai.interpretation_ia||'off')===v?'selected':'')+'>'+l+'</option>').join('')}
+          </select>
+          <span class="srv-desc">Par défaut, le modèle n'est jamais consulté : la réponse ne dépend pas de lui. En option, quand le moteur ne comprend pas une question, le modèle peut la reformuler dans un formulaire contrôlé, que le moteur vérifie ; il ne rédige jamais la réponse. Attention : c'est le seul cas où la taille du modèle compte — un petit modèle reformule souvent de travers.</span>
+        </div>
+      </div>
+      <div class="srv-grid" style="margin-top:14px">
+        <div class="srv-field">
           <span class="srv-label">Pré-recherche (mode rapide)</span>
           <select class="form-control" id="ai_pre_recherche">
             ${[['auto','Automatique (modèles locaux)'],['on','Toujours'],['off','Jamais']].map(([v,l]) =>
               '<option value="'+v+'" '+((ai.pre_recherche||'auto')===v?'selected':'')+'>'+l+'</option>').join('')}
           </select>
-          <span class="srv-desc">Larka lance la recherche avant d'interroger le modèle : souvent une seule inférence au lieu de deux ou trois. Recommandé sur CPU.</span>
+          <span class="srv-desc">Mode agent : Larka lance la recherche avant d'interroger le modèle — souvent une seule inférence au lieu de deux ou trois. Recommandé sur CPU. Sans effet en mode fiable.</span>
         </div>
         <div class="srv-field">
           <span class="srv-label">Réflexion des modèles locaux</span>
@@ -2189,6 +2207,8 @@ async function _sauvegarderServeur() {
   p('assistant','api_url', 'ai_api_url', '');
   p('assistant','timeout_seconds', 'ai_timeout', '');
   p('assistant','prechauffage', 'ai_prechauffage', true);
+  p('assistant','mode', 'ai_mode', 'fiable');
+  p('assistant','interpretation_ia', 'ai_interpretation', 'off');
   p('assistant','pre_recherche', 'ai_pre_recherche', 'auto');
   p('assistant','reflexion_locale', 'ai_reflexion_locale', 'auto');
   // Clé API : ne pas écraser si masquée

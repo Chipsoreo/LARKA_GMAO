@@ -1426,7 +1426,7 @@ cmd_autostart() {
 # donc AUTOMATIQUEMENT avant chaque mise en production — le seul moment où elle
 # compte vraiment, et le seul où l'on accepte d'attendre trois secondes.
 #
-# Quatre suites sur onze exigent une base. Elles sont ignorées ici : faire
+# Quatre suites sur douze exigent une base. Elles sont ignorées ici : faire
 # échouer un déploiement parce qu'un poste n'a pas de base, c'est apprendre aux
 # gens à passer outre — et une alarme qu'on contourne par habitude ne sert plus
 # à rien.
@@ -1453,6 +1453,20 @@ cmd_epreuves() {
             echec=1
         fi
     done
+
+    # L'assistant : même question, même réponse, quel que soit le modèle local.
+    # Épreuve hermétique (base SQLite jetable, aucun modèle requis) : elle ne
+    # demande que pdo_sqlite. Sans lui, elle est signalée et ignorée — même règle
+    # que pour les suites qui exigent une base.
+    if [[ -f outils/epreuves/test-assistant.php ]]; then
+        if ! php -r 'exit(extension_loaded("pdo_sqlite") ? 0 : 1);' >/dev/null 2>&1; then
+            printf "   \033[33m–\033[0m assistant (pdo_sqlite absent, ignorée)\n"
+        elif php outils/epreuves/test-assistant.php >/dev/null 2>&1; then
+            printf "   \033[32m✓\033[0m assistant\n"
+        else
+            printf "   \033[31m✗\033[0m assistant\n"; echec=1
+        fi
+    fi
 
     if command -v node >/dev/null 2>&1; then
         if [[ -f outils/epreuves/verif-globales.js ]]; then

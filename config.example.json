@@ -62,6 +62,8 @@
   },
   "assistant": {
     "_": "Assistant IA. Clé API -> .env : GMAO_ASSISTANT_API_KEY. fournisseur : anthropic | openai | mistral | gemini | copilot (distants) · ollama | lmstudio | local (OpenAI-compatible, ex. llama.cpp). model vide = le plus rapide/économique du fournisseur (claude-haiku-4-5, gpt-4o-mini, mistral-small-latest, gemini-3.1-flash-lite, ministral-3:3b). Autres clés : api_url, timeout_seconds (240 local / 90 distant), max_tokens (1024) et max_tokens_local (512), num_ctx (8192, Ollama), keep_alive (-1), pre_recherche (auto | on | off), prechauffage (true), reflexion_locale (auto | off | on), gemini_reflexion (auto | minimal | low | off), cache_prompt (true, Anthropic), max_resultats (6 local / 12 distant), temperature (0.2), top_p (0.9).",
+    "_mode": "mode : fiable (défaut) | agent. « fiable » : le moteur Larka comprend la question, cherche et rédige la réponse lui-même — même question, même réponse, quel que soit le modèle (0,6B, 1B, 3B, 7B… local ou distant), et même sans modèle joignable. « agent » : l'ancien fonctionnement, le modèle choisit ses outils et rédige (la réponse dépend alors du modèle).",
+    "_interpretation_ia": "interpretation_ia : off (défaut) | auto. En mode fiable, « auto » laisse le modèle reformuler, dans un formulaire JSON contraint et vérifié, les SEULES questions que le moteur ne comprend pas. C'est le seul cas où la taille du modèle compte : à réserver aux modèles ≥ 7B.",
     "actif": false
   },
   "push": {

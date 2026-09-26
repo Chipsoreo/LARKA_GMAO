@@ -3790,21 +3790,24 @@ public function getArchivesBordereauData(int $id): ?array {
         } catch (\Throwable $_) {}
 
         // Archives — Boîtes
+        // ⚠️ FIX : les colonnes « Numero » et « Intitule » n'existent pas dans ces
+        // tables (NumeroBoite / NumeroDossier, Description). La requête échouait,
+        // l'exception était avalée : l'assistant ne trouvait JAMAIS une archive.
         if ($want('archives_boites')) try {
-            $cols = ['Numero','Intitule','Service','Batiment','Emplacement','Description','CodeBarre'];
+            $cols = ['NumeroBoite','Service','Batiment','Emplacement','Description','CodeBarre'];
             $where = $buildWhere($cols);
             if ($where) {
-                $rows = $this->fetchAll("SELECT Id,Numero,Intitule,Service,Statut,Batiment,Emplacement FROM ArchivesBoite WHERE $where ORDER BY Numero LIMIT 15", $bindAll($cols));
+                $rows = $this->fetchAll("SELECT Id,NumeroBoite,Description,Service,Statut,Batiment,Emplacement FROM ArchivesBoite WHERE $where ORDER BY NumeroBoite LIMIT 15", $bindAll($cols));
                 if ($rows) $results['archives_boites'] = $rows;
             }
         } catch (\Throwable $_) {}
 
         // Archives — Dossiers
         if ($want('archives_dossiers')) try {
-            $cols = ['Numero','Intitule','Service','NumeroMandat','Description','CodeBarre'];
+            $cols = ['NumeroDossier','NumeroBoite','Service','NumeroMandat','Description','CodeBarre','Annee'];
             $where = $buildWhere($cols);
             if ($where) {
-                $rows = $this->fetchAll("SELECT Id,Numero,Intitule,Service,Statut,NumeroMandat FROM ArchivesDossier WHERE $where ORDER BY Numero LIMIT 15", $bindAll($cols));
+                $rows = $this->fetchAll("SELECT Id,NumeroDossier,NumeroBoite,Description,Service,Annee,Statut,NumeroMandat,Emplacement FROM ArchivesDossier WHERE $where ORDER BY NumeroDossier LIMIT " . max(15, $limit), $bindAll($cols));
                 if ($rows) $results['archives_dossiers'] = $rows;
             }
         } catch (\Throwable $_) {}

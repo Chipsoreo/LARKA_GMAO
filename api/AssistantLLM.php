@@ -42,7 +42,18 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-final class AssistantLLM
+/**
+ * Ce que le moteur déterministe attend d'un modèle : remplir un formulaire JSON.
+ * AssistantLLM l'implémente pour tous les fournisseurs ; les épreuves y
+ * branchent des modèles simulés (parfait, médiocre, aberrant, injoignable).
+ */
+interface AssistantModeleJson
+{
+    /** @return array{data:?array, text:string, usage:array, _error?:string} */
+    public function json(string $system, string $question, array $schema, array $opt = []): array;
+}
+
+final class AssistantLLM implements AssistantModeleJson
 {
     public const LOCAL = ['ollama', 'lmstudio', 'local'];
 
@@ -111,6 +122,187 @@ final class AssistantLLM
         $r['text'] = self::stripThink((string)$r['text']);
         $r['usage']['ms'] = (int)round((microtime(true) - $t0) * 1000);
         return $r;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Sortie JSON contrainte (interprète du moteur déterministe)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Fait remplir un petit formulaire JSON au modèle, avec le mécanisme de
+     * « sortie structurée » de chaque fournisseur :
+     *   ollama    → format = schéma JSON (décodage contraint par grammaire)
+     *   openai, mistral, lmstudio, llama.cpp → response_format json_schema
+     *               (repli json_object, puis texte)
+     *   anthropic → outil imposé (tool_choice) dont l'entrée est le schéma
+     *   gemini    → responseMimeType application/json + responseSchema
+     * Température 0 et graine fixe : pour un modèle donné, la même question
+     * donne toujours le même JSON. Un 0,6B ne peut pas sortir du schéma — au
+     * pire il le remplit mal, et c'est au code appelant de vérifier.
+     *
+     * @return array{data:?array, text:string, usage:array, _error?:string}
+     */
+    public function json(string $system, string $question, array $schema, array $opt = []): array
+    {
+        $t0 = microtime(true);
+        $maxTok = (int)($opt['max_tokens'] ?? 200);
+        try {
+            $r = match ($this->c['fournisseur']) {
+                'anthropic' => $this->jsonAnthropic($system, $question, $schema, $maxTok),
+                'gemini'    => $this->jsonGemini($system, $question, $schema, $maxTok),
+                'ollama'    => $this->ollamaNativeUsable()
+                                 ? $this->jsonOllama($system, $question, $schema, $maxTok)
+                                 : $this->jsonOpenAI($system, $question, $schema, $maxTok),
+                default     => $this->jsonOpenAI($system, $question, $schema, $maxTok),
+            };
+        } catch (\Throwable $e) {
+            error_log('[Larka][assistant] LLM json: ' . $e->getMessage());
+            $r = ['_error' => 'Erreur interne du client IA : ' . $e->getMessage()];
+        }
+        $r += ['text' => '', 'usage' => []];
+        if (!isset($r['data'])) $r['data'] = isset($r['_error']) ? null : self::extraireJson((string)$r['text']);
+        $r['usage']['ms'] = (int)round((microtime(true) - $t0) * 1000);
+        return $r;
+    }
+
+    /** JSON d'une réponse texte, même entouré de balises ou de texte (petits modèles). */
+    public static function extraireJson(string $t): ?array
+    {
+        $t = trim(self::stripThink($t));
+        $t = preg_replace('/^```(?:json)?\s*|\s*```$/i', '', $t);
+        $d = json_decode($t, true);
+        if (is_array($d)) return $d;
+        if (preg_match('/\{(?:[^{}]|(?R))*\}/s', $t, $m)) {
+            $d = json_decode($m[0], true);
+            if (is_array($d)) return $d;
+        }
+        return null;
+    }
+
+    private function jsonOllama(string $system, string $question, array $schema, int $maxTok): array
+    {
+        $url = self::ollamaNativeUrl($this->c['url']);
+        $options = ['num_predict' => $maxTok, 'temperature' => 0, 'top_k' => 1, 'seed' => (int)($this->c['seed'] ?? 42)];
+        if ((int)$this->c['num_ctx'] > 0) $options['num_ctx'] = (int)$this->c['num_ctx'];
+        if ((int)$this->c['num_thread'] > 0) $options['num_thread'] = (int)$this->c['num_thread'];
+        $p = ['model' => $this->c['model'], 'stream' => false, 'keep_alive' => $this->c['keep_alive'],
+              'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $question]],
+              'format' => $schema, 'options' => $options,
+              // Pas de réflexion pour remplir un formulaire : c'est du temps CPU pour rien.
+              'think' => false];
+        $p = $this->applyLearned($p);
+        for ($try = 0; $try < 4; $try++) {
+            $res = $this->http($url, $p, ['Content-Type: application/json'], null);
+            if (isset($res['_error'])) {
+                $e = $res['_error'];
+                if ($res['http'] === 404 && preg_match('/model .* not found|try pulling/i', $e)) {
+                    return ['_error' => "Modèle « {$this->c['model']} » introuvable dans Ollama."];
+                }
+                // Ollama ancien : pas de schéma → « json » simple, puis rien.
+                if (isset($p['format']) && is_array($p['format']) && preg_match('/format|schema/i', $e)) { $p['format'] = 'json'; continue; }
+                if (isset($p['format']) && preg_match('/format/i', $e)) { unset($p['format']); continue; }
+                if ($res['http'] >= 400 && $res['http'] < 500 && ($p2 = $this->unlearnParam($p, $e)) !== null) { $p = $p2; continue; }
+                return ['_error' => $e];
+            }
+            $o = $res['data'];
+            $ev = (int)($o['eval_count'] ?? 0);
+            return ['text' => (string)($o['message']['content'] ?? ''), 'usage' => array_filter([
+                'in' => (int)($o['prompt_eval_count'] ?? 0) ?: null, 'out' => $ev ?: null,
+                'tok_s' => (!empty($o['eval_duration']) && $ev) ? round($ev / ($o['eval_duration'] / 1e9), 1) : null,
+            ], fn($v) => $v !== null)];
+        }
+        return ['_error' => 'Paramètres refusés par Ollama.'];
+    }
+
+    private function jsonOpenAI(string $system, string $question, array $schema, int $maxTok): array
+    {
+        $f = $this->c['fournisseur'];
+        $url = $f === 'ollama' ? self::ollamaV1Url($this->c['url']) : $this->c['url'];
+        $isOpenAI = $f === 'openai';
+        $reasoning = $isOpenAI && preg_match('/^(o\d|gpt-5)/i', $this->c['model']);
+        $p = ['model' => $this->c['model'],
+              'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $question]],
+              'response_format' => ['type' => 'json_schema', 'json_schema' => ['name' => 'comprehension', 'strict' => true, 'schema' => $schema]]];
+        $p[$isOpenAI ? 'max_completion_tokens' : 'max_tokens'] = $reasoning ? max(1024, $maxTok) : $maxTok;
+        if (!$reasoning) $p['temperature'] = 0;
+        $seed = $this->c['seed'] ?? 42;
+        $p[$f === 'mistral' ? 'random_seed' : 'seed'] = (int)$seed;
+        if ($f === 'local') $p['cache_prompt'] = true;
+        $headers = ['Content-Type: application/json'];
+        if ($this->c['key'] !== '') $headers[] = 'Authorization: Bearer ' . $this->c['key'];
+        $p = $this->applyLearned($p);
+        for ($try = 0; $try < 4; $try++) {
+            $res = $this->http($url, $p, $headers, null);
+            if (isset($res['_error'])) {
+                $e = $res['_error'];
+                if ($res['http'] >= 400 && $res['http'] < 500 && isset($p['response_format']) && preg_match('/response_format|json_schema|schema|format/i', $e)) {
+                    if (($p['response_format']['type'] ?? '') === 'json_schema') { $p['response_format'] = ['type' => 'json_object']; continue; }
+                    unset($p['response_format']); continue;
+                }
+                if ($res['http'] >= 400 && $res['http'] < 500 && ($p2 = $this->unlearnParam($p, $e)) !== null) { $p = $p2; continue; }
+                return ['_error' => $e];
+            }
+            $d = $res['data'];
+            return ['text' => (string)($d['choices'][0]['message']['content'] ?? ''), 'usage' => self::usageOpenAI($d['usage'] ?? [])];
+        }
+        return ['_error' => 'Paramètres refusés par le fournisseur.'];
+    }
+
+    private function jsonAnthropic(string $system, string $question, array $schema, int $maxTok): array
+    {
+        $p = ['model' => $this->c['model'], 'max_tokens' => $maxTok, 'temperature' => 0, 'system' => $system,
+              'messages' => [['role' => 'user', 'content' => $question]],
+              'tools' => [['name' => 'comprehension', 'description' => 'Structure de la question.', 'input_schema' => $schema]],
+              'tool_choice' => ['type' => 'tool', 'name' => 'comprehension']];
+        $headers = ['Content-Type: application/json', 'x-api-key: ' . $this->c['key'], 'anthropic-version: 2023-06-01'];
+        $p = $this->applyLearned($p);
+        for ($try = 0; $try < 3; $try++) {
+            $res = $this->http($this->c['url'], $p, $headers, null);
+            if (isset($res['_error'])) {
+                if ($res['http'] === 400 && ($p2 = $this->unlearnParam($p, $res['_error'])) !== null) { $p = $p2; continue; }
+                return ['_error' => $res['_error']];
+            }
+            foreach ($res['data']['content'] ?? [] as $b) {
+                if (($b['type'] ?? '') === 'tool_use') return ['data' => (array)($b['input'] ?? []), 'text' => json_encode($b['input'] ?? [], JSON_UNESCAPED_UNICODE),
+                    'usage' => ['in' => $res['data']['usage']['input_tokens'] ?? null, 'out' => $res['data']['usage']['output_tokens'] ?? null]];
+            }
+            $txt = '';
+            foreach ($res['data']['content'] ?? [] as $b) if (($b['type'] ?? '') === 'text') $txt .= $b['text'];
+            return ['text' => $txt];
+        }
+        return ['_error' => 'Paramètres refusés par Anthropic.'];
+    }
+
+    private function jsonGemini(string $system, string $question, array $schema, int $maxTok): array
+    {
+        $model = preg_replace('#^models/#', '', $this->c['model']);
+        $url = self::geminiBase($this->c['url']) . '/models/' . rawurlencode($model) . ':generateContent';
+        // Le schéma de Gemini (sous-ensemble OpenAPI) ignore additionalProperties et maxLength.
+        $nettoie = function ($s) use (&$nettoie) {
+            if (!is_array($s)) return $s;
+            unset($s['additionalProperties'], $s['maxLength']);
+            foreach ($s as $k => $v) if (is_array($v)) $s[$k] = $nettoie($v);
+            return $s;
+        };
+        $gen = ['maxOutputTokens' => max(256, $maxTok), 'temperature' => 0, 'responseMimeType' => 'application/json', 'responseSchema' => $nettoie($schema)];
+        $thinking = $this->geminiThinking($model);
+        if ($thinking) $gen['thinkingConfig'] = $thinking;
+        $p = ['contents' => [['role' => 'user', 'parts' => [['text' => $question]]]], 'generationConfig' => $gen,
+              'systemInstruction' => ['parts' => [['text' => $system]]]];
+        $headers = ['Content-Type: application/json', 'x-goog-api-key: ' . $this->c['key']];
+        for ($try = 0; $try < 3; $try++) {
+            $res = $this->http($url, $p, $headers, null);
+            if (isset($res['_error'])) {
+                $e = $res['_error'];
+                if ($res['http'] === 400 && isset($p['generationConfig']['thinkingConfig']) && stripos($e, 'think') !== false) { unset($p['generationConfig']['thinkingConfig']); continue; }
+                if ($res['http'] === 400 && isset($p['generationConfig']['responseSchema'])) { unset($p['generationConfig']['responseSchema']); continue; }
+                return ['_error' => $e];
+            }
+            $txt = '';
+            foreach ($res['data']['candidates'][0]['content']['parts'] ?? [] as $part) if (isset($part['text']) && empty($part['thought'])) $txt .= $part['text'];
+            return ['text' => $txt];
+        }
+        return ['_error' => 'Paramètres refusés par Gemini.'];
     }
 
     /**

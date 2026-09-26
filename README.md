@@ -6,7 +6,7 @@
 Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans build, installable en PWA.
 **Extensible par des modules qui ne contiennent aucun code.**
 
-[![Version](https://img.shields.io/badge/version-2.0.0%20(V2)-0a1628.svg)](Documentations/)
+[![Version](https://img.shields.io/badge/version-2.0.1%20(V2)-0a1628.svg)](Documentations/)
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir%20le%20projet-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chipsoreo)
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
@@ -59,18 +59,52 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-Cette livraison est la **version 2.0.0 — V.Beta 2.0.0**. Elle ajoute à la V1 une couche
-d'extension complète : des **modules déclaratifs**, qui étendent l'application
-sans y exécuter la moindre ligne de code tiers.
+Cette livraison est la **version 2.0.1 — V.Beta 2.0.1** : des **ajustements de l'assistant IA et de
+son système** (voir ci-dessous). La 2.0.0 ajoutait à la V1 une couche d'extension complète : des
+**modules déclaratifs**, qui étendent l'application sans y exécuter la moindre ligne de code tiers.
 
 | Élément | Valeur | Où |
 |---|---|---|
-| Version applicative | `2.0.0` | `version.json` — source unique, lue par `api/Version.php` |
-| Libellé affiché | `V.Beta 2.0.0` | `LARKA_VERSION_LABEL`, bas de la page de connexion |
-| Service Worker | `2.0.0` | `SW_VERSION` (`sw.js`) |
-| Manifeste PWA | `2.0.0` | `manifest.webmanifest` |
+| Version applicative | `2.0.1` | `version.json` — source unique, lue par `api/Version.php` |
+| Libellé affiché | `V.Beta 2.0.1` | `LARKA_VERSION_LABEL`, bas de la page de connexion |
+| Service Worker | `2.0.1` | `SW_VERSION` (`sw.js`) |
+| Manifeste PWA | `2.0.1` | `manifest.webmanifest` |
 | Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.3`) |
 | Documentation | manuels v2.0 | `Documentations/` |
+
+### 📝 Notes de version — V.Beta 2.0.1 · ajustements de l'assistant IA et de son système
+
+**Assistant**
+
+- **Même question, même réponse, quel que soit le modèle** (0,6B, 1B, 3B, 7B…, local ou distant, et même sans
+  modèle joignable). Nouveau mode **fiable**, par défaut : le moteur Larka comprend la question (fautes,
+  abréviations, langage parlé, suites de conversation), fait les recherches et rédige la réponse lui-même, en
+  quelques millisecondes. Le modèle n'est plus consulté pour les questions comprises.
+- **Recours au modèle facultatif** (`assistant.interpretation_ia = auto`, désactivé par défaut) : pour les seules
+  questions que le moteur ne comprend pas, le modèle les reformule dans un formulaire JSON contraint
+  (température 0, graine fixe) que le moteur vérifie ; il ne rédige jamais la réponse. À réserver aux modèles ≥ 7B.
+- L'ancien fonctionnement reste disponible : `assistant.mode = agent`. Les deux réglages sont dans
+  *Configuration → Assistant IA*.
+- Questions nouvellement comprises : dates relatives et explicites (« demain », « mercredi », « la semaine
+  prochaine », « le 15/10 », « en novembre »), « où est le bureau 204 ? », plan d'un étage, demandes d'une
+  personne, alertes d'un bâtiment, « quand a eu lieu la dernière intervention sur… ».
+- Côté demandeur : titre, catégorie, urgence, bâtiment, étage et bureau déduits du message ; urgences
+  graduées (fuite → Haute, personne bloquée dans l'ascenseur ou étincelles → Urgente).
+- Nouvelle épreuve `outils/epreuves/test-assistant.php` (base SQLite jetable, aucun modèle requis), lancée par
+  `./start.sh epreuves` et avant chaque `./start.sh prod`.
+
+**Corrections**
+
+- L'assistant ne trouvait **jamais** une archive : la recherche interrogeait des colonnes inexistantes
+  (`Numero`, `Intitule`) et l'erreur était avalée.
+- L'urgence proposée par l'assistant (« Élevée », « Faible ») était perdue en ouvrant le formulaire de demande,
+  qui attend Basse / Normale / Haute / Urgente ; « Batiment A » ne sélectionnait pas « Bâtiment A ».
+- Recherches de l'assistant insensibles aux accents, y compris sous SQLite (« chaudiere » trouve « Chaudière »,
+  « plombiere » trouve la plombière de l'annuaire) ; un mot se compare au début des mots (« eau » ne ramène plus
+  les bureaux, tableaux et réseaux).
+- La connexion pouvait rester bloquée sur la roue d'attente : selon l'instant où le navigateur dessinait la
+  première image, l'animation de transition calculait un rayon négatif, levait une exception et n'ouvrait jamais
+  l'application.
 
 ### 📝 Notes de version — V.Beta 2.0.0
 
@@ -544,6 +578,28 @@ L'assistant répond en langage naturel sur les données du tenant. Il n'accède 
 il passe par un catalogue d'outils exécutés côté serveur (`search`, `compter`, `get_fiche`, `qui_est`,
 `localiser`, `alertes`, `module`, `search_sharepoint`…), **avec les droits de l'utilisateur connecté**.
 
+**Même question, même réponse, quel que soit le modèle.** En mode **fiable** (défaut), c'est le moteur Larka
+qui comprend la question, fait les recherches et rédige la réponse à partir de gabarits — liens vers les fiches et
+les plans compris. Le modèle n'est **pas consulté** : un 0,6B, un 1B, un 7B ou un modèle distant donnent
+exactement le même texte, en quelques millisecondes, même si le moteur local est arrêté.
+
+| Réglage (`config.json` ou *Configuration → Assistant IA*) | Valeurs | Effet |
+|---|---|---|
+| `assistant.mode` — *Mode de réponse* | `fiable` (défaut) · `agent` | `agent` : l'ancien fonctionnement, le modèle choisit ses recherches et rédige ; la réponse dépend alors du modèle. |
+| `assistant.interpretation_ia` — *Recours au modèle* | `off` (défaut) · `auto` | En mode fiable, `auto` laisse le modèle **reformuler** les seules questions que le moteur ne comprend pas, dans un formulaire JSON contraint (température 0, graine fixe) que le moteur vérifie. Il ne rédige jamais la réponse. C'est le seul cas où la taille du modèle compte : réservez-le aux modèles ≥ 7B. |
+
+Ce que le moteur comprend, par exemple : « où est l'extincteur 2 du centre technique ? », « cb de clims au bat B »,
+« interventions en retard », « quand expire le contrat Otis ? », « qu'est-ce qui est prévu mercredi ? »,
+« interventions prévues en novembre », « où est le bureau 204 ? », « les demandes de Paul Durand », « qui est
+Sophie Martin ? », les suites de conversation (« et au bâtiment B ? », « le 2e », « où est-il ? ») et le langage
+parlé (« le truc qui chauffe l'eau au RDC »). Côté demandeur, il prépare la demande (titre, catégorie, urgence,
+bâtiment, étage, bureau) et suit les demandes en cours.
+
+La garantie est vérifiée par `php outils/epreuves/test-assistant.php` : plus de 120 questions rejouées avec des modèles
+simulés (parfait, médiocre, aberrant, injoignable) et, avec `LARKA_EPREUVE_OLLAMA=<modèle>`, un vrai modèle
+Ollama — réponses identiques à l'octet près, aucun élément inventé. L'épreuve tourne aussi avant chaque
+`./start.sh prod`.
+
 | Mode | Fournisseurs | Sortie de données | Clé d'API |
 |---|---|---|---|
 | **Local** _(recommandé)_ | Ollama, LM Studio, llama.cpp | **Aucune** — tout reste sur le serveur | non requise |
@@ -551,6 +607,8 @@ il passe par un catalogue d'outils exécutés côté serveur (`search`, `compter
 
 Modèles par défaut (champ « Modèle » vide) : les plus rapides et économiques de chaque fournisseur —
 `claude-haiku-4-5`, `gpt-4o-mini`, `mistral-small-latest`, `gemini-3.1-flash-lite`, `ministral-3:3b` (Ollama).
+En mode fiable sans recours au modèle, ce choix est sans effet sur les réponses ; les paragraphes qui suivent
+(cache, pré-recherche, préchauffage) concernent le mode agent et le recours au modèle.
 
 **Rapidité et coût.** Le prompt système et la liste d'outils sont **identiques d'une question à l'autre** : Ollama
 les garde en cache KV (une question ne coûte que ses propres tokens), et les API distantes les facturent au tarif
@@ -591,7 +649,7 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ## ⬆️ Mises à jour
 
-La version installée est dans `version.json` (affichée sur la page de connexion : « V.Beta 2.0.0 »).
+La version installée est dans `version.json` (affichée sur la page de connexion : « V.Beta 2.0.1 »).
 
 **Détection automatique, installation validée.** Larka vérifie la source des versions (GitHub Releases de
 `mises_a_jour.depot`, ou un manifeste `latest.json`) au plus toutes les 12 h. Quand une version plus récente existe,
@@ -661,7 +719,7 @@ Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 larka/
 ├── index.html              Coquille SPA / PWA (porte le ?v= des assets)
 ├── manifest.webmanifest    Métadonnées PWA
-├── sw.js                   Service Worker (push) — v2.0.0
+├── sw.js                   Service Worker (push) — v2.0.1
 ├── router.php              Routeur du serveur PHP intégré (dev / autonome)
 ├── start.sh  Makefile      Lanceur unifié + raccourcis
 ├── .env.example            Modèle de secrets      config.example.json  Modèle de config
@@ -676,6 +734,8 @@ larka/
 │   ├── UrgencesAcl.php     ACL des procédures d'urgence
 │   ├── Journal.php         Journal d'activité métier
 │   ├── AssistantTools.php  Outils de l'assistant IA
+│   ├── Assistant*.php      Moteur « fiable » : Langue, Comprehension, Moteur, Demandeur,
+│   │                       Interprete (recours au modèle, contraint), Fiable (enchaînement), LLM
 │   ├── routes/             23 modules (auth, inventaire, maintenance, urgences, assistant, …)
 │   └── extensions/         Couche des modules déclaratifs
 │       ├── Registre.php    Installation, activation, rôles accordés, exécution
@@ -693,7 +753,7 @@ larka/
 ├── extensions/             Modules livrés : modules/ · themes/ · langues/ · config/
 ├── outils/                 Développement uniquement — NON déployé
 │   ├── verifier-module.php Valide une déclaration contre le schéma du serveur
-│   ├── epreuves/           11 suites, 456 contrôles (voir epreuves/README.md)
+│   ├── epreuves/           12 suites, ~1 600 contrôles (voir epreuves/README.md)
 │   ├── langues/            Extraction et vérification des traductions
 │   └── maintenance/        Outils ponctuels
 ├── deploy/                 install.sh · nginx.conf · php-fpm-gmao.conf · gmao.service

@@ -20,6 +20,15 @@
 # Vérifier la quantization au passage : `ollama show` doit indiquer Q4_K_M (ou Q4_*).
 # Si c'est Q8_0 ou F16, l'inférence CPU est ~2× plus lente pour rien → re-tirer
 # le modèle en Q4 et adapter le FROM.
+#
+# MODE « FIABLE » (défaut depuis la v4 de l'assistant) : le moteur Larka répond
+# seul — même question, même réponse, quel que soit le modèle. Le modèle n'est
+# appelé que si assistant.interpretation_ia = auto, et seulement pour reformuler
+# une question que le moteur n'a pas comprise ; Larka impose alors lui-même
+# temperature 0, top_k 1, seed 42 et un schéma JSON (format), quels que soient
+# les PARAMETER ci-dessous. Ce Modelfile ne règle donc que le mode « agent ».
+# Pour ce second recours, préférez un modèle ≥ 7B : un 1B reformule de travers
+# (Larka écarte ses erreurs, mais n'en tire alors rien).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 FROM ministral-3:3b

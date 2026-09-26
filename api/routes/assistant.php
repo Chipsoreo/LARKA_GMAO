@@ -8,8 +8,27 @@
 // prior written permission is prohibited. See the LICENSE file for details.
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * Larka — Routes : Assistant IA (v3 : rapide et sobre)
+ * Larka — Routes : Assistant IA (v4 : même question, même réponse)
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * DEUX MODES (réglage assistant.mode)
+ *
+ *   fiable (défaut) — LE MOTEUR LARKA RÉPOND, le modèle ne fait que dépanner.
+ *     La question est comprise par des règles (AssistantComprehension), les
+ *     recherches sont faites par le moteur (AssistantMoteur / AssistantDemandeur)
+ *     et la réponse est rédigée à partir de gabarits, liens exacts compris.
+ *     → même question = même réponse, que le modèle fasse 0,6B, 1B, 3B, 7B ou
+ *       70B, local ou distant — et même sans modèle joignable ;
+ *     → réponse en quelques dizaines de millisecondes, sans CPU d'inférence.
+ *     Par défaut le modèle n'est PAS appelé. En option (assistant.interpretation_ia
+ *     = auto), il sert de SECOND RECOURS quand le moteur ne trouve rien : il
+ *     remplit un formulaire JSON contraint que le moteur vérifie avant de s'en
+ *     servir (AssistantInterprete). Il ne rédige jamais la réponse. C'est le
+ *     seul cas où la taille du modèle compte — à réserver aux modèles ≥ 7B.
+ *
+ *   agent — l'ancien fonctionnement : le modèle choisit ses outils et rédige.
+ *     Plus souple sur les questions inhabituelles avec un grand modèle, mais le
+ *     résultat dépend du modèle (un 1B et un 7B ne répondent pas pareil).
  *
  * Actions :
  *   assistant_status  (GET)   état + réglages utiles au client
@@ -49,6 +68,7 @@
 
 require_once __DIR__ . '/../AssistantTools.php';
 require_once __DIR__ . '/../AssistantLLM.php';
+require_once __DIR__ . '/../AssistantFiable.php';
 
 /** Fournisseurs connus : URL et modèle par défaut, hôtes autorisés (anti-SSRF). */
 function _assistantProviders(): array {
@@ -70,6 +90,22 @@ function _acfg(string $key, mixed $default = null): mixed {
     return ($v === null || $v === '') ? $default : $v;
 }
 
+/** Mode de réponse : « fiable » (moteur Larka, défaut) ou « agent » (le modèle pilote). */
+function _assistantMode(): string {
+    return strtolower((string)_acfg('mode', 'fiable')) === 'agent' ? 'agent' : 'fiable';
+}
+
+/**
+ * Le modèle peut-il être appelé en second recours (mode fiable) ?
+ * NON par défaut : c'est le seul endroit où la taille du modèle changerait la
+ * réponse (un 1B reformule de travers là où un 7B réussit). Activé (« auto »),
+ * il ne sert qu'aux questions que le moteur ne comprend pas.
+ */
+function _assistantInterpretation(): bool {
+    $v = strtolower((string)_acfg('interpretation_ia', 'off'));
+    return in_array($v, ['auto', 'on', 'oui', 'true', '1'], true);
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ── Routes ──
 // ═════════════════════════════════════════════════════════════════════════════
@@ -81,13 +117,17 @@ if ($action === 'assistant_status') {
     $local = in_array($f, AssistantLLM::LOCAL, true);
     $keyOk = $local || strlen((string)_acfg('api_key', '')) > 5;
     $timeout = _assistantTimeout($local);
+    $mode = _assistantMode();
     json_ok([
-        'actif'       => $actif && $keyOk,
+        // En mode fiable le moteur répond seul : pas de clé, pas d'assistant muet.
+        'actif'       => $actif && ($keyOk || $mode === 'fiable'),
         'fournisseur' => $f,
         'local'       => $local,
+        'mode'        => $mode,
         // Le client attend un peu plus que le serveur (streaming : ×1,5 côté cURL).
         'timeout_ms'  => (int)(($timeout * 1.5 + 15) * 1000),
-        'prechauffage'=> $local && (bool)_acfg('prechauffage', true),
+        // Préchauffer ne sert qu'au modèle : en mode fiable, seulement s'il peut être appelé.
+        'prechauffage'=> $local && (bool)_acfg('prechauffage', true) && ($mode === 'agent' || _assistantInterpretation()),
     ]);
 }
 
@@ -156,9 +196,23 @@ if ($action === 'assistant_warmup') {
         json_ok(['skipped' => 'non_local']);
     }
     check_rate_limit('assistant_warmup_' . ($user['Id'] ?? 0), 10, 300);
+    if (_assistantMode() === 'fiable' && !_assistantInterpretation()) json_ok(['skipped' => 'moteur_seul']);
     $ctx = _assistantSetup(true);
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
     ignore_user_abort(true);   // le préchauffage sert même si l'onglet se ferme
+
+    // Mode fiable : on charge le modèle et le prompt FIXE de l'interprète.
+    if ($ctx['mode'] === 'fiable') {
+        $prompt = $ctx['isDemandeur'] ? AssistantInterprete::PROMPT_DEMANDEUR : AssistantInterprete::PROMPT_GESTIONNAIRE;
+        $schema = $ctx['isDemandeur'] ? AssistantInterprete::schemaDemandeur() : AssistantInterprete::schemaGestionnaire();
+        $dir = __DIR__ . '/../../data/cache_assistant';
+        if (!is_dir($dir)) @mkdir($dir, 0770, true);
+        $stamp = $dir . '/warmup_' . md5($ctx['llm']->model() . '|' . $prompt) . '.stamp';
+        if (is_file($stamp) && time() - filemtime($stamp) < 60) json_ok(['skipped' => 'recent']);
+        @touch($stamp);
+        $r = $ctx['llm']->json($prompt, 'Q : ok', $schema, ['max_tokens' => 1]);
+        json_ok(['ok' => empty($r['_error']), 'erreur' => $r['_error'] ?? null, 'usage' => $r['usage'] ?? []]);
+    }
 
     // Un seul préchauffage par préfixe et par minute (plusieurs onglets, F5…).
     $sig = md5($ctx['llm']->model() . '|' . $ctx['system'] . '|' . json_encode($ctx['tools']->getOpenAISchema()));
@@ -211,7 +265,10 @@ function _assistantSetup(bool $warmup = false): array {
     $apiKey = (string)_acfg('api_key', '');
     $model  = trim((string)_acfg('model', '')) ?: $providers[$f]['model'];
     $apiUrl = trim((string)_acfg('api_url', '')) ?: $providers[$f]['url'];
-    if (!$local && strlen($apiKey) < 5) json_error("Clé API non configurée pour \"$f\".", 400);
+    $mode = _assistantMode();
+    // Mode fiable : le moteur répond sans modèle. Sans clé, le second recours est simplement coupé.
+    $llmDispo = $local || strlen($apiKey) >= 5;
+    if (!$llmDispo && $mode === 'agent') json_error("Clé API non configurée pour \"$f\".", 400);
 
     // ── Anti-SSRF : hôte autorisé + HTTPS pour le distant, réseau privé pour le local.
     $u = parse_url($apiUrl);
@@ -239,7 +296,8 @@ function _assistantSetup(bool $warmup = false): array {
         // Réponses de 1 à 5 lignes : 512 tokens suffisent en local et bornent
         // la durée d'un tour sur CPU (~12-25 tok/s pour un 3B).
         'max_tokens'      => (int)($local ? _acfg('max_tokens_local', 512) : _acfg('max_tokens', 1024)),
-        'temperature'     => is_numeric($temp) ? (float)$temp : 0.2,
+        // 0 en local : un même modèle répond toujours la même chose (mode agent).
+        'temperature'     => is_numeric($temp) ? (float)$temp : ($local ? 0.0 : 0.2),
         'temperature_explicite' => is_numeric($temp),
         'top_p'           => is_numeric(_acfg('top_p')) ? (float)_acfg('top_p') : 0.9,
         'seed'            => is_numeric(_acfg('seed')) ? (int)_acfg('seed') : null,
@@ -274,11 +332,24 @@ function _assistantSetup(bool $warmup = false): array {
         'ext_actif'      => !$isDemandeur && $extActif && in_array($role, ['Gestionnaire', 'Admin'], true),
         'modules_disponibles' => in_array($role, ['Gestionnaire', 'Admin'], true) ? $dispo : null,
     ]);
+    // Outils du moteur : réglages FIXES, indépendants du fournisseur. Un réglage
+    // « local = 6 résultats, distant = 12 » donnerait deux réponses différentes
+    // à la même question selon le modèle — exactement ce qu'on veut éviter.
+    $toolsMoteur = new AssistantTools($db, $isDemandeur ? null : $msToken, [
+        'user'           => $user,
+        'max_resultats'  => (int)_acfg('max_resultats', 10),
+        'max_chars'      => 160,
+        'max_tool_chars' => 14000,
+        'modules'        => $isDemandeur ? [] : $modules,
+        'ext_actif'      => !$isDemandeur && $extActif && in_array($role, ['Gestionnaire', 'Admin'], true),
+        'modules_disponibles' => in_array($role, ['Gestionnaire', 'Admin'], true) ? $dispo : null,
+    ]);
 
     $userName = trim(($user['Prenom'] ?? '') . ' ' . ($user['Nom'] ?? ''));
-    $system = $isDemandeur
-        ? _promptDemandeur($db, $user, $userName, $modules)
-        : _promptGestionnaire($tools);
+    // Le prompt du mode agent n'est construit que s'il sert (il interroge la base).
+    $system = $mode === 'agent'
+        ? ($isDemandeur ? _promptDemandeur($db, $user, $userName, $modules) : _promptGestionnaire($tools))
+        : '';
 
     // Historique : peu de messages, et tronqués — un long échange passé coûte
     // autant à retraiter qu'un prompt entier.
@@ -301,7 +372,8 @@ function _assistantSetup(bool $warmup = false): array {
         'messages' => $messages, 'question' => $question, 'history' => $history,
         'isDemandeur' => $isDemandeur, 'intents' => _assistantIntents($question),
         'useTools' => !$isDemandeur && !_assistantNoTools($f, $model),
-        'local' => $local,
+        'local' => $local, 'mode' => $mode, 'modules' => $modules, 'toolsMoteur' => $toolsMoteur,
+        'llmDispo' => $llmDispo,
     ];
 }
 
@@ -497,7 +569,7 @@ Dès que l'utilisateur décrit un problème ou un besoin, ou te demande de faire
 2. Écris une phrase naturelle (« Je te prépare la demande, tu n'auras plus qu'à vérifier. »),
 3. puis le jeton, seul sur la dernière ligne :
    Technique : [ACTION:nouvelle_demande|type=Technique|titre=…|description=…|batiment=…|bureau=…|categorie=…|urgence=…]
-     batiment et categorie pris dans le CONTEXTE (ou vides) ; urgence = Faible, Normale, Élevée ou Urgente (Normale par défaut).
+     batiment et categorie pris dans le CONTEXTE (ou vides) ; urgence = Basse, Normale, Haute ou Urgente (Normale par défaut).
    Archivage : [ACTION:nouvelle_demande|type=Archive|prestation=Archivage|description=…|nb_dossiers=…|service=…|periode=…]
    Désarchivage : [ACTION:nouvelle_demande|type=Archive|prestation=Desarchivage|description=…|dossiers=DOS-1,DOS-2|date_solde=AAAA-MM-JJ]
 Format strict : champs séparés par |, clé=valeur, ni retour à la ligne, ni guillemets, ni | ou = dans les valeurs. « Desarchivage » sans accent.
@@ -509,7 +581,7 @@ EXEMPLES
 [ACTION:nouvelle_demande|type=Technique|titre=Poignée défectueuse|description=Problème de poignée (porte ou fenêtre) au bureau 235, 2e étage.|batiment=|bureau=Bureau 235, 2e étage|categorie=|urgence=Normale]
 « La centrale SSI bipe sans cesse dans le bâtiment Test »
 → Je te prépare la demande, tu n'auras plus qu'à la vérifier.
-[ACTION:nouvelle_demande|type=Technique|titre=Centrale SSI en alarme continue|description=La centrale SSI émet un bip continu dans le bâtiment Test.|batiment=Test|bureau=|categorie=Sécurité incendie|urgence=Élevée]
+[ACTION:nouvelle_demande|type=Technique|titre=Centrale SSI en alarme continue|description=La centrale SSI émet un bip continu dans le bâtiment Test.|batiment=Test|bureau=|categorie=Sécurité incendie|urgence=Haute]
 « Il faut archiver une cinquantaine de dossiers RH de 2018 à 2023 »
 → C'est noté, je te prépare la demande d'archivage.
 [ACTION:nouvelle_demande|type=Archive|prestation=Archivage|description=Archivage d'une cinquantaine de dossiers RH 2018-2023.|nb_dossiers=50|service=Ressources Humaines|periode=2018-2023]
@@ -523,74 +595,45 @@ EXEMPLES
 PROMPT;
 
     // ── Contexte (variable) ─────────────────────────────────────────────
-    $q = function (string $sql, array $params = []) use ($db): array {
-        try { return $db->fetchAll($sql, $params); } catch (\Throwable $_) { return []; }
-    };
-    $services  = array_column($q("SELECT DISTINCT Service FROM Utilisateurs WHERE Actif = 1 AND Service IS NOT NULL AND Service != '' ORDER BY Service LIMIT 30"), 'Service');
-    $categories = array_column($q("SELECT DISTINCT Categorie FROM DemandesIntervention WHERE Categorie IS NOT NULL AND Categorie != '' ORDER BY Categorie LIMIT 30"), 'Categorie');
-    $batiments = array_column($q("SELECT DISTINCT Valeur FROM ListesReferences WHERE Categorie = 'Batiment' AND Valeur IS NOT NULL AND Valeur != '' ORDER BY Valeur LIMIT 30"), 'Valeur');
-    if (count($batiments) < 30) {
-        foreach ($q("SELECT DISTINCT Batiment FROM DemandesIntervention WHERE Batiment IS NOT NULL AND Batiment != '' ORDER BY Batiment LIMIT 30") as $r) {
-            if (!in_array($r['Batiment'], $batiments, true)) $batiments[] = $r['Batiment'];
-        }
-    }
+    // Même source que le moteur (AssistantDemandeur::contexte) : bâtiments de
+    // référence lus dans Listes (et non dans « ListesReferences », qui n'existe
+    // pas) et catégories de référence enfin incluses.
+    $ctx = AssistantDemandeur::contexte($db, $user, $modules);
+    $fmt = fn(array $a) => $a ? implode(', ', $a) : 'aucun connu';
     $gest = [];
-    foreach ($q("SELECT Prenom, Nom, Poste, Service, Role, Email, Tel, TelMobile, TelPro
-                 FROM Utilisateurs WHERE Actif = 1 AND Role IN ('Gestionnaire','Admin')
-                 ORDER BY Role DESC, Nom LIMIT 20") as $r) {
-        $nom = trim(($r['Prenom'] ?? '') . ' ' . ($r['Nom'] ?? ''));
-        $detail = trim($r['Poste'] ?? '') ?: trim($r['Service'] ?? '') ?: trim($r['Role'] ?? '');
-        $tel = trim($r['TelMobile'] ?? '') ?: trim($r['TelPro'] ?? '') ?: trim($r['Tel'] ?? '');
-        $line = $detail ? "$nom ($detail)" : "$nom [profil incomplet]";
-        $coords = array_filter([$tel ? "📞 $tel" : '', trim($r['Email'] ?? '') ? '✉️ ' . trim($r['Email']) : '']);
+    foreach ($ctx['gestionnaires'] as $g) {
+        $line = $g['nom'] . ($g['detail'] !== '' ? " ({$g['detail']})" : ' [profil incomplet]');
+        $coords = array_filter([$g['tel'] !== '' ? "📞 {$g['tel']}" : '', $g['email'] !== '' ? "✉️ {$g['email']}" : '']);
         if ($coords) $line .= ' — ' . implode(', ', $coords);
         $gest[] = $line;
     }
-    // Relation portée par Interventions.DemandeId ; l'agent est en clair dans
-    // AgentPrenom/AgentNom ; l'échéance utile est DateIntervention.
-    $demandes = $q(
-        "SELECT d.Id, d.Titre, d.Statut, d.Urgence, d.Categorie, d.Batiment, d.DateCreation, d.CommentaireAdmin,
-                i.Numero AS InterventionNumero, i.Statut AS InterventionStatut,
-                i.DateIntervention AS InterventionDate, i.AgentPrenom, i.AgentNom
-         FROM DemandesIntervention d
-         LEFT JOIN Interventions i ON i.DemandeId = d.Id
-         WHERE d.UtilisateurId = :uid
-         ORDER BY d.DateCreation DESC LIMIT 10",
-        ['uid' => (int)($user['Id'] ?? 0)]
-    );
-    $fmt = fn(array $a) => $a ? implode(', ', $a) : 'aucun connu';
-
     $p .= "\n\n═══ CONTEXTE ═══\n"
-        . "• Demandeur : $userName — service : " . (trim($user['Service'] ?? '') ?: '?') . ", poste : " . (trim($user['Poste'] ?? '') ?: '?') . "\n"
-        . "• Services : " . $fmt($services) . "\n"
-        . "• Bâtiments : " . $fmt($batiments) . "\n"
-        . "• Catégories de demande : " . $fmt($categories) . "\n"
-        . "• Urgences : Faible, Normale, Élevée, Urgente\n"
+        . "• Demandeur : $userName — service : " . ($ctx['service'] ?: '?') . ", poste : " . ($ctx['poste'] ?: '?') . "\n"
+        . "• Services : " . $fmt($ctx['services']) . "\n"
+        . "• Bâtiments : " . $fmt(array_keys(array_filter($ctx['batiments'], fn($b) => !empty($b['formulaire']))) ?: array_keys($ctx['batiments'])) . "\n"
+        . "• Catégories de demande : " . $fmt($ctx['categories']) . "\n"
+        . "• Urgences : Basse, Normale, Haute, Urgente\n"
         . "• Gestionnaires (contacts en cas d'urgence) :\n"
         . ($gest ? '  – ' . implode("\n  – ", $gest) : "  – aucun en base : en cas d'urgence, contacter son responsable de service.") . "\n";
-    if ($demandes) {
+    if ($ctx['demandes']) {
         $p .= "• Tes dernières demandes :\n";
-        foreach ($demandes as $d) {
+        foreach ($ctx['demandes'] as $d) {
             $agent = trim(($d['AgentPrenom'] ?? '') . ' ' . ($d['AgentNom'] ?? ''));
             $p .= "  – #{$d['Id']} « " . mb_substr((string)$d['Titre'], 0, 80) . " » — " . ($d['Statut'] ?: '?')
                 . ", urgence " . ($d['Urgence'] ?: '?') . ", " . substr((string)$d['DateCreation'], 0, 10)
                 . ($d['Batiment'] ? ", bât. {$d['Batiment']}" : '')
-                . ($d['InterventionNumero'] ? " | intervention {$d['InterventionNumero']} (" . ($d['InterventionStatut'] ?: '?')
-                    . ($d['InterventionDate'] ? ', prévue ' . substr((string)$d['InterventionDate'], 0, 10) : '')
+                . (!empty($d['InterventionNumero']) ? " | intervention {$d['InterventionNumero']} (" . ($d['InterventionStatut'] ?: '?')
+                    . (!empty($d['InterventionDate']) ? ', prévue ' . substr((string)$d['InterventionDate'], 0, 10) : '')
                     . ($agent ? ", InterventionAgent : $agent" : '') . ')' : '')
-                . ($d['CommentaireAdmin'] ? ' | commentaire : ' . mb_substr((string)$d['CommentaireAdmin'], 0, 120) : '')
+                . (!empty($d['CommentaireAdmin']) ? ' | commentaire : ' . mb_substr((string)$d['CommentaireAdmin'], 0, 120) : '')
                 . "\n";
         }
     } else {
         $p .= "• Tu n'as encore aucune demande enregistrée.\n";
     }
-    if ($modules) {
+    if ($ctx['modules']) {
         $p .= "• Modules complémentaires accessibles :\n";
-        foreach ($modules as $id => $m) {
-            foreach ($m['pages'] as $titre) {
-                if ($titre !== '') $p .= "  – « $titre » (module {$m['nom']}) → [MODULE:$id:$titre]\n";
-            }
-        }
+        foreach ($ctx['modules'] as $m) $p .= "  – « {$m['titre']} » (module {$m['nom']}) → [MODULE:{$m['id']}:{$m['titre']}]\n";
     }
     return $p;
 }
@@ -604,6 +647,7 @@ PROMPT;
  * @return array reply, mode, rounds, tool_calls, usage (+ _aborted)
  */
 function _assistantRun(array $ctx, ?callable $emit): array {
+    if (($ctx['mode'] ?? 'fiable') === 'fiable') return _assistantFiable($ctx, $emit);
     /** @var AssistantLLM $llm */ $llm = $ctx['llm'];
     /** @var AssistantTools $tools */ $tools = $ctx['tools'];
     $system = $ctx['system'];
@@ -739,6 +783,20 @@ function _assistantRun(array $ctx, ?callable $emit): array {
     $out = $finish($text, 'tool_calling', $maxRounds, $log);
     $out['truncated'] = true;
     return $out;
+}
+
+/**
+ * MODE FIABLE : le moteur Larka répond ; le modèle n'est consulté que si le
+ * moteur n'a rien trouvé, pour reformuler la question (jamais pour répondre).
+ * Voir api/AssistantFiable.php.
+ */
+function _assistantFiable(array $ctx, ?callable $emit): array {
+    return AssistantFiable::repondre([
+        'db' => $ctx['db'], 'user' => $ctx['user'], 'modules' => $ctx['modules'], 'tools' => $ctx['toolsMoteur'],
+        'question' => $ctx['question'], 'history' => $ctx['history'], 'demandeur' => $ctx['isDemandeur'],
+        'modele' => $ctx['llm'], 'recours' => _assistantInterpretation() && !empty($ctx['llmDispo']),
+        'emit' => $emit,
+    ]);
 }
 
 /**
