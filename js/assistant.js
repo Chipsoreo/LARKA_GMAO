@@ -247,7 +247,7 @@ function _assistantSetBusyUI(busy) {
 function _assistantOpenModule(id) {
   if (typeof PAGES === 'undefined' || typeof navigate !== 'function') return;
   const cle = Object.keys(PAGES).find(k => PAGES[k] && PAGES[k].extension === id);
-  if (!cle) { if (typeof showToast === 'function') showToast('Module indisponible pour votre profil.', 'warning'); return; }
+  if (!cle) { if (typeof toast === 'function') toast('Module indisponible pour votre profil.', 'warning'); return; }
   if (_assistantOpen) toggleAssistant();
   navigate(cle);
 }

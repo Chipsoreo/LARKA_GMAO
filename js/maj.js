@@ -17,16 +17,20 @@
  *                         une version plus récente existe.
  *   LarkaMaj.ouvrir()     fenêtre : nouveautés, contrôles, bouton Installer.
  *   LarkaMaj.verifier()   vérification manuelle (bouton « Vérifier maintenant »).
+ *   LarkaMaj.panneau(el)  encadré de Configuration → Serveur : version, dernière
+ *                         vérification, résultat, boutons — tout y est affiché.
  *
  * Rien ne s'installe sans clic : le bouton n'est actif qu'une fois la case
  * de confirmation cochée, et le serveur exige la version exacte affichée.
  */
 const LarkaMaj = (() => {
   let _etat = null;
+  let _panneau = null;       // encadré « Version et mises à jour » de Configuration → Serveur
+  let _occupe = false;
   const API = (typeof API_BASE !== 'undefined' ? API_BASE : './api/index.php');
 
   async function appel(action, methode = 'GET', corps = null) {
-    const opts = { method: methode, credentials: 'same-origin', headers: {} };
+    const opts = { method: methode, credentials: 'same-origin', cache: 'no-store', headers: {} };
     if (corps !== null) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(corps); }
     const r = await fetch(`${API}?action=${action}`, opts);
     const j = await r.json().catch(() => ({ success: false, error: `HTTP ${r.status}` }));
@@ -34,6 +38,18 @@ const LarkaMaj = (() => {
     return j.data;
   }
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // L'application affiche ses messages avec toast() (js/ui.js). Ce module appelait
+  // showToast(), qui n'existe pas : « Vérifier maintenant » ne disait RIEN quand
+  // Larka était à jour ou quand la vérification échouait.
+  const message = (texte, type) => {
+    if (typeof toast === 'function') toast(esc(texte), type);
+    else if (type === 'error') alert(texte);
+  };
+  const dateFr = iso => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d) ? String(iso) : d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  };
 
   async function demarrer() {
     try {
@@ -41,22 +57,94 @@ const LarkaMaj = (() => {
       if (!_etat.droits || !_etat.actif) return;
       if (_etat.a_verifier) _etat = await appel('maj_verifier', 'POST', {});
       banniere();
+      rendrePanneau();
     } catch (e) { console.warn('[MAJ]', e.message); }
   }
 
+  /**
+   * Vérification manuelle. Le résultat est TOUJOURS dit : dans l'encadré de la
+   * configuration s'il est affiché, sinon par un message — plus jamais un clic muet.
+   */
   async function verifier() {
+    if (_occupe) return _etat;
+    _occupe = true;
+    rendrePanneau('⏳ Interrogation de la source des versions…');
     try {
       _etat = await appel('maj_verifier', 'POST', {});
+      _occupe = false;
       banniere();
+      rendrePanneau();
       if (_etat.disponible) ouvrir();
-      else if (typeof showToast === 'function') {
-        showToast(_etat.erreur ? `Vérification impossible : ${_etat.erreur}` : `Larka est à jour (${_etat.locale.libelle}).`, _etat.erreur ? 'warning' : 'success');
+      else if (!_panneau || !document.body.contains(_panneau)) {
+        message(_etat.erreur ? `Vérification impossible : ${_etat.erreur}` : `Larka est à jour (${_etat.locale.libelle}).`, _etat.erreur ? 'warning' : 'success');
       }
       return _etat;
     } catch (e) {
-      if (typeof showToast === 'function') showToast('Vérification impossible : ' + e.message, 'error');
-      throw e;
+      _occupe = false;
+      rendrePanneau(null, e.message);
+      if (!_panneau || !document.body.contains(_panneau)) message('Vérification impossible : ' + e.message, 'error');
+      return null;
     }
+  }
+
+  /** Branche l'encadré de la configuration et affiche l'état connu (sans appel réseau vers la source). */
+  async function panneau(el) {
+    if (!el) return;
+    _panneau = el;
+    rendrePanneau('⏳ Lecture de l\'état…');
+    try {
+      _etat = await appel('maj_etat');
+      rendrePanneau();
+    } catch (e) {
+      rendrePanneau(null, e.message);
+    }
+  }
+
+  function rendrePanneau(attente = null, erreurAppel = null) {
+    const el = _panneau;
+    if (!el || !document.body.contains(el)) return;
+    const e = _etat;
+    const bouton = (id, libelle, primaire = false, actif = true) =>
+      `<button class="btn${primaire ? ' btn-primary' : ''}" type="button" id="${id}"${actif ? '' : ' disabled'}>${libelle}</button>`;
+    let etat = '', boutons = '';
+    if (attente) {
+      etat = `<div style="color:var(--gray-text,#64748b)">${esc(attente)}</div>`;
+    } else if (erreurAppel) {
+      etat = `<div style="color:#b91c1c">❌ ${esc(erreurAppel)}</div>`;
+    } else if (e && e.droits === false) {
+      etat = `<div style="color:var(--gray-text,#64748b)">Les mises à jour sont gérées par l'administrateur du serveur.</div>`;
+    } else if (e && !e.actif) {
+      etat = `<div style="color:#b45309">Détection désactivée (<code>mises_a_jour.actif = false</code> dans config.json). « Vérifier maintenant » interroge tout de même la source.</div>`;
+    } else if (e && e.disponible && e.distante) {
+      etat = `<div style="color:#15803d;font-weight:600">🔔 ${esc(e.distante.libelle)} est disponible${e.distante.date ? ' (publiée le ' + esc(e.distante.date) + ')' : ''}.</div>`
+           + (e.erreur ? `<div style="color:#b45309;font-size:12.5px;margin-top:4px">⚠️ La dernière vérification a échoué (${esc(e.erreur)}) : information issue de la vérification précédente.</div>` : '');
+    } else if (e && e.erreur) {
+      etat = `<div style="color:#b45309">⚠️ Dernière vérification en échec : ${esc(e.erreur)}</div>`;
+    } else if (e && e.verifie_le) {
+      etat = `<div style="color:#15803d">✅ Larka est à jour.</div>`;
+    } else if (e) {
+      etat = `<div style="color:var(--gray-text,#64748b)">Aucune vérification pour l'instant.</div>`;
+    }
+    if (e && e.droits !== false && !attente) {
+      const inst = e.installable || { ok: true, raisons: [] };
+      if (e.disponible && !inst.ok) etat += `<div style="color:#b91c1c;font-size:12.5px;margin-top:4px">Installation impossible depuis l'interface : ${esc((inst.raisons || []).join(' '))} — sur le serveur : <code>php api/outils/mise-a-jour.php --installer</code></div>`;
+      if (e.disponible && e.signature_exigee && e.distante && !e.distante.signature) etat += `<div style="color:#b91c1c;font-size:12.5px;margin-top:4px">Cette version n'est pas signée alors qu'une clé publique est configurée : son installation sera refusée.</div>`;
+    }
+    const peut = !!(e && e.droits !== false);
+    boutons = bouton('cfgMajVerifier', _occupe ? '⏳ Vérification…' : 'Vérifier maintenant', !(e && e.disponible), peut && !_occupe)
+            + (e && e.disponible ? bouton('cfgMajVoir', 'Voir et installer ' + esc(e.distante.libelle), true, !_occupe) : '')
+            + bouton('cfgMajHist', 'Historique / restaurer', false, peut && !_occupe);
+    const derniere = e && e.verifie_le ? `Dernière vérification : ${esc(dateFr(e.verifie_le))}` : '';
+    el.innerHTML = `
+      <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px">
+        <span>Version installée : <strong>${esc(e && e.locale ? e.locale.libelle : '…')}</strong></span>
+        <span style="font-size:12px;color:var(--gray-text,#64748b)">${derniere}</span>
+      </div>
+      <div style="margin-bottom:10px;font-size:13.5px">${etat}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${boutons}</div>`;
+    el.querySelector('#cfgMajVerifier')?.addEventListener('click', verifier);
+    el.querySelector('#cfgMajVoir')?.addEventListener('click', ouvrir);
+    el.querySelector('#cfgMajHist')?.addEventListener('click', historique);
   }
 
   function banniere() {
@@ -150,6 +238,7 @@ const LarkaMaj = (() => {
         Sauvegarde : <code>${esc(r.sauvegarde)}</code> · base : ${esc(r.sauvegarde_base)}`;
       const btn = o.querySelector('#larkaMajGo');
       btn.textContent = 'Recharger Larka'; btn.disabled = false; btn.onclick = () => location.reload();
+      try { _etat = await appel('maj_etat'); rendrePanneau(); } catch (_) {}
     } catch (e) {
       delete o.dataset.occupe;
       st.innerHTML = `<span style="color:#b91c1c">❌ ${esc(e.message)}</span>`;
@@ -178,9 +267,10 @@ const LarkaMaj = (() => {
       try {
         const r = await appel('maj_restaurer', 'POST', { id: b.dataset.id });
         st.innerHTML = `✅ ${r.fichiers} fichier(s) restauré(s) — version ${esc(r.version.libelle)}. <a href="#" onclick="location.reload();return false">Recharger</a>`;
+        try { _etat = await appel('maj_etat'); rendrePanneau(); } catch (_) {}
       } catch (e) { st.innerHTML = `<span style="color:#b91c1c">❌ ${esc(e.message)}</span>`; }
     });
   }
 
-  return { demarrer, ouvrir, verifier, historique, etat: () => _etat };
+  return { demarrer, ouvrir, verifier, historique, panneau, etat: () => _etat };
 })();
