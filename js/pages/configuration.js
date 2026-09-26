@@ -643,6 +643,12 @@ async function _loadServeurConfig() {
     _currentDbDriver = (cfg.base_de_donnees || {}).driver || 'sqlite';
     const slot = document.getElementById('cfg-srv-slot');
     if (slot) slot.outerHTML = _renderTabServeur(cfg);
+    // Encadré « Version et mises à jour » : état, vérification et installation affichés sur place.
+    const majEl = document.getElementById('cfgMajPanneau');
+    if (majEl) {
+      if (typeof LarkaMaj !== 'undefined') LarkaMaj.panneau(majEl);
+      else majEl.innerHTML = '<span style="color:#b91c1c">Module de mise à jour non chargé (js/maj.js) — rechargez la page avec Ctrl+Maj+R.</span>';
+    }
 
     // La barre était en « position:sticky; bottom:0 » à la fin du contenu. Or
     // .content porte un padding-bottom de 96 px : l'élément se collait au bas
@@ -1441,12 +1447,9 @@ function _renderTabServeur(cfg) {
         ℹ️ Larka vérifie automatiquement si une nouvelle version est publiée et vous la propose ; rien ne s'installe sans votre validation.
         Les données (base, documents, plans, <code>config.json</code>, <code>.env</code>) ne sont jamais modifiées ; une sauvegarde est faite avant chaque installation.
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <span>Version installée : <strong id="cfgMajVersion">…</strong></span>
-        <button class="btn btn-primary" type="button" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.verifier()">Vérifier maintenant</button>
-        <button class="btn" type="button" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.historique()">Historique / restaurer</button>
-      </div>
-      <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" style="display:none" onload="apiRequest('maj_etat').then(function(e){var el=document.getElementById('cfgMajVersion');if(el)el.textContent=(e.locale&&e.locale.libelle)||'?';}).catch(function(){})">
+      <!-- Rempli par LarkaMaj.panneau() (js/maj.js) une fois l'onglet affiché : version,
+           dernière vérification, résultat et boutons. Tout résultat s'affiche ICI. -->
+      <div id="cfgMajPanneau">Version installée : <strong>…</strong></div>
     </div>
 
     <!-- ── Assistant IA ─────────────────────────────── -->
