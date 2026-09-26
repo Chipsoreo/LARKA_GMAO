@@ -26,6 +26,10 @@ $args = array_slice($argv, 1);
 $maj = new LarkaMiseAJour($racine);
 $affiche = function (array $e) {
     echo "Installée  : {$e['locale']['libelle']}\n";
+    if (!empty($e['php'])) {
+        echo "PHP        : {$e['php']['version']}" . ($e['php']['conseil'] ? " — {$e['php']['conseil']}" : ' (compatible)') . "\n";
+        if (!empty($e['php']['commande'])) echo "             → {$e['php']['commande']}\n";
+    }
     if ($e['erreur']) echo "Erreur     : {$e['erreur']}\n";
     if ($e['disponible']) {
         $d = $e['distante'];

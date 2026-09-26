@@ -28,7 +28,7 @@
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $racine = dirname(__DIR__);
-$opt = getopt('', ['generer-cles', 'version:', 'canal:', 'notes:', 'cle:', 'url-base:', 'sortie:', 'reconstruire']);
+$opt = getopt('', ['generer-cles', 'version:', 'canal:', 'notes:', 'cle:', 'url-base:', 'sortie:', 'reconstruire', 'php-min:']);
 $cleF = $opt['cle'] ?? (getenv('HOME') ?: '.') . '/.larka-publication.key';
 
 if (isset($opt['generer-cles'])) {
@@ -59,7 +59,12 @@ if ($cmp < 0 || ($cmp === 0 && !isset($opt['reconstruire']))) {
         . ($cmp === 0 ? " Pour publier la version en place : --reconstruire\n" : "\n"));
     exit(1);
 }
-file_put_contents($racine . '/version.json', json_encode(['version' => $v, 'canal' => $canal, 'date' => date('Y-m-d')], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n");
+// Version de PHP exigée par CE paquet : écrite dans version.json (vérifiée à l'installation,
+// avant d'écrire quoi que ce soit) et dans les notes (lue dès la détection).
+$phpMin = (string)($opt['php-min'] ?? ($avant['php_min'] ?? '8.1'));
+if (!preg_match('/^\d+\.\d+$/', $phpMin)) { fwrite(STDERR, "--php-min attend X.Y (ex. 8.1)\n"); exit(2); }
+file_put_contents($racine . '/version.json', json_encode(['version' => $v, 'canal' => $canal, 'date' => date('Y-m-d'), 'php_min' => $phpMin], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n");
+if (!preg_match('/\bPHP\s*(?:≥|>=)\s*\d+\.\d+/u', $notes)) $notes = rtrim($notes) . ($notes !== '' ? "\n\n" : '') . "Requiert PHP ≥ $phpMin.";
 $libelle = LarkaVersion::libelle(['version' => $v, 'canal' => $canal]);
 $html = file_get_contents($racine . '/index.html');
 $html = preg_replace('#<span id="loginVersion">[^<]*</span>#', '<span id="loginVersion">' . htmlspecialchars($libelle) . '</span>', $html);
@@ -105,4 +110,4 @@ file_put_contents("$sortie/latest.json", json_encode([
     'zip' => $url, 'sha256' => $sha, 'signature' => $sig,
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n");
 echo "Manifeste : $sortie/latest.json\n\nGitHub :\n  gh release create v$v $zipF $zipF.sha256" . ($sig ? " $zipF.sig" : '')
-   . ($notes !== '' ? " --notes-file " . ($opt['notes']) : " --notes \"…\"") . (strcasecmp($canal, 'Stable') ? ' --prerelease' : '') . "\n";
+   . (isset($opt['notes']) ? " --notes-file " . $opt['notes'] : " --notes \"…\"") . (strcasecmp($canal, 'Stable') ? ' --prerelease' : '') . "\n";

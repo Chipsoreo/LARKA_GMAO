@@ -29,6 +29,8 @@ final class LarkaVersion
             'version' => $v,
             'canal'   => trim((string)($d['canal'] ?? 'Stable')) ?: 'Stable',
             'date'    => (string)($d['date'] ?? ''),
+            // Version de PHP exigée par ce paquet (publier-version.php --php-min), vérifiée avant installation.
+            'php_min' => preg_match('/^\d+\.\d+/', (string)($d['php_min'] ?? ''), $p) ? $p[0] : null,
         ];
     }
 
