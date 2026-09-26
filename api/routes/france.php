@@ -82,14 +82,12 @@ if (!function_exists('lf_http_request')) {
             $raw = curl_exec($ch);
             if ($raw === false) {
                 $err = curl_error($ch);
-                curl_close($ch);
                 throw new RuntimeException('Erreur réseau Légifrance : ' . $err);
             }
             $status     = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
             $rawHeaders = substr($raw, 0, $headerSize);
             $rawBody    = substr($raw, $headerSize);
-            curl_close($ch);
 
             return [$status, $rawHeaders, $rawBody];
         }

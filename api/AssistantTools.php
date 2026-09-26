@@ -917,7 +917,6 @@ class AssistantTools {
         ]);
         $raw  = curl_exec($ch);
         $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         if ($raw === false) return ['erreur' => 'Microsoft Graph injoignable.'];
         if ($http === 401)  return ['erreur' => 'Session Microsoft expirée : se reconnecter via Microsoft.'];

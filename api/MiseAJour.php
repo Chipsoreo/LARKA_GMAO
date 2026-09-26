@@ -473,7 +473,6 @@ class LarkaMiseAJour
         curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err = curl_error($ch);
-        curl_close($ch);
         if ($fh) fclose($fh);
         if ($recu > $max) { if ($dest) @unlink($dest . '.part'); throw new RuntimeException('Fichier trop volumineux.'); }
         if ($err || $code >= 400 || $code === 0) {

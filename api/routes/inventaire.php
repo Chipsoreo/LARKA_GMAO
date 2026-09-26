@@ -647,12 +647,14 @@ if ($action === 'import_biens') {
     // Activer le mode transaction pour de bien meilleures performances sur gros volume
     $pdoConn = null;
     try {
-        // On utilise reflection pour récupérer le PDO interne (Database expose pas directement)
-        $r = new \ReflectionClass($db);
-        if ($r->hasProperty('pdo')) {
-            $p = $r->getProperty('pdo');
-            $p->setAccessible(true);
-            $pdoConn = $p->getValue($db);
+        // Database expose sa connexion (getPdo). L'ancienne lecture par réflexion
+        // appelait setAccessible(), déprécié en PHP 8.5 : l'exception était
+        // avalée et l'import se faisait SANS transaction.
+        if (method_exists($db, 'getPdo')) {
+            $pdoConn = $db->getPdo();
+        } else {
+            $r = new \ReflectionClass($db);
+            if ($r->hasProperty('pdo')) $pdoConn = $r->getProperty('pdo')->getValue($db);
         }
     } catch (\Throwable $e) { $pdoConn = null; }
 

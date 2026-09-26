@@ -42,6 +42,8 @@ error_reporting(0);
 set_error_handler(function ($severity, $message, $file, $line) {
     // Ignorer les erreurs supprimées avec @
     if (!(error_reporting() & $severity)) return true;
+    // Une dépréciation annonce un changement futur de PHP, ce n'est pas une panne.
+    if ($severity === E_DEPRECATED || $severity === E_USER_DEPRECATED) return true;
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 set_exception_handler(function (\Throwable $e) {
@@ -128,7 +130,12 @@ set_error_handler(function ($niveau, $message, $fichier, $ligne) {
     Journal::log($map[$niveau] ?? Journal::WARNING, 'php', $message, [
         'fichier' => basename((string)$fichier), 'ligne' => $ligne, 'niveauPhp' => $niveau,
     ]);
-    // On CONSERVE la stratégie « fail-fast » installée plus haut (ligne ~42) :
+    // Dépréciation : journalisée, jamais fatale. PHP 8.5 a déprécié des fonctions
+    // devenues sans effet (curl_close, setAccessible…) : les transformer en
+    // exceptions faisait échouer la vérification des mises à jour, l'assistant,
+    // les notifications… sur un serveur à jour.
+    if ($niveau === E_DEPRECATED || $niveau === E_USER_DEPRECATED) return true;
+    // Pour le reste, on CONSERVE la stratégie « fail-fast » installée plus haut :
     // toute erreur PHP devient une exception, qui produit une réponse JSON
     // propre. Journaliser ne doit pas changer le comportement de l'application,
     // seulement le rendre observable.

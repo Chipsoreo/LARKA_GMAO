@@ -267,7 +267,6 @@ function _carboneHttpGet(string $url, string $cle, int $timeout = 6): array {
         $body = curl_exec($ch);
         $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err  = curl_error($ch);
-        curl_close($ch);
         if ($body === false) return ['ok' => false, 'data' => [], 'message' => 'Réseau : ' . $err, 'http' => 0];
     } else {
         $ctx = stream_context_create(['http' => [

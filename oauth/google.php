@@ -238,7 +238,6 @@ curl_setopt_array($ch, [
 ]);
 $resp    = curl_exec($ch);
 $curlErr = curl_error($ch);
-curl_close($ch);
 
 if ($curlErr) closeError('Erreur réseau : ' . $curlErr);
 $token = json_decode($resp, true);
@@ -255,7 +254,6 @@ curl_setopt_array($ch, [
     CURLOPT_TIMEOUT        => 10,
 ]);
 $profile = json_decode(curl_exec($ch), true);
-curl_close($ch);
 
 $email  = $profile['email']       ?? '';
 $prenom = $profile['given_name']  ?? '';

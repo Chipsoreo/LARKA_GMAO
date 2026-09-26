@@ -95,7 +95,6 @@ class WebPush {
         $response   = curl_exec($ch);
         $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError  = curl_error($ch);
-        curl_close($ch);
 
         if ($curlError) {
             return ['success' => false, 'statusCode' => 0, 'reason' => 'cURL: ' . $curlError];
@@ -225,7 +224,6 @@ class WebPush {
                 }
 
                 curl_multi_remove_handle($multi, $ch);
-                curl_close($ch);
             }
 
             curl_multi_close($multi);

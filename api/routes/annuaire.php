@@ -156,7 +156,7 @@ if (!function_exists('_annuaireGraphPost')) {
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_TIMEOUT        => 15, CURLOPT_CONNECTTIMEOUT => 10,
         ]);
-        $resp = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        $resp = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         return ['status' => $status, 'data' => json_decode($resp, true) ?: []];
     }
 }
@@ -195,7 +195,6 @@ if (!function_exists('_annuaireAppToken')) {
         ]);
         $resp = curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         if ($code === 200) {
             $j = json_decode($resp, true);
             if (!empty($j['access_token'])) $cached = (string)$j['access_token'];
