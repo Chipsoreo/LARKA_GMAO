@@ -36,21 +36,21 @@
        jamais l'utilisateur. On croyait le code inchangé alors qu'il l'était
        — sur le serveur, pas dans le navigateur.
        Toutes les ressources partagent la même valeur : une seule à changer. -->
-  <link rel="stylesheet" href="css/base.css?v=202609261603">
-  <link rel="stylesheet" href="css/login.css?v=202609261603">
-  <link rel="stylesheet" href="css/layout.css?v=202609261603">
-  <link rel="stylesheet" href="css/components.css?v=202609261603">
-  <link rel="stylesheet" href="css/responsive.css?v=202609261603">
+  <link rel="stylesheet" href="css/base.css?v=202609261645">
+  <link rel="stylesheet" href="css/login.css?v=202609261645">
+  <link rel="stylesheet" href="css/layout.css?v=202609261645">
+  <link rel="stylesheet" href="css/components.css?v=202609261645">
+  <link rel="stylesheet" href="css/responsive.css?v=202609261645">
   <!-- En DERNIER : ce fichier branche les variables qu'un module de thème
        pose. Chargé plus tôt, les règles existantes l'emporteraient et le
        thème resterait sans effet visible. -->
-  <link rel="stylesheet" href="css/apparence.css?v=202609261603">
+  <link rel="stylesheet" href="css/apparence.css?v=202609261645">
   <!-- Chargée en dernier : ses règles @media print doivent primer sur celles
        des feuilles précédentes, à spécificité égale. -->
-  <link rel="stylesheet" href="css/declaratif-liste.css?v=202609261603">
-  <link rel="stylesheet" href="css/impression.css?v=202609261603">
-  <link rel="stylesheet" href="css/dark-mode.css?v=202609261603">
-  <link rel="stylesheet" href="css/assistant.css?v=202609261603">
+  <link rel="stylesheet" href="css/declaratif-liste.css?v=202609261645">
+  <link rel="stylesheet" href="css/impression.css?v=202609261645">
+  <link rel="stylesheet" href="css/dark-mode.css?v=202609261645">
+  <link rel="stylesheet" href="css/assistant.css?v=202609261645">
 </head>
 <body>
 
@@ -572,44 +572,44 @@ if (localStorage.getItem('darkMode') === '1') {
      SCRIPTS
 ════════════════════════════════════ -->
 <!-- documents.js : utilisé transversalement (modales documents partout) -->
-<script defer src="js/pages/documents.js?v=202609261603"></script>
+<script defer src="js/pages/documents.js?v=202609261645"></script>
 
 <!-- Filtres : moteurs partagés par plusieurs pages, chargés au boot -->
-<script defer src="js/filtres/filtres-engine.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-biens.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-equipements.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-interventions.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-demandes.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-stock.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-contrats.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-gestion-materiel.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-utilisateurs.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-historique.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-energie.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-mobilite.js?v=202609261603"></script>
-<script defer src="js/filtres/filtres-bilan-carbone.js?v=202609261603"></script>
+<script defer src="js/filtres/filtres-engine.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-biens.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-equipements.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-interventions.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-demandes.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-stock.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-contrats.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-gestion-materiel.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-utilisateurs.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-historique.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-energie.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-mobilite.js?v=202609261645"></script>
+<script defer src="js/filtres/filtres-bilan-carbone.js?v=202609261645"></script>
 
 <!-- ⚡ Lazy-loader : les pages js/pages/*.js sont désormais chargées à la demande
      par navigate() via window.PageLoader.ensure(). Voir js/page-loader.js. -->
-<script defer src="js/page-loader.js?v=202609261603"></script>
+<script defer src="js/page-loader.js?v=202609261645"></script>
 <!-- JS principal — découpé en 3 fichiers thématiques (ordre important) -->
-<script defer src="js/journal-client.js?v=202609261603"></script> <!-- Erreurs JS → journal -->
-<script defer src="js/journal-interactions.js?v=202609261603"></script> <!-- Clics/saisies (désactivé par défaut) --> <!-- Capture des erreurs JS → journal serveur -->
-<script defer src="js/api.js?v=202609261603"></script>     <!-- Client API (apiRequest, Auth, toutes les Api*) -->
-<script defer src="js/required-fields.js?v=202609261603"></script> <!-- Helpers globaux getRequiredFields/reqLabel/reqAttr (cache 30s) -->
-<script defer src="js/ui.js?v=202609261603"></script>      <!-- Helpers UI (fmt, badge, toast, modal, renderTable) -->
-<script defer src="js/components/person-autocomplete.js?v=202609261603"></script>  <!-- [PHASE 1] PersonPicker (autocomplétion + avatar) -->
-<script defer src="js/auth.js?v=202609261603"></script>    <!-- Authentification (doLogin, OAuth Google/Microsoft) -->
-<script defer src="js/profile.js?v=202609261603"></script> <!-- Modal "Mon profil" (édition libre des infos perso + MDP) -->
-<script defer src="js/feedback.js?v=202609261603"></script> <!-- Modal "Un problème ? Une suggestion ?" + envoi SMTP -->
+<script defer src="js/journal-client.js?v=202609261645"></script> <!-- Erreurs JS → journal -->
+<script defer src="js/journal-interactions.js?v=202609261645"></script> <!-- Clics/saisies (désactivé par défaut) --> <!-- Capture des erreurs JS → journal serveur -->
+<script defer src="js/api.js?v=202609261645"></script>     <!-- Client API (apiRequest, Auth, toutes les Api*) -->
+<script defer src="js/required-fields.js?v=202609261645"></script> <!-- Helpers globaux getRequiredFields/reqLabel/reqAttr (cache 30s) -->
+<script defer src="js/ui.js?v=202609261645"></script>      <!-- Helpers UI (fmt, badge, toast, modal, renderTable) -->
+<script defer src="js/components/person-autocomplete.js?v=202609261645"></script>  <!-- [PHASE 1] PersonPicker (autocomplétion + avatar) -->
+<script defer src="js/auth.js?v=202609261645"></script>    <!-- Authentification (doLogin, OAuth Google/Microsoft) -->
+<script defer src="js/profile.js?v=202609261645"></script> <!-- Modal "Mon profil" (édition libre des infos perso + MDP) -->
+<script defer src="js/feedback.js?v=202609261645"></script> <!-- Modal "Un problème ? Une suggestion ?" + envoi SMTP -->
 <!-- superadmin-auth.js : chargé à la demande par init.js uniquement sur ?superadmin -->
-<script defer src="js/ui-prefs.js?v=202609261603"></script>
-<script defer src="js/maj.js?v=202609261603"></script>          <!-- Mises à jour (détection auto, installation validée) -->    <!-- Préférences interface (position sidebar, onglets) -->
-    <script defer src="js/nav.js?v=202609261603"></script>     <!-- Navigation (PAGES, navigate, buildSidebar, badge demandes) -->
-<script defer src="js/push.js?v=202609261603"></script>     <!-- Push notifications (SW, VAPID, soft-prompt) -->
-<script defer src="js/declaratif.js?v=202609261603"></script>  <!-- Rendu des modules déclaratifs -->
-<script defer src="js/extensions.js?v=202609261603"></script> <!-- Extensions communautaires (chargement des pages tierces) -->
-<script defer src="js/init.js?v=202609261603"></script>    <!-- Contrôleur App, initApp, helpers rôles, boot -->
+<script defer src="js/ui-prefs.js?v=202609261645"></script>
+<script defer src="js/maj.js?v=202609261645"></script>          <!-- Mises à jour (détection auto, installation validée) -->    <!-- Préférences interface (position sidebar, onglets) -->
+    <script defer src="js/nav.js?v=202609261645"></script>     <!-- Navigation (PAGES, navigate, buildSidebar, badge demandes) -->
+<script defer src="js/push.js?v=202609261645"></script>     <!-- Push notifications (SW, VAPID, soft-prompt) -->
+<script defer src="js/declaratif.js?v=202609261645"></script>  <!-- Rendu des modules déclaratifs -->
+<script defer src="js/extensions.js?v=202609261645"></script> <!-- Extensions communautaires (chargement des pages tierces) -->
+<script defer src="js/init.js?v=202609261645"></script>    <!-- Contrôleur App, initApp, helpers rôles, boot -->
 <!-- assistant.js : chargé à la demande par initApp(), uniquement si l'assistant IA est activé -->
 
 <script>
