@@ -1,0 +1,75 @@
+{
+    "RechargeStatut": {
+        "libelle": "Réponse",
+        "obligatoire": true,
+        "libre": false,
+        "valeurs": [
+            "Demandé",
+            "Validé",
+            "Refusé",
+            "Annulé"
+        ]
+    },
+    "RechargeBorne": {
+        "libelle": "Borne",
+        "obligatoire": false,
+        "libre": false,
+        "valeurs": [
+            "Peu importe",
+            "Borne A — Mairie",
+            "Borne B — Mairie",
+            "Borne C — Centre technique",
+            "Borne D — École"
+        ]
+    },
+    "RechargeSemaine": {
+        "libelle": "Semaine",
+        "obligatoire": true,
+        "libre": false,
+        "valeurs": [
+            "2026 — S37",
+            "2026 — S38",
+            "2026 — S39",
+            "2026 — S40"
+        ]
+    },
+    "RechargeJour": {
+        "libelle": "Jour",
+        "obligatoire": true,
+        "libre": false,
+        "valeurs": [
+            "Lundi",
+            "Mardi",
+            "Mercredi",
+            "Jeudi",
+            "Vendredi"
+        ]
+    },
+    "RechargePlage": {
+        "libelle": "Plage horaire",
+        "obligatoire": true,
+        "libre": false,
+        "valeurs": [
+            "08:00 – 10:00",
+            "10:00 – 12:00",
+            "12:00 – 14:00",
+            "14:00 – 16:00",
+            "16:00 – 18:00",
+            "Nuit (18:00 – 08:00)"
+        ]
+    },
+    "RechargeService": {
+        "libelle": "Service",
+        "obligatoire": false,
+        "libre": false,
+        "valeurs": [
+            "Direction",
+            "Services techniques",
+            "Urbanisme",
+            "État civil",
+            "Scolaire",
+            "Espaces verts",
+            "Police municipale"
+        ]
+    }
+}

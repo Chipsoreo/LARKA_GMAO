@@ -1,0 +1,4 @@
+annee;type;facteurCO2;unite;source;incertitude
+2024;Electricite;0,0569;kgCO2e/kWh;Base Carbone archivée (à corriger);10
+2024;Gaz;0,227;kgCO2e/kWh PCI;Base Carbone archivée (à corriger);5
+2024;Chauffage;0,112;kgCO2e/kWh;Arrêté DPE (à corriger);50

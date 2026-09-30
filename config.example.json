@@ -1,0 +1,105 @@
+{
+  "_1_role": "Larka — réglages NON sensibles. Copier en config.json puis adapter. chmod 640, propriétaire www-data. Exclu par .gitignore.",
+  "_2_secrets": "Aucun secret ni identifiant OAuth ici : tout cela vit dans .env (voir .env.example), prioritaire sur ce fichier. Une valeur, un seul endroit.",
+  "_3_principe": "Ce fichier ne contient QUE ce qui doit être décidé par vous. Toute clé absente reprend le défaut de api/config.php — et continuera d'évoluer avec l'application, ce qu'une clé recopiée ne fait pas. Les interrupteurs \"actif\" sont conservés même à false : ils sont le seul moyen de savoir qu'un module existe.",
+  "serveur": {
+    "_": "host : 127.0.0.1 = ce poste seulement · 0.0.0.0 = exposé au réseau local. env : dev pendant le développement (les erreurs PHP sont journalisées), prod ensuite (journal muet). « start.sh prod » et deploy/install.sh écrivent prod tout seuls.",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "env": "dev"
+  },
+  "base_de_donnees": {
+    "_": "Défaut du code = sqlite. Pour PostgreSQL, driver + user suffisent : host 127.0.0.1, port 5432, dbname gmao et sslmode prefer sont déjà les défauts. Mot de passe -> .env : GMAO_DB_PASSWORD",
+    "driver": "pgsql",
+    "user": "gmao"
+  },
+  "superadmin_db": {
+    "_": "Registre multi-tenant (Super Admin + liste des tenants). Aucun défaut : à renseigner entièrement. Mot de passe -> .env : GMAO_SUPERADMIN_DB_PASSWORD",
+    "driver": "pgsql",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "dbname": "gmao_admin",
+    "user": "gmao",
+    "sslmode": "prefer"
+  },
+  "securite": {
+    "_": "À RENSEIGNER : le défaut de allowed_origin est \"*\". Sert aussi à détecter HTTPS (drapeau Secure du cookie) et à cadrer le CORS. Clé secrète -> .env : GMAO_SECRET_KEY — elle signe aussi les noms de dossier des fonds d'écran personnels : la changer rend les images déjà déposées orphelines (chacun redépose la sienne), la laisser au défaut annule leur anonymat. Autres clés : session_duree_heures (24), debug_errors (false — DEV uniquement), trusted_proxies ([127.0.0.1, ::1]), allow_remote_setup (false).",
+    "allowed_origin": "https://gmao.example.com"
+  },
+  "securite_http": {
+    "_": "Seul réglage vraiment utile en prod (défaut du code : false). N'ajoutez PAS \"csp\" : le défaut est durci ET autorise cdnjs — une CSP recopiée à la main casse l'export Excel et l'aperçu PDF. x_frame_options=\"DENY\" est de toute façon ramené à SAMEORIGIN par le code.",
+    "hsts": true
+  },
+  "logs": {
+    "_": "Défauts : actif true, dossier data/logs, niveau info, rotation 14 jours.",
+    "niveau": "warning",
+    "rotation_jours": 30
+  },
+  "sauvegardes": {
+    "_": "Désactivées par défaut dans le code. Autres clés : intervalle_minutes (360), dossier (data/backups), garder (30), compresser (true).",
+    "actif": true
+  },
+  "smtp": {
+    "_": "L'envoi s'active dès que host est renseigné (il n'existe pas de drapeau actif). Défauts : port 587, secure tls, verify_peer true. Mot de passe -> .env : GMAO_SMTP_PASSWORD",
+    "host": "",
+    "from": "noreply@gmao.example.com"
+  },
+  "microsoft_oauth": {
+    "_": "Paramétrage complet dans .env : GMAO_MICROSOFT_CLIENT_ID / _TENANT_ID / _CLIENT_SECRET / _REDIRECT_URI. URI déduite si vide : <allowed_origin>/oauth/microsoft — à déclarer à l'identique dans Azure.",
+    "actif": false
+  },
+  "google_oauth": {
+    "_": "Paramétrage complet dans .env : GMAO_GOOGLE_CLIENT_ID / _CLIENT_SECRET / _REDIRECT_URI.",
+    "actif": false
+  },
+  "sharepoint": {
+    "_": "Option distincte de la connexion Microsoft, choisie au premier lancement (start.sh / deploy/install.sh --sharepoint on|off). true : lier des fichiers SharePoint/OneDrive aux fiches (raccourcis, sans copie) ; exige microsoft_oauth.actif et ajoute les autorisations Files.Read.All + Sites.Read.All au login Microsoft. false : documents stockés dans Larka uniquement. Changer ensuite : ./start.sh sharepoint on|off ou Configuration → Serveur. Clé absente : actif avec Microsoft (comportement historique).",
+    "actif": false
+  },
+  "plans_presence": {
+    "_": "[PHASE 2] Présence + agenda sur les plans. Exige microsoft_oauth.actif. 1) Azure > API permissions : Presence.Read.All et Calendars.Read.Shared en DÉLÉGUÉ, puis « Grant admin consent ». 2) actif:true ici. 3) IMPORTANT : chaque utilisateur doit se DÉCONNECTER/RECONNECTER via Microsoft — les scopes ne sont demandés que si ce flag est vrai AU MOMENT du login.",
+    "actif": false
+  },
+  "assistant": {
+    "_": "Assistant IA. Clé API -> .env : GMAO_ASSISTANT_API_KEY. fournisseur : anthropic | openai | mistral | gemini | copilot (distants) · ollama | lmstudio | local (OpenAI-compatible, ex. llama.cpp). model vide = le plus rapide/économique du fournisseur (claude-haiku-4-5, gpt-4o-mini, mistral-small-latest, gemini-3.1-flash-lite, ministral-3:3b). Autres clés : api_url, timeout_seconds (240 local / 90 distant), max_tokens (1024) et max_tokens_local (512), num_ctx (8192, Ollama), keep_alive (-1), pre_recherche (auto | on | off), prechauffage (true), reflexion_locale (auto | off | on), gemini_reflexion (auto | minimal | low | off), cache_prompt (true, Anthropic), max_resultats (6 local / 12 distant), temperature (0.2), top_p (0.9).",
+    "_mode": "mode : fiable (défaut) | agent. « fiable » : le moteur Larka comprend la question, cherche et rédige la réponse lui-même — même question, même réponse, quel que soit le modèle (0,6B, 1B, 3B, 7B… local ou distant), et même sans modèle joignable. « agent » : l'ancien fonctionnement, le modèle choisit ses outils et rédige (la réponse dépend alors du modèle).",
+    "_interpretation_ia": "interpretation_ia : off (défaut) | auto. En mode fiable, « auto » laisse le modèle reformuler, dans un formulaire JSON contraint et vérifié, les SEULES questions que le moteur ne comprend pas. C'est le seul cas où la taille du modèle compte : à réserver aux modèles ≥ 7B.",
+    "actif": false
+  },
+  "push": {
+    "_": "Notifications web push — ACTIVÉES par défaut dans le code, coupées ici. Clé privée -> .env : GMAO_VAPID_PRIVATE_KEY ; clé publique via Configuration → Notifications (vapid_public_key). Personnalisation : notif_demande_titre / _corps / _roles. Exige un certificat TLS pleinement valide : les service workers refusent une exception navigateur.",
+    "actif": false
+  },
+  "feedback": {
+    "_": "Bouton « Faire un retour ». Destinataires : emails ([]). Nécessite smtp.host.",
+    "actif": false
+  },
+  "carbone_energie": {
+    "_": "Facteurs d'émission énergie (ADEME Base Carbone, via data.ademe.fr). Aucune clé requise : jeu de données ouvert. Clés : dataset_url, id_electricite (36651), id_gaz (38952), frontiere (« Amont + combustion » — un même identifiant porte plusieurs frontières aux valeurs très différentes), tls_verify. Désactivé = seules les valeurs de référence intégrées sont écrites.",
+    "actif": true
+  },
+  "carbone": {
+    "_": "Facteurs d'émission mobilité (ADEME — Impact CO2). Clé -> .env : GMAO_IMPACTCO2_API_KEY (facultative, gratuite : impactco2@ademe.fr). Autres clés : impactco2_url, cache_heures (24), tls_verify (true). Désactivé = Larka utilise ses valeurs de repli intégrées.",
+    "actif": false
+  },
+  "legifrance": {
+    "_": "Proxy Légifrance (PISTE/DILA). Secret -> .env : GMAO_LEGIFRANCE_CLIENT_SECRET. Autres clés : client_id, api_base_url / oauth_url (défauts = bac à sable, à remplacer par les URL officielles en production), scope (openid).",
+    "actif": false
+  },
+  "chorus_pro": {
+    "_1": "Proxy Chorus Pro. Autres clés : environnement (sandbox | production), client_id, client_secret, technical_login, technical_password, tls_verify (true).",
+    "_2": "ATTENTION — seule section dont les secrets restent EN CLAIR ici : api/routes/chorus.php relit config.json directement (cpro_cfg), ce qui contourne l'injection .env et le déchiffrement. Gardez config.json en chmod 640.",
+    "actif": false
+  },
+  "_4_non_listees": "Existent aussi, laissées à leur défaut : acces.domaine_email_autorise (restreint les comptes OAuth à un domaine), cors (inutile en mono-domaine, le défaut suit allowed_origin), session (cookie_secure auto-détecté, samesite Strict), documents (4 par catégorie, 25 Mo, pdf/png/jpeg/webp), urgences (photo_max_mo 15, video_max_mo 150 — plafonds des médias des procédures d'urgence ; pensez aussi a upload_max_filesize/post_max_size), oauth_relay (installation sans domaine public). Détail : api/config.php.",
+  "mises_a_jour": {
+    "_": "Détection automatique des nouvelles versions (installation TOUJOURS validée par l'administrateur ; data/, config.json et .env jamais touchés). source : github (défaut, dépôt « depot ») | manifeste (url_manifeste HTTPS vers un latest.json). canal : beta | stable. frequence_heures (12). cle_publique : clé Ed25519 de l'éditeur (outils/publier-version.php --generer-cles) — si renseignée, toute version non signée est refusée. Dépôt privé : jeton -> .env : GMAO_MAJ_GITHUB_TOKEN.",
+    "actif": true,
+    "depot": "Chipsoreo/LARKA_GMAO"
+  },
+  "extensions": {
+    "_": "Modules complémentaires. Un module est un « module de données » : un fichier JSON décrivant des données et des écrans, que Larka interprète. Aucun code d'auteur n'est exécuté.",
+    "actif": false,
+    "_actif": "true pour permettre l'installation de modules. Ils s'ajoutent ensuite un par un depuis l'écran Modules."
+  }
+}

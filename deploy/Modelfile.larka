@@ -1,0 +1,48 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Larka — Modèle dérivé pour l'assistant (AUCUNE modification de la conf Ollama)
+#
+# Pourquoi : garantir les mêmes réglages quel que soit le client (y compris un
+# test à la main via `ollama run`). Depuis la v3 de l'assistant, Larka parle à
+# l'API NATIVE d'Ollama (/api/chat) et y envoie lui-même num_ctx, num_predict et
+# keep_alive — ce Modelfile n'est donc plus indispensable, mais il reste utile
+# pour figer la quantization et servir de référence. Gardez num_ctx identique
+# au réglage Larka (assistant.num_ctx, 8192 par défaut) : une valeur différente
+# d'une requête à l'autre force Ollama à RECHARGER le modèle.
+#
+# Installation :
+#   ollama list                                  # vérifier le tag exact du modèle
+#   # adapter la ligne FROM ci-dessous si besoin, puis :
+#   ollama create larka-assistant -f deploy/Modelfile.larka
+#   ollama show larka-assistant                  # vérifier num_ctx=8192 + quantization
+#
+# Puis dans Larka (Super Admin → Assistant IA) : modèle = larka-assistant
+#
+# Vérifier la quantization au passage : `ollama show` doit indiquer Q4_K_M (ou Q4_*).
+# Si c'est Q8_0 ou F16, l'inférence CPU est ~2× plus lente pour rien → re-tirer
+# le modèle en Q4 et adapter le FROM.
+#
+# MODE « FIABLE » (défaut depuis la v4 de l'assistant) : le moteur Larka répond
+# seul — même question, même réponse, quel que soit le modèle. Le modèle n'est
+# appelé que si assistant.interpretation_ia = auto, et seulement pour reformuler
+# une question que le moteur n'a pas comprise ; Larka impose alors lui-même
+# temperature 0, top_k 1, seed 42 et un schéma JSON (format), quels que soient
+# les PARAMETER ci-dessous. Ce Modelfile ne règle donc que le mode « agent ».
+# Pour ce second recours, préférez un modèle ≥ 7B : un 1B reformule de travers
+# (Larka écarte ses erreurs, mais n'en tire alors rien).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FROM ministral-3:3b
+
+# Fenêtre de contexte : prompt Larka + outils + historique + résultats d'outils.
+# 4096 (défaut) ne suffit pas ; 8192 tient dans ~1,5 Go de cache KV pour un 3B.
+PARAMETER num_ctx 8192
+
+# Plafond de génération : le prompt exige des réponses de 1-5 lignes.
+# Borne la durée d'un tour à ~20-40 s max sur CPU (au lieu de plusieurs minutes
+# si le modèle part en réponse fleuve). Même valeur que assistant.max_tokens_local.
+PARAMETER num_predict 512
+
+# Sampling factuel (redondant avec ce qu'envoie Larka, mais garantit les mêmes
+# valeurs si le modèle est testé à la main via `ollama run`).
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9

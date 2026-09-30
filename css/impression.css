@@ -1,0 +1,69 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Larka — mise en page à l'impression
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Aucune règle @media print n'existait. Imprimer un écran sortait donc le menu
+   latéral, la barre supérieure, les boutons et les filtres — souvent sur deux
+   pages, avec le tableau tronqué à droite. En pratique, personne n'imprimait :
+   on exportait en CSV et on remettait en forme dans un tableur.
+
+   Un planning hebdomadaire de bornes de recharge, lui, est fait pour être
+   affiché au mur du garage. D'où ces règles.
+
+   Elles valent pour TOUS les écrans, pas seulement les modules : une liste
+   d'équipements ou un tableau d'habilitations s'imprime aussi.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media print {
+
+  /* Ce qui ne sert qu'à naviguer n'a rien à faire sur le papier. */
+  .sidebar, .topbar, .toast-container, .modal-overlay, .modal,
+  #topbarActions, .btn, .pagination, .river-canvas,
+  [data-filtre], .form-control, .nav-item, #ap-barre,
+  .dp-actions, .dp-recherche {
+    display: none !important;
+  }
+
+  /* La zone de contenu reprend toute la largeur : sans cela, la marge
+     réservée au menu laissait une bande blanche de 240 px à gauche. */
+  html, body, .layout, .main, .content {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .content { padding: 0 8mm !important; }
+
+  /* Les fonds de couleur mangent l'encre et grisent le texte. On garde les
+     couleurs porteuses de sens — badges de statut, filets de surlignage — et
+     on efface les aplats décoratifs. */
+  .card, .stat-card {
+    box-shadow: none !important;
+    border: 1px solid #999 !important;
+    background: #fff !important;
+    break-inside: avoid;
+  }
+  body[data-theme]::before { display: none !important; }
+
+  /* Un tableau qui déborde à droite est illisible : on impose la largeur de
+     page et on réduit le corps. */
+  table { width: 100% !important; font-size: 9pt !important; border-collapse: collapse; }
+  th, td { padding: 3px 5px !important; border: 1px solid #bbb !important; }
+
+  /* L'en-tête se répète en haut de chaque page — sans cela, la deuxième page
+     d'un planning est une grille de valeurs sans colonnes. */
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr, .dp-groupe { break-inside: avoid; }
+
+  /* Un groupe de jour ne se coupe pas en deux entre le titre et sa première
+     ligne : « Mardi » en bas d'une page et ses créneaux sur la suivante. */
+  .dp-groupe-titre { break-after: avoid; }
+
+  /* Les liens : l'adresse est inutile sur un planning affiché au mur. */
+  a[href]::after { content: none !important; }
+
+  @page { size: A4 landscape; margin: 10mm; }
+}

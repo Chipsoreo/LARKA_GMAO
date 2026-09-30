@@ -1,0 +1,451 @@
+/*
+ * SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+ * SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+ *
+ * This file is part of Larka, proprietary software by Mickaël Larcin.
+ * All rights reserved. Use is subject to the license terms; copying,
+ * distribution, modification or reverse-engineering without the author's
+ * prior written permission is prohibited. See the LICENSE file for details.
+ */
+
+/* Larka — Mode sombre : surcharges CSS variables pour le thème dark */
+body.dark-mode {
+  --gray-bg:     #1a2536;
+  --gray-border: #28394f;
+  --gray-text:   #8a9bb0;
+  --text:        #dde8f5;
+  --text-mid:    #a8bacf;
+  --white:       #111c2b;
+  /* FIX dark mode : --card-bg n'était défini nulle part → les cartes/encarts
+     qui utilisent var(--card-bg,#fff) (urgences, configuration, biens, scan,
+     équipements, inventaire-agent, superadmin…) restaient BLANCHES en mode
+     sombre. On l'aligne sur le fond de carte sombre de l'app. */
+  --card-bg:     #1a2536;
+  --navy:        #5aabff;
+  --blue-pale:   rgba(74,158,255,.12);
+  --teal-light:  rgba(14,138,110,.15);
+  --orange-light:rgba(217,119,6,.15);
+  --red-light:   rgba(220,53,69,.15);
+
+  /* ── Procédures d'urgence ──
+     Fonds translucides posés sur --card-bg plutôt que des teintes claires
+     opaques : le contraste avec var(--text) reste correct, et le bloc ne
+     « troue » pas l'interface sombre comme le ferait un rectangle crème. */
+  --urg-proc-bg:     rgba(245,158,11,.10);
+  --urg-proc-bd:     rgba(245,158,11,.30);
+  --urg-proc-accent: #f59e0b;
+  --urg-proc-titre:  #fbbf24;
+  --urg-resto-bg:    rgba(245,158,11,.18);
+  --urg-resto-bd:    rgba(245,158,11,.38);
+  --urg-resto-fg:    #fcd34d;
+
+  /* ── Pastilles et encarts de statut ──
+     Fonds translucides posés sur --card-bg, textes éclaircis. Le couple garde
+     un contraste correct sans poser de rectangle clair dans l'interface sombre. */
+  --chip-ok-bg:      rgba(34,197,94,.16);
+  --chip-ok-bd:      rgba(34,197,94,.38);
+  --chip-ok-fg:      #86efac;
+  --chip-warn-bg:    rgba(245,158,11,.16);
+  --chip-warn-bd:    rgba(245,158,11,.38);
+  --chip-warn-fg:    #fcd34d;
+  --chip-danger-bg:  rgba(239,68,68,.16);
+  --chip-danger-bd:  rgba(239,68,68,.38);
+  --chip-danger-fg:  #fca5a5;
+  --chip-info-bg:    rgba(56,189,248,.14);
+  --chip-info-bd:    rgba(56,189,248,.36);
+  --chip-info-fg:    #7dd3fc;
+
+  /* Le fond de .content reste #1a3050 en sombre : mêmes valeurs qu'en clair. */
+  --on-content:      #eaf2ff;
+  --on-content-dim:  rgba(234,242,255,.70);
+}
+
+/* ── Base ── */
+body.dark-mode { background: #0d1825; color: var(--text); }
+body.dark-mode .layout { background: #0d1825; }
+body.dark-mode .sidebar { background: #0a1520; border-color: #1e2f42; }
+
+/* ── Cards ── */
+body.dark-mode .card { background: #1a2536; border-color: #28394f; }
+body.dark-mode .stat-card { background: #1a2536; border-color: #28394f; }
+body.dark-mode .card-title { color: #7bc8ff; }
+
+/* ── Topbar ── */
+body.dark-mode .topbar { background: #111c2b; border-color: #28394f; }
+
+/* ── Modals ── */
+body.dark-mode .modal { background: #1a2536; }
+body.dark-mode .modal-header { background: #1a2536; border-color: #28394f; }
+body.dark-mode .modal-footer { background: #1a2536; border-color: #28394f; }
+body.dark-mode .modal-title { color: #dde8f5; }
+body.dark-mode .modal-close { background: #28394f; color: #8a9bb0; }
+
+/* ── Formulaires ── */
+body.dark-mode .form-control { background: #111c2b; border-color: #28394f; color: #dde8f5; }
+body.dark-mode .form-control:focus { border-color: var(--blue); background: #111c2b; }
+body.dark-mode .form-label { color: #a8bacf; }
+body.dark-mode .section-label { color: #8a9bb0; border-color: #28394f; }
+body.dark-mode select.form-control option { background: #1a2536; }
+body.dark-mode textarea.form-control { background: #111c2b; }
+
+/* ── Select searchable (combo) ── */
+body.dark-mode .combo-dropdown { background: #111c2b; border-color: #28394f; }
+body.dark-mode .combo-item:hover,
+body.dark-mode .combo-item.active { background: rgba(74,158,255,.15); }
+body.dark-mode .combo-group { color: rgba(221,232,245,0.55); }
+
+
+/* ── Tableaux ── */
+body.dark-mode table { background: transparent; }
+body.dark-mode thead th { background: #111c2b; color: #8a9bb0; border-color: #28394f; }
+body.dark-mode tbody tr { border-color: #28394f; }
+body.dark-mode tbody tr:hover { background: #1f3044; }
+body.dark-mode tbody td { color: #a8bacf; }
+body.dark-mode tbody td:first-child { color: #dde8f5; }
+body.dark-mode .table-wrap { background: #1a2536; border-radius: 8px; }
+
+/* ── Recherche et chips ── */
+body.dark-mode .search-input { background: #111c2b; border-color: #28394f; color: #dde8f5; }
+body.dark-mode .search-input:focus { background: #111c2b; border-color: var(--blue); }
+body.dark-mode .chip { background: #111c2b; border-color: #28394f; color: #8a9bb0; }
+body.dark-mode .chip:hover { border-color: var(--blue); color: var(--blue); }
+body.dark-mode .chip.active { background: rgba(74,158,255,.15); border-color: var(--blue); color: var(--blue); }
+
+/* ── Boutons ── */
+body.dark-mode .icon-btn { background: #111c2b; color: #8a9bb0; }
+body.dark-mode .icon-btn:hover { background: rgba(74,158,255,.12); color: var(--blue); }
+body.dark-mode .btn-ghost { border-color: #28394f; color: #8a9bb0; }
+body.dark-mode .btn-ghost:hover { background: #1a2536; color: #dde8f5; }
+body.dark-mode .btn-sm { border-color: #28394f; }
+
+/* ── Dashboard ── */
+body.dark-mode .intervention-item:hover { background: #1f3044; }
+body.dark-mode .interv-title { color: #dde8f5; }
+body.dark-mode .stock-bar { background: #28394f; }
+body.dark-mode .pagination { border-color: #28394f; }
+
+/* ── Bottom nav ── */
+body.dark-mode .bottom-nav {
+  background: #111c2b;
+  border-color: #28394f;
+}
+body.dark-mode .bottom-nav-item.active { background: rgba(74,158,255,.12); }
+body.dark-mode .hamburger-btn span { background: var(--text); }
+
+/* ── Panneaux filtres énergie ── */
+body.dark-mode #panneauFiltreFacturation { background: #111c2b !important; border-color: #28394f !important; }
+body.dark-mode #panneauFiltreStats { background: #0d1825 !important; border-color: #28394f !important; }
+
+/* ── Blocs avec couleurs inline (style="background:...") ── */
+body.dark-mode [style*="background:#f0f7ff"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#f8fafc"] { background: #1a2536 !important; }
+
+/* ── Scrollbar dark ── */
+body.dark-mode ::-webkit-scrollbar-thumb { background: #28394f; }
+body.dark-mode ::-webkit-scrollbar-thumb:hover { background: #3a5068; }
+
+/* ── Configuration — srv- styles ── */
+body.dark-mode .srv-section-title { color: #5aabff; border-color: #28394f; }
+body.dark-mode .srv-label { color: #dde8f5; }
+body.dark-mode .srv-desc { color: #7a8da3; }
+body.dark-mode .srv-ex { background: #111c2b; color: #5aabff; }
+body.dark-mode .srv-alert-warn    { background: #1f1a0d !important; color: #d4a84a !important; border-color: #3d3217 !important; }
+body.dark-mode .srv-alert-info    { background: #0e1e30 !important; color: #5aabff !important; border-color: #1e3552 !important; }
+body.dark-mode .srv-save-bar { border-color: #28394f; box-shadow: 0 -3px 12px rgba(0,0,0,.3); }
+body.dark-mode .db-tab { border-color: #28394f; }
+body.dark-mode .db-tab.active { background: var(--blue); color: #fff; }
+
+/* ── Configuration — migration steps ── */
+body.dark-mode .mig-step { background: #111c2b; border-color: #28394f; }
+body.dark-mode .mig-step-title { color: #dde8f5; }
+body.dark-mode .mig-step.step-ok { border-color: #1a5c30; }
+body.dark-mode .mig-step.step-err { border-color: #5c1a1a; }
+
+/* ── Modal tabs ── */
+body.dark-mode .modal-tabs { border-color: #28394f; }
+body.dark-mode .modal-tabs .tab-btn { color: #8a9bb0; }
+body.dark-mode .modal-tabs .tab-btn.active { color: var(--blue); border-color: var(--blue); }
+
+/* ── Badges dark ── */
+body.dark-mode .badge-blue { background: rgba(74,158,255,.12); color: #5aabff; }
+body.dark-mode .badge-teal { background: rgba(14,138,110,.12); color: #2dd4a8; }
+body.dark-mode .badge-orange { background: rgba(217,119,6,.12); color: #f59e0b; }
+body.dark-mode .badge-red { background: rgba(220,53,69,.12); color: #f87171; }
+body.dark-mode .badge-gray { background: #1a2536; color: #8a9bb0; border-color: #28394f; }
+body.dark-mode .badge-purple { background: rgba(124,58,237,.12); color: #a78bfa; }
+
+/* ── Boutons base ── */
+body.dark-mode .btn { background: #1a2536; color: #dde8f5; border-color: #28394f; }
+body.dark-mode .btn:hover { background: #1f3044; }
+body.dark-mode .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+body.dark-mode .btn-primary:hover { opacity: 0.9; }
+body.dark-mode .btn-danger { background: #c62828; color: #fff; }
+
+/* ── Inline bg overrides ── */
+body.dark-mode [style*="background:#e6f4ea"] { background: #0e2218 !important; }
+body.dark-mode [style*="background:#fdecea"] { background: #1f0e0e !important; }
+body.dark-mode [style*="background:#fff8e1"] { background: #1f1a0d !important; }
+body.dark-mode [style*="background:#e3f2fd"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:rgba(220,53,69"]  { background: rgba(220,53,69,0.08) !important; }
+body.dark-mode [style*="background:linear-gradient(135deg,#1a2e4a"] { background: linear-gradient(135deg,#0a1520,#111c2b) !important; }
+
+/* ── Notes défilantes demandes ── */
+body.dark-mode .notes-scroll { color: #fff; }
+
+/* ── Confirm dialog ── */
+body.dark-mode .confirm-dialog { background: #1a2536; border-color: #28394f; }
+
+/* ── Login page ── */
+body.dark-mode .login-card { background: #1a2536; }
+body.dark-mode .login-header { background: #111c2b; }
+
+/* ── Toast ── */
+body.dark-mode .toast { border-color: #28394f; }
+
+/* ── Code / pre ── */
+body.dark-mode code { background: #111c2b; color: #5aabff; }
+body.dark-mode pre { background: #111c2b; }
+
+/* ── Configuration serveur alerts ── */
+/* ⚠️ CES DEUX RÈGLES SONT ACTUELLEMENT SANS EFFET — décision de design à trancher.
+   Les règles des lignes ~120-121 ciblent les mêmes sélecteurs avec la même
+   spécificité MAIS en !important : elles l'emportent malgré leur position
+   antérieure (!important prime sur l'ordre). Ce style translucide, pourtant écrit
+   après, n'est donc jamais appliqué.
+     • Pour conserver l'apparence actuelle (aplats sombres) : supprimer les 2 lignes
+       ci-dessous.
+     • Pour activer ce style translucide (probablement l'intention d'origine) :
+       retirer les !important des lignes ~120-121, puis supprimer ces dernières.
+   Conservées telles quelles pour ne pas modifier l'apparence sans validation. */
+body.dark-mode .srv-alert-warn { background:rgba(245,166,35,0.12); color:var(--text); border-color:rgba(245,166,35,0.4); }
+body.dark-mode .srv-alert-info { background:rgba(43,123,230,0.12); color:var(--text); border-color:rgba(43,123,230,0.4); }
+body.dark-mode .srv-save-bar { background:#111c2b; }
+body.dark-mode .cfg-tab { color:var(--text-mid); }
+body.dark-mode .db-tab { background:#1a2536; color:var(--text-mid); }
+
+/* ── Énergie — fixes dark mode ── */
+body.dark-mode [style*="background:#fdf4ff"] { background: #1a0e22 !important; }
+body.dark-mode [style*="background:#fefce8"] { background: #1f1a0d !important; }
+body.dark-mode [style*="background:#fef2f2"] { background: #1f0e0e !important; }
+body.dark-mode [style*="background:#f5f3ff"] { background: #150e22 !important; }
+body.dark-mode [style*="background:#fffbeb"] { background: #1f1a0d !important; }
+body.dark-mode [style*="background:#ecfdf5"] { background: #0e2218 !important; }
+body.dark-mode [style*="background:#fafafa"] { background: #1a2536 !important; }
+body.dark-mode [style*="background:#f9fafb"] { background: #1a2536 !important; }
+body.dark-mode [style*="background:#f1f5f9"] { background: #1a2536 !important; }
+body.dark-mode [style*="background:#fff"] { background: #1a2536 !important; }
+body.dark-mode [style*="background: #fff"] { background: #1a2536 !important; }
+body.dark-mode [style*="background:#eff8ff"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#f8f5ff"] { background: #150e22 !important; }
+
+/* ── Énergie — contrat/compteur cards ── */
+body.dark-mode [style*="border-left:4px solid"] { border-color: #28394f !important; }
+body.dark-mode [style*="background:linear-gradient(135deg,#f0f9ff"] { background: linear-gradient(135deg,#0e1e30,#111c2b) !important; }
+body.dark-mode [style*="background:linear-gradient(135deg,#fdf4ff"] { background: linear-gradient(135deg,#1a0e22,#111c2b) !important; }
+
+/* ── Stock — catégorie headers ── */
+body.dark-mode [style*="background:#eef6ff"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#fffbf0"] { background: #1f1a0d !important; }
+
+/* ── Filtres avancés panel ── */
+body.dark-mode #filtresPanel { background: #111c2b !important; border-color: #28394f !important; }
+body.dark-mode [id^="filtresPanel_energie"] { background: var(--gray-bg) !important; }
+body.dark-mode [id^="filtresPanel_energie"] button[style*="background:transparent"] { background: transparent !important; }
+
+/* ── Textes noirs forcés (inline color:#1e...) ── */
+body.dark-mode [style*="color:#1e293b"] { color: var(--text) !important; }
+body.dark-mode [style*="color:#0f172a"] { color: var(--text) !important; }
+body.dark-mode [style*="color:#334155"] { color: var(--text-mid) !important; }
+body.dark-mode [style*="color:#475569"] { color: var(--gray-text) !important; }
+body.dark-mode [style*="color:#64748b"] { color: var(--gray-text) !important; }
+body.dark-mode [style*="color:#374151"] { color: var(--text-mid) !important; }
+body.dark-mode [style*="color:#111827"] { color: var(--text) !important; }
+body.dark-mode [style*="color:#92400e"] { color: #f59e0b !important; }
+
+/* ── Section labels énergie ── */
+body.dark-mode [style*="color:#9b59b6"] { color: #c084fc !important; }
+
+/* ── Modals — champs formulaires forcés ── */
+body.dark-mode .modal input,
+body.dark-mode .modal textarea,
+body.dark-mode .modal select {
+  background: #111c2b !important;
+  border-color: #28394f !important;
+  color: #dde8f5 !important;
+}
+body.dark-mode .modal input:focus,
+body.dark-mode .modal textarea:focus,
+body.dark-mode .modal select:focus {
+  border-color: var(--blue) !important;
+  background: #111c2b !important;
+}
+body.dark-mode .modal select option {
+  background: #1a2536;
+  color: #dde8f5;
+}
+/* ── Archives — backgrounds inline formulaires boîtes/dossiers ── */
+body.dark-mode [style*="background:#f8faff"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#fff7ed"] { background: #1f1508 !important; }
+
+/* ── Archives — textes colorés inline formulaires ── */
+
+/* ── Archives — bordures inline dans les fiches ── */
+body.dark-mode [style*="border:1px solid #ccc"] { border-color: #28394f !important; }
+body.dark-mode [style*="border-bottom:1px solid #d1d5db"] { border-color: #28394f !important; }
+body.dark-mode [style*="border:1px solid #bbf7d0"] { border-color: #1a3d2a !important; }
+body.dark-mode [style*="border:2px solid var(--blue)"] { border-color: var(--blue) !important; }
+
+/* ── Archives — section headers gradients ── */
+body.dark-mode [style*="background:linear-gradient(135deg,#1565c0"] { background: linear-gradient(135deg,#0a2040,#0d2d58) !important; }
+body.dark-mode [style*="color:#93c5fd"] { color: #1e3a52 !important; }
+
+/* ── Archives — fixes dark mode inline colors ── */
+body.dark-mode [style*="background:#eff6ff"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#bfdbfe"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#dbeafe"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#f8fbff"] { background: #111c2b !important; }
+body.dark-mode [style*="background:#f0f9ff"] { background: #0e1e30 !important; }
+body.dark-mode [style*="background:#f0fdf4"] { background: #0e2218 !important; }
+body.dark-mode [style*="background:#fff5f5"] { background: #1f0e0e !important; }
+body.dark-mode [style*="background:#fef9c3"] { background: #1f1a0d !important; }
+body.dark-mode [style*="background:#fee2e2"] { background: #1f0e0e !important; }
+body.dark-mode [style*="background:#f0fff4"] { background: #0e2218 !important; }
+body.dark-mode [style*="background:#e0f2fe"] { background: #0e1e30 !important; }
+
+/* Hardcoded text colors that need dark mode override */
+body.dark-mode [style*="color:#1e40af"] { color: #5aabff !important; }
+body.dark-mode [style*="color:#0369a1"] { color: #5aabff !important; }
+body.dark-mode [style*="color:#15803d"] { color: #2dd4a8 !important; }
+body.dark-mode [style*="color:#e11d48"] { color: #f87171 !important; }
+body.dark-mode [style*="color:#222"] { color: var(--text) !important; }
+body.dark-mode [style*="color:#ccc"] { border-color: #28394f !important; }
+
+/* Archive cards background:white */
+body.dark-mode [style*="background:white"] { background: #1a2536 !important; }
+body.dark-mode [style*="background: white"] { background: #1a2536 !important; }
+
+/* Archive form section headers (hardcoded blue gradients) */
+body.dark-mode [style*="background:#1565c0"] { background: #0d2a50 !important; }
+body.dark-mode [style*="background:#0d47a1"] { background: #091f3a !important; }
+body.dark-mode [style*="background:#0891b2"] { background: #082d3a !important; }
+body.dark-mode [style*="background:linear-gradient(135deg,#1565c0"] { background: linear-gradient(135deg,#0a1d3a,#0d2a50) !important; }
+body.dark-mode [style*="background:linear-gradient(135deg,#1976d2"] { background: linear-gradient(135deg,#0a1d3a,#0d2a50) !important; }
+
+/* Archive demande info box */
+body.dark-mode [style*="border:1px solid #bfdbfe"] { border-color: #28394f !important; }
+body.dark-mode [style*="border:1px solid #bae6fd"] { border-color: #28394f !important; }
+body.dark-mode [style*="border:1px solid #93c5fd"] { border-color: #28394f !important; }
+body.dark-mode [style*="border-color:#ccc"] { border-color: #28394f !important; }
+
+/* Btn inline background for dark mode */
+body.dark-mode button[style*="background:#f0f9ff"] { background: #0e1e30 !important; }
+body.dark-mode button[style*="background:#fff5f5"] { background: #1f0e0e !important; color: #f87171 !important; border-color: #3d1f1f !important; }
+
+/* ── Panneau notifications (dark mode) ── */
+body.dark-mode #notifPanel { background: #1a2536 !important; border-color: #28394f !important; }
+body.dark-mode #notifPanel button { color: #8a9bb0; }
+body.dark-mode #notifBellBtn svg { color: var(--text) !important; }
+body.dark-mode #uiPrefsPanel { background: #1a2536 !important; border-color: #28394f !important; }
+
+/* ── Légifrance — dark mode ── */
+body.dark-mode .lfr-section { background: #1a2536; border-color: #28394f; }
+body.dark-mode .lfr-type-card { background: #1a2536; border-color: #28394f; }
+body.dark-mode .lfr-type-card:hover { border-color: var(--blue); background: rgba(74,158,255,.08); }
+body.dark-mode .lfr-type-card.active { border-color: var(--blue); background: rgba(74,158,255,.1); }
+body.dark-mode .lfr-type-detail-box { background: #111c2b; border-color: #28394f; }
+body.dark-mode .lfr-search-bar { border-color: #28394f; background: #1a2536; }
+body.dark-mode .lfr-search-bar input { color: var(--text); background: transparent; }
+body.dark-mode .lfr-input { background: #111c2b; border-color: #28394f; color: var(--text); }
+body.dark-mode .lfr-autocomplete-list { background: #1a2536; border-color: #28394f; }
+body.dark-mode .lfr-autocomplete-item { color: var(--text); border-color: #28394f; }
+body.dark-mode .lfr-autocomplete-item:hover { background: rgba(74,158,255,.12); }
+body.dark-mode .lfr-result-item { background: #1a2536; }
+body.dark-mode .lfr-result-item:hover { background: rgba(74,158,255,.08); }
+body.dark-mode .lfr-result-item.active { background: rgba(74,158,255,.1); }
+body.dark-mode .lfr-result-list { background: #28394f; border-color: #28394f; }
+body.dark-mode .lfr-badge { background: #111c2b; border-color: #28394f; color: var(--text-mid); }
+body.dark-mode .lfr-detail-body { background: #1a2536; }
+body.dark-mode .lfr-detail-footer { background: #111c2b; border-color: #28394f; }
+body.dark-mode .lfr-detail-content { color: var(--text); }
+body.dark-mode .lfr-detail-content table td,
+body.dark-mode .lfr-detail-content table th { border-color: #28394f; }
+body.dark-mode .lfr-detail-content table th { background: #111c2b; }
+body.dark-mode .lfr-code-picker { border-color: var(--blue); background: rgba(74,158,255,.05); }
+body.dark-mode .lfr-code-chip { background: rgba(74,158,255,.1); border-color: rgba(74,158,255,.25); }
+body.dark-mode .lfr-radio-pill { background: #1a2536; border-color: #28394f; color: var(--gray-text); }
+body.dark-mode .lfr-radio-pill.active { background: var(--blue); color: #fff; }
+body.dark-mode .lfr-page-size-select { background: #111c2b; border-color: #28394f; color: var(--text); }
+body.dark-mode .lfr-article-item { background: #1a2536; border-color: #28394f; }
+body.dark-mode .lfr-article-content { background: #111c2b; border-color: #28394f; }
+body.dark-mode .lfr-tree-expandable:hover { background: rgba(74,158,255,.08); }
+body.dark-mode .lfr-article-expandable:hover { background: rgba(74,158,255,.08); }
+body.dark-mode .lfr-detail-section-item { background: #111c2b; border-color: #28394f; }
+body.dark-mode .lfr-detail-link { border-color: #28394f; }
+body.dark-mode .lfr-detail-link:hover { background: rgba(74,158,255,.08); border-color: var(--blue); }
+body.dark-mode .lfr-cat-label { border-color: #28394f; }
+body.dark-mode .lfr-meta-chip { background: #111c2b; border-color: #28394f; }
+
+/* ── Plans interactifs (dark mode) ── */
+body.dark-mode .plan-batbar-select { background:var(--bg-card,#1e293b); color:var(--text,#e2e8f0); border-color:var(--border,#334155); }
+body.dark-mode .plan-toolgroup { background:var(--bg-secondary,#0f1e33); border-color:var(--border,#334155); }
+body.dark-mode .plan-tbtn { color:var(--text,#e2e8f0); }
+body.dark-mode .plan-tbtn:hover { background:var(--bg-card,#1e293b); }
+body.dark-mode .plan-tbtn.active { background:var(--blue,#3b82f6); color:#fff; }
+body.dark-mode .plan-sep { background:var(--border,#334155); }
+body.dark-mode .plan-mini-select { background:var(--bg-card,#1e293b); color:var(--text,#e2e8f0); border-color:var(--border,#334155); }
+body.dark-mode .plan-color-wrap input[type="color"] { background:var(--bg-card,#1e293b); border-color:var(--border,#334155); }
+body.dark-mode #planMapContainer { background:#0f1e33; }
+body.dark-mode .plan-side-header { border-color:var(--border,#334155); color:var(--text,#e2e8f0); }
+body.dark-mode .plan-etage-item:hover { background:var(--bg-secondary,#0f1e33); }
+body.dark-mode .plan-etage-item.active { background:rgba(43,123,230,.18); color:#e8f2fd; }
+body.dark-mode .plan-etage-niv { background:var(--bg-secondary,#0f1e33); color:var(--text-secondary,#94a3b8); }
+body.dark-mode .plan-asset-row { background:var(--bg-secondary,#0f1e33); border-color:var(--border,#334155); }
+body.dark-mode .plan-bottom-stat { background:rgba(43,123,230,.12); }
+body.dark-mode .plan-scale-bar { background:rgba(15,30,51,.95); color:#e2e8f0; border-color:var(--border,#334155); }
+body.dark-mode .plan-scale-line { background:#e2e8f0; border-color:#e2e8f0; }
+body.dark-mode .plan-props-actions { background:var(--bg-secondary,#0f1e33); border-color:var(--border,#334155); }
+body.dark-mode .plan-field { border-color:var(--border,#334155); }
+body.dark-mode .plan-vertex-handle { background:var(--bg-card,#1e293b); border-color:var(--blue,#3b82f6); }
+body.dark-mode .plan-vertex-handle:hover { background:var(--blue,#3b82f6); }
+body.dark-mode .plan-calque-item:hover { background:var(--bg-secondary,#0f1e33); }
+body.dark-mode .plan-calque-item.active { background:rgba(43,123,230,.18); color:#e8f2fd; }
+body.dark-mode .plan-calque-count { background:var(--bg-secondary,#0f1e33); color:var(--text-secondary,#94a3b8); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPLÉMENT DARK MODE — tints inline non couverts
+   ───────────────────────────────────────────────────────────────────────────
+   Plusieurs encarts utilisent des fonds clairs codés en dur (styles inline)
+   qui n'étaient pas remappés et restaient donc clairs sur fond sombre.
+   On suit la convention déjà en place : fond → teinte sombre opaque de même
+   famille, texte saturé foncé → variante claire pour garder le contraste.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Amber / jaune */
+body.dark-mode [style*="background:#fef3c7"] { background: #1f1a0d !important; }
+body.dark-mode [style*="background:#fff3cd"] { background: #1f1a0d !important; }
+body.dark-mode [style*="background:#fff7e6"] { background: #1f1a0d !important; }
+body.dark-mode [style*="color:#854d0e"] { color: #f59e0b !important; }
+body.dark-mode [style*="color:#b45309"] { color: #f59e0b !important; }
+
+/* Vert */
+body.dark-mode [style*="background:#dcfce7"] { background: #0e2218 !important; }
+body.dark-mode [style*="background:#d1fae5"] { background: #0e2218 !important; }
+body.dark-mode [style*="color:#166534"] { color: #4ade80 !important; }
+
+/* Rouge */
+body.dark-mode [style*="background:#fee;"] { background: #1f0e0e !important; }
+body.dark-mode [style*="color:#991b1b"] { color: #f87171 !important; }
+
+/* Violet / indigo */
+body.dark-mode [style*="background:#faf5ff"] { background: #1a0e22 !important; }
+body.dark-mode [style*="background:#eef2ff"] { background: #0e1326 !important; }
+
+/* Cyan / bleu clair */
+body.dark-mode [style*="background:#e8f4f8"] { background: #0d1e2e !important; }
+
+/* Bleu — texte trop foncé sur tint sombre */
+body.dark-mode [style*="color:#1d4ed8"] { color: #60a5fa !important; }
+
+/* Gris neutres → surface sombre */
+body.dark-mode [style*="background: #f8f9fa"] { background: #1a2536 !important; }
+body.dark-mode [style*="background:#f5f5f5"] { background: #1a2536 !important; }

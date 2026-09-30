@@ -1,0 +1,48 @@
+{
+  "identifiant": "acme.demo-types",
+  "format": "declaratif/1",
+  "nom": "Démonstration des types",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Un champ de chaque type, avec ses contrôles de saisie.",
+
+  "donnees": {
+    "fiches": {
+      "libelle": "Fiche",
+      "libelle_pluriel": "Fiches",
+      "champs": {
+        "reference":   { "type": "texte", "libelle": "Référence",
+                         "obligatoire": true, "unique": true, "max": 30,
+                         "aide": "Identifiant interne, unique" },
+        "description": { "type": "texte_long", "libelle": "Description", "max": 800 },
+        "quantite":    { "type": "entier", "libelle": "Quantité",
+                         "min": 0, "max": 9999, "defaut": 1 },
+        "prix":        { "type": "decimal", "libelle": "Prix unitaire HT", "min": 0 },
+        "livraison":   { "type": "date", "libelle": "Date de livraison" },
+        "criticite":   { "type": "choix", "libelle": "Criticité",
+                         "valeurs": ["Faible", "Normale", "Haute", "Critique"],
+                         "defaut": "Normale" },
+        "controlee":   { "type": "booleen", "libelle": "Contrôlée", "defaut": false }
+      }
+    }
+  },
+
+  "pages": [
+    {
+      "cle": "fiches",
+      "titre": "Fiches",
+      "icone": "file-text",
+      "roles": ["Gestionnaire", "Admin", "Visionneur"],
+      "vue": {
+        "type": "liste",
+        "source": "fiches",
+        "colonnes": ["reference", "quantite", "prix", "criticite", "controlee"],
+        "recherche": ["reference", "description"],
+        "filtres": [{ "champ": "criticite" }],
+        "tri": { "reference": "ASC" },
+        "par_page": 50,
+        "actions": ["creer", "modifier", "supprimer", "exporter"]
+      }
+    }
+  ]
+}

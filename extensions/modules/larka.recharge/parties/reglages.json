@@ -1,0 +1,27 @@
+{
+  "couleur_module": {
+    "type": "couleur",
+    "libelle": "Couleur",
+    "defaut": "#16a34a",
+    "applique": "couleur_accent"
+  },
+  "duree_max_heures": {
+    "type": "entier",
+    "libelle": "Durée maximale d'un créneau (h)",
+    "defaut": 4,
+    "min": 1,
+    "max": 12,
+    "aide": "Au-delà, le créneau est signalé au gestionnaire"
+  },
+  "densite": {
+    "type": "choix",
+    "libelle": "Densité du planning",
+    "defaut": "Compact",
+    "valeurs": [
+      "Compact",
+      "Confortable"
+    ],
+    "applique": "densite",
+    "aide": "Compact tient davantage de lignes sur une page imprimée"
+  }
+}

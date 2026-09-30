@@ -1,0 +1,114 @@
+{
+  "type": "liste",
+  "source": "creneaux",
+  "actions": [
+    "creer",
+    "modifier",
+    "supprimer",
+    "exporter"
+  ],
+  "recherche": [
+    "demandeur",
+    "immatriculation",
+    "vehicule"
+  ],
+  "filtres": [
+    {
+      "champ": "statut"
+    },
+    {
+      "champ": "place"
+    },
+    {
+      "champ": "borne"
+    },
+    {
+      "champ": "service"
+    }
+  ],
+  "tri": {
+    "date": "ASC",
+    "horaire": "ASC"
+  },
+  "grouper_par": "place",
+  "par_page": 200,
+  "tri_utilisateur": true,
+  "colonnes": [
+    "date",
+    "horaire",
+    "place",
+    "demandeur",
+    "immatriculation",
+    "statut"
+  ],
+  "totaux": [
+    "duree_h"
+  ],
+  "champs_formulaire": [
+    "date",
+    "horaire",
+    "duree_h",
+    "place",
+    "borne",
+    "demandeur",
+    "service",
+    "immatriculation",
+    "vehicule",
+    "motif",
+    "statut",
+    "reponse"
+  ],
+  "colonnes_formulaire": 3,
+  "surligner": [
+    {
+      "si": {
+        "champ": "statut",
+        "operateur": "egal",
+        "valeur": "Demandé"
+      },
+      "couleur": "#f59e0b",
+      "libelle": "À arbitrer"
+    },
+    {
+      "si": {
+        "champ": "trop_long",
+        "operateur": "egal",
+        "valeur": "Au-delà du plafond"
+      },
+      "couleur": "#dc2626",
+      "libelle": "Durée au-delà du plafond"
+    },
+    {
+      "si": {
+        "champ": "statut",
+        "operateur": "egal",
+        "valeur": "Refusé"
+      },
+      "couleur": "#6b7280",
+      "libelle": "Refusé"
+    },
+    {
+      "si": {
+        "champ": "passe",
+        "operateur": "egal",
+        "valeur": "Passé"
+      },
+      "couleur": "#94a3b8",
+      "libelle": "Créneau passé"
+    }
+  ],
+  "actions_rapides": [
+    {
+      "champ": "statut",
+      "valeur": "Accepté",
+      "libelle": "Accepter",
+      "couleur": "#16a34a"
+    },
+    {
+      "champ": "statut",
+      "valeur": "Refusé",
+      "libelle": "Refuser",
+      "couleur": "#dc2626"
+    }
+  ]
+}

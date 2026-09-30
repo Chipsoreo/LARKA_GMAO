@@ -1,0 +1,131 @@
+/*
+ * SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+ * SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+ *
+ * This file is part of Larka, proprietary software by Mickaël Larcin.
+ * All rights reserved. Use is subject to the license terms; copying,
+ * distribution, modification or reverse-engineering without the author's
+ * prior written permission is prohibited. See the LICENSE file for details.
+ */
+
+/* Larka — Styles de base : variables CSS, reset, typographie, couleurs */
+/* Polices auto-hebergees (aucune dependance externe) - DM Sans / DM Mono */
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:300;src:url(fonts/dm-sans-latin-300-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:300;src:url(fonts/dm-sans-latin-ext-300-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:400;src:url(fonts/dm-sans-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:400;src:url(fonts/dm-sans-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:500;src:url(fonts/dm-sans-latin-500-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:500;src:url(fonts/dm-sans-latin-ext-500-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:600;src:url(fonts/dm-sans-latin-600-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:600;src:url(fonts/dm-sans-latin-ext-600-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:700;src:url(fonts/dm-sans-latin-700-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Sans';font-style:normal;font-display:swap;font-weight:700;src:url(fonts/dm-sans-latin-ext-700-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Mono';font-style:normal;font-display:swap;font-weight:400;src:url(fonts/dm-mono-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Mono';font-style:normal;font-display:swap;font-weight:400;src:url(fonts/dm-mono-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Mono';font-style:normal;font-display:swap;font-weight:500;src:url(fonts/dm-mono-latin-500-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Mono';font-style:normal;font-display:swap;font-weight:500;src:url(fonts/dm-mono-latin-ext-500-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+
+/* ── Variables ── */
+:root {
+  --navy:        #1a2e4a;
+  --navy-dark:   #0f1e33;
+  --navy-mid:    #213a5c;
+  --blue:        #2b7be6;
+  --blue-light:  #4a9ff5;
+  --blue-pale:   #e8f2fd;
+  --teal:        #1ab394;
+  --teal-light:  #e6f7f4;
+  --orange:      #f5a623;
+  --orange-light:#fef5e4;
+  --red:         #e74c3c;
+  --red-light:   #fdecea;
+  --gray-bg:     #f4f6f9;
+  --gray-border: #dde3ec;
+  --gray-text:   #7a8a9e;
+  --white:       #ffffff;
+  /* Fond des cartes/encarts. Était utilisé via var(--card-bg,#fff) dans 9 fichiers
+     mais jamais défini → restait blanc même en mode sombre. Désormais thémé. */
+  --card-bg:     #ffffff;
+  --text:        #1a2e4a;
+  --text-mid:    #4a5568;
+
+  /* ── Procédures d'urgence ──
+     Fonds et accents ambrés. Déclarés en variables (et surchargés dans
+     dark-mode.css) parce qu'un fond clair codé en dur reste clair en mode
+     sombre : le texte, lui, passe à var(--text) ≈ blanc, et le bloc devient
+     illisible. */
+  --urg-proc-bg:     #fffbeb;
+  --urg-proc-bd:     #fde68a;
+  --urg-proc-accent: #f59e0b;
+  --urg-proc-titre:  #92400e;
+  --urg-resto-bg:    #fef3c7;
+  --urg-resto-bd:    #fcd34d;
+  --urg-resto-fg:    #92400e;
+
+  /* ── Pastilles et encarts de statut ──
+     Couples fond/texte utilisés pour les étiquettes (Actif, Inactif, domaines…)
+     et les encarts d'avertissement. Écrits en variables pour que le mode sombre
+     puisse les remplacer par des teintes translucides : un fond clair opaque
+     reste clair en sombre et découpe un rectangle blanc dans l'interface. */
+  --chip-ok-bg:      #dcfce7;
+  --chip-ok-bd:      #86efac;
+  --chip-ok-fg:      #166534;
+  --chip-warn-bg:    #fff7e6;
+  --chip-warn-bd:    #ffd591;
+  --chip-warn-fg:    #874d00;
+  --chip-danger-bg:  #fef2f2;
+  --chip-danger-bd:  #fecaca;
+  --chip-danger-fg:  #991b1b;
+  --chip-info-bg:    #f0f9ff;
+  --chip-info-bd:    #bae6fd;
+  --chip-info-fg:    #075985;
+
+  /* ── Texte posé DIRECTEMENT sur le fond de la zone de contenu ──
+     Piège : body.app-mode donne à .content un fond bleu nuit (#1a3050) dans
+     LES DEUX thèmes. Un titre en var(--navy) (#1a2e4a en clair) s'y retrouve
+     donc bleu foncé sur bleu foncé — invisible. Ces deux variables valent la
+     même chose en clair et en sombre, puisque le fond, lui, ne change pas. */
+  --on-content:      #eaf2ff;
+  --on-content-dim:  rgba(234,242,255,.70);
+  --shadow-sm:   0 1px 4px rgba(0,0,0,0.07);
+  --shadow:      0 4px 16px rgba(0,0,0,0.09);
+  --shadow-lg:   0 8px 32px rgba(0,0,0,0.12);
+  --radius:      12px;
+  --radius-sm:   8px;
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #0d1f3c;
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* ── Canvas river (fond animé) ── */
+.river-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 1;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gray-border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #b0b8c8; }
+
+/* ── Spinner animation ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideInRight { from { transform: translateX(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* ── Utility: responsive visibility ── */
+@media (max-width: 600px) {
+  .hide-sm { display: none !important; }
+}
