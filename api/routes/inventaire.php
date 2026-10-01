@@ -66,7 +66,13 @@ if ($action === 'interv_lignes') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
     if ($method === 'GET')    json_ok($db->getLignesIntervention((int)($_GET['interv_id']??0)));
     require_role($user, ['Admin','Gestionnaire']);
-    if ($method === 'POST')   json_ok(['id' => $db->addLigneIntervention(array_merge(get_body(), ['interventionId' => (int)($_GET['interv_id']??0)]))]);
+    if ($method === 'POST') {
+        try {
+            json_ok(['id' => $db->addLigneIntervention(array_merge(get_body(), ['interventionId' => (int)($_GET['interv_id']??0)]))]);
+        } catch (\PDOException $e)            { throw $e; }   // erreur SQL : gestion générique (sans détail)
+          catch (\InvalidArgumentException $e) { json_error($e->getMessage(), 400); }
+          catch (\RuntimeException $e)         { json_error($e->getMessage(), 409); }
+    }
     if ($method === 'DELETE') { $db->deleteLigneIntervention($id); json_ok('OK'); }
 }
 

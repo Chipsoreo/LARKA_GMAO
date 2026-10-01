@@ -4061,8 +4061,10 @@ async function _pushTestNotif(mode) {
       resp.details.forEach(d => {
         const color = d.success ? 'var(--green,#16a34a)' : 'var(--red,#dc2626)';
         const icon = d.success ? '✓' : '✗';
-        html += `<div style="color:${color};margin:2px 0">${icon} <b>${d.platform}</b> (user ${d.userId}) — HTTP ${d.statusCode} ${d.reason}`;
-        html += `<br><span style="color:var(--gray-text);font-size:10px">${d.endpoint}</span></div>`;
+        // platform et endpoint sont fournis par l'abonné (n'importe quel compte),
+        // reason recopie la réponse du service distant : tout est échappé.
+        html += `<div style="color:${color};margin:2px 0">${icon} <b>${_escCfg(d.platform)}</b> (user ${_escCfg(d.userId)}) — HTTP ${_escCfg(d.statusCode)} ${_escCfg(d.reason)}`;
+        html += `<br><span style="color:var(--gray-text);font-size:10px">${_escCfg(d.endpoint)}</span></div>`;
       });
       html += '</div>';
     }
@@ -4082,8 +4084,8 @@ async function _pushDiagnose() {
     const info = resp.info || {};
     let html = ok
       ? '<span style="color:var(--green,#16a34a)">✅ VAPID OK</span>'
-      : '<span style="color:var(--red)">❌ ' + errors.join(', ') + '</span>';
-    html += ` — <span style="color:var(--gray-text)">${info.subscriptions_count || 0} abonnement(s)</span>`;
+      : '<span style="color:var(--red)">❌ ' + errors.map(_escCfg).join(', ') + '</span>';
+    html += ` — <span style="color:var(--gray-text)">${_escCfg(info.subscriptions_count || 0)} abonnement(s)</span>`;
     if (result) result.innerHTML = html;
   } catch(e) {
     if (result) result.innerHTML = `<span style="color:var(--red)">❌ ${_escCfg(e.message)}</span>`;

@@ -31,6 +31,47 @@ class WebPush {
     /** DER header pour une clé publique EC P-256 non compressée (26 octets) */
     private const EC_P256_DER_PREFIX = "\x30\x59\x30\x13\x06\x07\x2a\x86\x48\xce\x3d\x02\x01\x06\x08\x2a\x86\x48\xce\x3d\x03\x01\x07\x03\x42\x00";
 
+    /**
+     * Services push des navigateurs (suffixes d'hôte). Complétable par
+     * « push.endpoints_autorises » dans config.json (tableau de suffixes).
+     */
+    private const SERVICES_PUSH = [
+        'fcm.googleapis.com',          // Chrome, Edge, Opera, Samsung Internet…
+        'android.googleapis.com',      // ancien point d'entrée Google
+        'push.services.mozilla.com',   // Firefox
+        'notify.windows.com',          // Windows (WNS)
+        'push.apple.com',              // Safari
+    ];
+
+    /**
+     * ⚠️ FIX SÉCURITÉ (SSRF) : l'« endpoint » d'une souscription est fourni par
+     * le navigateur — donc par n'importe quel compte connecté — et le serveur
+     * lui envoyait ensuite une requête POST, TLS non vérifié, en renvoyant le
+     * début de la réponse dans le diagnostic du test push. Une souscription
+     * forgée faisait ainsi du serveur un relais vers son réseau interne
+     * (http://127.0.0.1:…, adresses privées, métadonnées cloud).
+     * Seuls les services push connus, en HTTPS, sont désormais acceptés.
+     */
+    public static function endpointAutorise(string $endpoint): bool {
+        if ($endpoint === '' || strlen($endpoint) > 2048) return false;
+        $p = parse_url($endpoint);
+        if (!is_array($p) || strtolower($p['scheme'] ?? '') !== 'https') return false;
+        if (isset($p['user']) || isset($p['pass']) || isset($p['port']) && (int)$p['port'] !== 443) return false;
+        $hote = strtolower(rtrim((string)($p['host'] ?? ''), '.'));
+        if ($hote === '' || filter_var($hote, FILTER_VALIDATE_IP) || str_starts_with($hote, '[')) return false;
+        $suffixes = self::SERVICES_PUSH;
+        if (defined('PUSH_ENDPOINTS_AUTORISES') && is_array(PUSH_ENDPOINTS_AUTORISES)) {
+            foreach (PUSH_ENDPOINTS_AUTORISES as $x) {
+                $x = strtolower(trim((string)$x, " .\t"));
+                if ($x !== '') $suffixes[] = $x;
+            }
+        }
+        foreach ($suffixes as $suf) {
+            if ($hote === $suf || str_ends_with($hote, '.' . $suf)) return true;
+        }
+        return false;
+    }
+
     public function __construct(string $vapidPemContent, string $vapidPublicKeyB64url, string $subject = 'mailto:admin@localhost') {
         $this->vapidPem       = $vapidPemContent;
         $this->vapidPublicB64 = $vapidPublicKeyB64url;
@@ -56,6 +97,9 @@ class WebPush {
 
         if (!$endpoint || !$p256dh || !$auth) {
             return ['success' => false, 'statusCode' => 0, 'reason' => 'Subscription incomplète'];
+        }
+        if (!self::endpointAutorise($endpoint)) {
+            return ['success' => false, 'statusCode' => 0, 'reason' => 'Service push non reconnu'];
         }
 
         // 1. Chiffrer le payload (RFC 8291)
@@ -88,7 +132,11 @@ class WebPush {
             CURLOPT_POSTFIELDS     => $encrypted,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => false,
+            // ⚠️ FIX SÉCURITÉ : la vérification TLS était désactivée.
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_TIMEOUT        => 30,
         ]);
 
@@ -142,6 +190,10 @@ class WebPush {
                 $results[$i] = ['success' => false, 'statusCode' => 0, 'reason' => 'Subscription incomplète', 'endpoint' => $endpoint];
                 continue;
             }
+            if (!self::endpointAutorise($endpoint)) {
+                $results[$i] = ['success' => false, 'statusCode' => 0, 'reason' => 'Service push non reconnu', 'endpoint' => $endpoint];
+                continue;
+            }
 
             $encrypted = $this->encryptPayload($payload, $p256dh, $auth);
             if ($encrypted === false) {
@@ -189,7 +241,10 @@ class WebPush {
                     CURLOPT_POSTFIELDS     => $req['encrypted'],
                     CURLOPT_HTTPHEADER     => $req['headers'],
                     CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_SSL_VERIFYPEER => false,
+                    // ⚠️ FIX SÉCURITÉ : la vérification TLS était désactivée.
+                    CURLOPT_SSL_VERIFYPEER => true,
+                    CURLOPT_SSL_VERIFYHOST => 2,
+                    CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
                     CURLOPT_TIMEOUT        => 30,
                     CURLOPT_CONNECTTIMEOUT => 10,
                     CURLOPT_FOLLOWLOCATION => false,

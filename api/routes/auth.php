@@ -13,69 +13,74 @@
  *           oauth_microsoft_url, oauth_google_url, auth_config
  */
 
+// ── Résolution du tenant d'un compte (login, mot de passe oublié, reset) ─────
+//
+// ⚠️ FIX BUG : la résolution n'existait que dans « login ». « forgot_password »
+// et « reset_password » travaillaient sur la base choisie par le nom d'hôte :
+// en multi-tenant, le code de réinitialisation d'un agent était cherché (et
+// écrit) dans la mauvaise base — l'agent ne recevait jamais rien, ou pire, un
+// homonyme d'une autre organisation recevait le code.
+//
+// ⚠️ FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
+// locaux) ignoraient l'état « actif » du tenant ; une organisation désactivée
+// par le super administrateur restait donc accessible par ce chemin.
+//
+// Retourne ['cle' => ?string, 'erreur' => ?string, 'code' => int].
+// En mono-tenant : cle = null, sans erreur.
+if (!function_exists('tenant_du_compte')) {
+    function tenant_du_compte(string $login): array {
+        return TenantResolver::tenantPourConnexion($login, true);
+    }
+
+    /** Base d'un tenant résolu ; null si sa configuration n'est pas chargeable. */
+    function base_du_tenant(string $cle): ?Database {
+        $cfg = TenantResolver::getDbConfigForTenant($cle);
+        if (!$cfg) {
+            // ⚠️ Jamais de repli sur la base par défaut : le mot de passe d'un
+            // agent serait vérifié contre les comptes d'un autre tenant.
+            error_log("[AUTH] Tenant '{$cle}' résolu mais config DB introuvable.");
+            return null;
+        }
+        return new Database($cfg);
+    }
+}
+
 // ── Connexion locale (avec résolution multi-tenant) ──────────────────────────
 if ($action === 'login' && $method === 'POST') {
     $body = get_body();
-    $login = $body['login'] ?? '';
-    $password = $body['password'] ?? '';
+    $login = trim((string)($body['login'] ?? ''));
+    $password = (string)($body['password'] ?? '');
     $tenantKey = null;
 
-    // Rate limiting par IP
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    check_rate_limit('login_' . $clientIp, 10, 300);
-    // Rate limiting par login
-    if ($login) check_rate_limit('login_user_' . strtolower($login), 5, 300);
+    // Rate limiting par IP et par login.
+    // ⚠️ FIX BUG : chaque appel — connexions RÉUSSIES comprises — était compté.
+    // Cinq connexions légitimes en cinq minutes (plusieurs onglets, un poste
+    // partagé, un test) bloquaient le compte. Seuls les échecs comptent
+    // désormais ; le plafond, lui, est vérifié avant toute vérification.
+    $clientIp = client_ip();
+    check_rate_limit('login_' . $clientIp, 10, 300, false);
+    if ($login !== '') check_rate_limit('login_user_' . strtolower($login), 5, 300, false);
+    $echecConnexion = static function () use ($clientIp, $login): void {
+        rate_limit_noter('login_' . $clientIp);
+        if ($login !== '') rate_limit_noter('login_user_' . strtolower($login));
+    };
 
-    if (TenantResolver::isMultiTenant()) {
-        if (str_contains($login, '@')) {
-            // ── Email : résolution par domaine email ──────────────────────────
-            $tenantKey = TenantResolver::resolveByEmailDomain($login);
-            if (!$tenantKey) {
-                // Chercher un tenant wildcard (*)
-                foreach (TenantResolver::getAllTenants() as $k => $t) {
-                    if (in_array('*', $t['domaines_email'] ?? [])) { $tenantKey = $k; break; }
-                }
-            }
-            // Aussi vérifier le registre comptes locaux (un email peut être un login local)
-            if (!$tenantKey) {
-                $tenantKey = TenantResolver::resolveLocalAccount($login);
-            }
-            if (!$tenantKey) {
-                $domain = strtolower(substr(strrchr($login, '@'), 1));
-                json_error("Aucune organisation trouvée pour le domaine @{$domain}. Contactez l'administrateur.", 403);
-            }
-        } else {
-            // ── Login sans @ : résolution par registre comptes locaux ─────────
-            $tenantKey = TenantResolver::resolveLocalAccount($login);
-            if (!$tenantKey) {
-                // Fallback : chercher un tenant wildcard
-                foreach (TenantResolver::getAllTenants() as $k => $t) {
-                    if (in_array('*', $t['domaines_email'] ?? [])) { $tenantKey = $k; break; }
-                }
-            }
-            if (!$tenantKey) {
-                json_error("Compte \"{$login}\" non rattaché à une base de données. Contactez l'administrateur.", 403);
-            }
-        }
-
-        // Connecter la bonne DB
-        $tenantDbCfg = TenantResolver::getDbConfigForTenant($tenantKey);
-        if ($tenantDbCfg) {
-            $db = new Database($tenantDbCfg);
-            $_SESSION['tenant_key'] = $tenantKey;
-        } else {
-            // ⚠️ FIX SÉCURITÉ/BUG : on a résolu un tenantKey mais sa config DB
-            // n'est pas chargeable. On ne DOIT pas tenter le login sur la
-            // base par défaut — sinon le password de l'utilisateur d'un
-            // tenant peut être vérifié contre les utilisateurs d'un autre
-            // tenant (bypass de l'isolation multi-tenant).
-            error_log("[AUTH] Tenant '{$tenantKey}' résolu mais config DB introuvable — login refusé.");
-            json_error('Configuration tenant indisponible. Contactez l\'administrateur.', 503);
-        }
+    $res = tenant_du_compte($login);
+    if ($res['erreur']) { $echecConnexion(); json_error($res['erreur'], $res['code']); }
+    if ($res['cle']) {
+        $tenantKey = $res['cle'];
+        $db = base_du_tenant($tenantKey);
+        if (!$db) json_error('Configuration tenant indisponible. Contactez l\'administrateur.', 503);
+        // ⚠️ FIX SÉCURITÉ : tenant_key n'est plus écrit en session AVANT la
+        // vérification du mot de passe. Un utilisateur déjà connecté qui tentait
+        // (et ratait) une connexion avec le login d'une autre organisation
+        // basculait sa session existante sur la base de cette organisation —
+        // avec ses propres droits.
     }
 
     $user = $db->login($login, $password);
     if (!$user) {
+        $echecConnexion();
         // Log de sécurité — corrélation possible avec les rate_limited
         if (class_exists('SecurityLog')) {
             SecurityLog::loginFailure($login);
@@ -89,6 +94,8 @@ if ($action === 'login' && $method === 'POST') {
     if ($tenantKey) {
         $_SESSION['tenant_key'] = $tenantKey;
     }
+    // Une connexion d'agent met fin à une éventuelle bascule super admin.
+    unset($_SESSION['forced_tenant']);
     $user['_tenant'] = $_SESSION['tenant_key'] ?? 'default';
     if (class_exists('SecurityLog')) {
         SecurityLog::loginSuccess($login, $user['_tenant']);
@@ -133,6 +140,8 @@ if ($action === 'oauth_check' && $method === 'GET') {
             $data = json_decode(file_get_contents($tokenFile), true);
             @unlink($tokenFile);
             if ($data && isset($data['user']) && (time() - ($data['ts'] ?? 0)) < 300) {
+                if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+                unset($_SESSION['forced_tenant']);
                 $_SESSION['user'] = $data['user'];
                 // Restaurer le tenant depuis le token OAuth
                 if (!empty($data['tenant_key'])) {
@@ -201,7 +210,7 @@ if ($action === 'forgot_password' && $method === 'POST') {
     if (!$emailInput || !str_contains($emailInput, '@')) json_error('Adresse email requise.');
 
     // Rate limiting
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $clientIp = client_ip();
     check_rate_limit('forgot_' . $clientIp, 3, 600);
     check_rate_limit('forgot_user_' . strtolower($login), 3, 600);
 
@@ -216,6 +225,17 @@ if ($action === 'forgot_password' && $method === 'POST') {
     // qu'il soit local ou OAuth, que l'email corresponde ou non. Les vrais
     // erreurs sont seulement loggées côté serveur.
     $genericOk = ['email' => 'votre adresse email enregistrée'];
+
+    // Base de l'organisation du compte (multi-tenant), comme pour la connexion.
+    $res = tenant_du_compte($login);
+    if ($res['erreur']) {
+        error_log("Larka: forgot_password — \"$login\" : " . $res['erreur']);
+        json_ok($genericOk);
+    }
+    if ($res['cle']) {
+        $db = base_du_tenant($res['cle']);
+        if (!$db) json_ok($genericOk);
+    }
 
     // Compte local ? (sinon on log + on retourne le OK générique)
     if (!$db->isLocalAccount($login)) {
@@ -269,12 +289,20 @@ if ($action === 'reset_password' && $method === 'POST') {
     $newPwd   = $body['newPassword'] ?? '';
 
     // Rate limiting — brute force code
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $clientIp = client_ip();
     check_rate_limit('reset_' . $clientIp, 5, 600);
     if ($login) check_rate_limit('reset_user_' . strtolower($login), 5, 600);
 
     if (!$login || !$code || !$newPwd) json_error('Tous les champs sont requis.');
     if (strlen($newPwd) < 8) json_error('Le mot de passe doit contenir au moins 8 caractères.');
+
+    // Même base que celle où forgot_password a écrit le code.
+    $res = tenant_du_compte($login);
+    if ($res['erreur']) json_error('Code invalide ou expiré. Veuillez redemander un code.');
+    if ($res['cle']) {
+        $db = base_du_tenant($res['cle']);
+        if (!$db) json_error('Configuration tenant indisponible. Contactez l\'administrateur.', 503);
+    }
 
     $ok = $db->resetPassword($login, $code, $newPwd);
     if (!$ok) json_error('Code invalide ou expiré. Veuillez redemander un code.');
@@ -293,8 +321,18 @@ if ($action === 'change_password' && $method === 'POST') {
     if (!$oldPwd || !$newPwd) json_error('Ancien et nouveau mot de passe requis.');
     if (strlen($newPwd) < 8) json_error('Le nouveau mot de passe doit contenir au moins 8 caractères.');
 
+    if ($newPwd === $oldPwd) json_error('Le nouveau mot de passe doit être différent de l\'ancien.');
+
     $ok = $db->changePassword((int)$user['Id'], $oldPwd, $newPwd);
     if (!$ok) json_error('Ancien mot de passe incorrect.');
+    // ⚠️ FIX BUG : la base remettait MustChangePassword à 0 mais la SESSION
+    // gardait 1 — l'agent restait bloqué sur « Vous devez changer votre mot de
+    // passe » jusqu'à se déconnecter. (utilisateur_session() relit aussi la
+    // fiche à chaque requête ; on aligne la session tout de suite.)
+    if (!empty($_SESSION['user']) && (int)($_SESSION['user']['Id'] ?? 0) === (int)$user['Id']) {
+        $_SESSION['user']['MustChangePassword'] = 0;
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
     json_ok('Mot de passe modifié avec succès.');
 }
 

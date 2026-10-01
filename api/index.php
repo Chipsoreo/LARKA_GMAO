@@ -254,6 +254,26 @@ if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'], true)) {
             exit;
         }
     }
+
+    // ⚠️ « PAS DE CONTENT-TYPE » NE VEUT PAS DIRE « PAS DE CORPS ».
+    // Le commentaire ci-dessus supposait qu'une requête sans Content-Type était
+    // une requête sans corps. C'est faux : fetch() envoie un ArrayBuffer ou un
+    // Blob sans type SANS aucun en-tête Content-Type, ce qui en fait une requête
+    // « simple » (pas de pré-vérification CORS) — et get_body() lit le JSON de
+    // toute façon. On refuse donc un corps non vide qui n'annonce pas son type.
+    // Tous les clients de Larka déclarent application/json (ou multipart).
+    if ($ct === '') {
+        $_len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($_len === 0 && !isset($_SERVER['CONTENT_LENGTH'])) {
+            // Transfert « chunked » : pas de longueur annoncée, on mesure.
+            $_len = strlen((string)file_get_contents('php://input'));
+        }
+        if ($_len > 0) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Content-Type manquant.']);
+            exit;
+        }
+    }
 }
 
 // ── Helpers globaux ───────────────────────────────────────────────────────────
@@ -296,8 +316,78 @@ if (!empty($_SESSION['superadmin']['authenticated'])) {
 }
 $_SESSION['_last_activity'] = time();
 
+/**
+ * Utilisateur de la session, REVÉRIFIÉ en base — ou null.
+ *
+ * ⚠️ LA SESSION FAISAIT FOI JUSQU'À SON EXPIRATION.
+ * $_SESSION['user'] est une copie de la fiche prise à la connexion. Un compte
+ * désactivé, et même SUPPRIMÉ, continuait donc de tout faire jusqu'à
+ * l'expiration du cookie (24 h) ; un gestionnaire rétrogradé gardait ses
+ * droits ; un tenant désactivé par le super admin restait ouvert à ceux qui
+ * étaient déjà connectés.
+ *
+ * On relit donc la fiche une fois par requête (une requête indexée par Id) :
+ *   • compte absent ou inactif → session utilisateur révoquée ;
+ *   • rôle, identité et drapeau « mot de passe à changer » → rafraîchis.
+ * (Le tenant désactivé ou supprimé est traité dans config.php.)
+ * Si la base est injoignable, la session est conservée telle quelle : les
+ * routes qui ont besoin de la base échoueront d'elles-mêmes.
+ */
+function utilisateur_session(): ?array {
+    static $verifie = false;
+    if (empty($_SESSION['user']) || !is_array($_SESSION['user'])) return null;
+    if ($verifie) return $_SESSION['user'];
+    $verifie = true;
+
+    $revoquer = function (string $raison): void {
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('session_revoked', [
+                'login'  => (string)($_SESSION['user']['Login'] ?? ''),
+                'tenant' => (string)($_SESSION['tenant_key'] ?? ''),
+                'reason' => $raison,
+            ]);
+        }
+        unset($_SESSION['user']);
+        if (empty($_SESSION['forced_tenant'])) unset($_SESSION['tenant_key']);
+    };
+
+    // (Le tenant désactivé ou supprimé est traité plus tôt, dans config.php,
+    //  avant même le choix de la base.)
+
+    $uid = (int)($_SESSION['user']['Id'] ?? 0);
+    if ($uid <= 0) return $_SESSION['user'];
+    try {
+        if (!(($GLOBALS['db'] ?? null) instanceof Database)) {
+            // Réutilisée par le dispatch : une seule connexion par requête.
+            $GLOBALS['db'] = new Database();
+        }
+        $base  = $GLOBALS['db'];
+        $fiche = $base->fetchOne("SELECT * FROM Utilisateurs WHERE Id = :id", ['id' => $uid]);
+    } catch (\Throwable $e) {
+        return $_SESSION['user'];
+    }
+    if (!$fiche || (int)($fiche['Actif'] ?? 1) !== 1) {
+        $revoquer($fiche ? 'compte désactivé' : 'compte supprimé');
+        return null;
+    }
+    // Garde-fou : la fiche trouvée sous cet Id doit être celle de la session.
+    // Un Id ne désigne la même personne que dans la même base ; s'il pointe
+    // ailleurs (base changée, compte supprimé puis Id réattribué, renommage),
+    // on ne prête pas à la session les droits de quelqu'un d'autre.
+    $loginSession = (string)($_SESSION['user']['Login'] ?? '');
+    if ($loginSession !== '' && strcasecmp($loginSession, (string)($fiche['Login'] ?? '')) !== 0) {
+        $revoquer('identité différente sous le même Id');
+        return null;
+    }
+    foreach (['Login', 'Nom', 'Prenom', 'Email', 'Role', 'Provider', 'Actif', 'MustChangePassword'] as $k) {
+        if (array_key_exists($k, $fiche)) $_SESSION['user'][$k] = $fiche[$k];
+    }
+    return $_SESSION['user'];
+}
+
 function require_auth(): array {
-    if (!empty($_SESSION['user'])) return $_SESSION['user'];
+    $u = utilisateur_session();
+    if ($u !== null) return $u;
     // Le Super Admin n'a pas de $_SESSION['user'] mais doit pouvoir
     // accéder aux routes admin (push_test, push_config, etc.) depuis la Configuration.
     // On retourne un user virtuel avec le rôle Admin.
@@ -377,47 +467,6 @@ define('LARKA_ACTION_COURANTE', $action !== '' ? $action : '(vide)');
 // Validation action
 if (strlen($action) > 50) json_error('Action invalide.', 400);
 
-// ── Blocage si l'utilisateur doit changer son mot de passe ──────────────────
-// Pour les comptes par défaut (admin/admin) ou réinitialisés avec un flag forcé,
-// on refuse toute action sauf : se déconnecter, lire son profil, changer son mdp.
-if (!empty($_SESSION['user']['MustChangePassword']) && (int)$_SESSION['user']['MustChangePassword'] === 1) {
-    $_allowedWhenMustChange = ['logout', 'me', 'change_password', 'auth_config', 'server_url'];
-    if (!in_array($action, $_allowedWhenMustChange, true)) {
-        json_error('Vous devez changer votre mot de passe avant de continuer.', 403);
-    }
-}
-
-// ── Rate limiting simple (fichier) pour le login et l'API globale ───────────
-// ⚠️ FIX BUG : la définition de cette fonction est volontairement placée
-// AVANT ses appels. PHP hoist les fonctions nommées donc l'ancien ordre
-// fonctionnait, mais c'était fragile (ex. si on remplaçait par une closure
-// ou une fonction conditionnelle). Plus robuste de garder l'ordre logique.
-function check_rate_limit(string $key, int $maxAttempts = 10, int $windowSeconds = 300): void {
-    $dir = __DIR__ . '/../data/rate_limits';
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
-    $file = $dir . '/' . sha1($key) . '.json';
-    $data = file_exists($file) ? (json_decode(file_get_contents($file), true) ?? []) : [];
-    $now  = time();
-    // Nettoyer les anciennes entrées
-    $data = array_filter($data, fn($t) => ($now - $t) < $windowSeconds);
-    if (count($data) >= $maxAttempts) {
-        // Log de sécurité — utile pour détecter les bruteforce
-        if (class_exists('SecurityLog')) {
-            SecurityLog::rateLimited($key, $maxAttempts);
-        }
-        json_error('Trop de tentatives. Réessayez dans quelques minutes.', 429);
-    }
-    $data[] = $now;
-    @file_put_contents($file, json_encode(array_values($data)));
-}
-
-// ── Rate limiting global par IP (200 req / 60s — anti-DDoS basique) ─────────
-$_clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-if ($action && !in_array($action, ['auth_config', 'server_url', 'push_vapid_key'])) {
-    check_rate_limit('global_' . $_clientIp, 200, 60);
-}
-
-
 // Certaines routes publiques ne nécessitent pas la base de données.
 // Les exécuter avant d'instancier Database() évite qu'un souci PDO empêche
 // l'affichage des boutons SSO ou la découverte de l'URL serveur.
@@ -435,6 +484,90 @@ $dbOptionalActions = ['auth_config', 'server_url', 'oauth_microsoft_url', 'push_
     'superadmin_branding_public',
     'config_serveur',
     'maj_etat', 'maj_verifier', 'maj_installer', 'maj_historique', 'maj_restaurer'];
+
+// ── Revérification de la session (compte supprimé / désactivé / rétrogradé) ─
+// Faite avant le blocage ci-dessous pour que le drapeau MustChangePassword
+// soit celui de la base et non celui figé à la connexion. Pas pour les routes
+// qui doivent répondre sans base (boutons SSO, super admin…) : celles qui
+// exigent un utilisateur la feront d'elles-mêmes via require_auth().
+if (!empty($_SESSION['user']) && !in_array($action, $dbOptionalActions, true)) utilisateur_session();
+
+// ── Blocage si l'utilisateur doit changer son mot de passe ──────────────────
+// Pour les comptes par défaut (admin/admin) ou réinitialisés avec un flag forcé,
+// on refuse toute action sauf : se déconnecter, lire son profil, changer son mdp.
+if (!empty($_SESSION['user']['MustChangePassword']) && (int)$_SESSION['user']['MustChangePassword'] === 1) {
+    $_allowedWhenMustChange = ['logout', 'me', 'change_password', 'auth_config', 'server_url'];
+    if (!in_array($action, $_allowedWhenMustChange, true)) {
+        json_error('Vous devez changer votre mot de passe avant de continuer.', 403);
+    }
+}
+
+// ── Rate limiting simple (fichier) pour le login et l'API globale ───────────
+// ⚠️ FIX BUG : la définition de cette fonction est volontairement placée
+// AVANT ses appels. PHP hoist les fonctions nommées donc l'ancien ordre
+// fonctionnait, mais c'était fragile (ex. si on remplaçait par une closure
+// ou une fonction conditionnelle). Plus robuste de garder l'ordre logique.
+/**
+ * Limite de débit. Refuse (429) si $maxAttempts évènements ont déjà été notés
+ * pour $key dans la fenêtre.
+ *
+ * $noter = true  : l'appel lui-même compte (limite de débit classique) ;
+ * $noter = false : on vérifie seulement — l'appelant notera les seuls ÉCHECS
+ *                  avec rate_limit_noter() (connexion : une connexion réussie
+ *                  ne doit pas rapprocher du blocage).
+ */
+function check_rate_limit(string $key, int $maxAttempts = 10, int $windowSeconds = 300, bool $noter = true): void {
+    $dir = __DIR__ . '/../data/rate_limits';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $file = $dir . '/' . sha1($key) . '.json';
+    // Fenêtre mémorisée avec la clé : rate_limit_noter() purge à l'identique.
+    $GLOBALS['_rate_limit_fenetres'][$key] = $windowSeconds;
+    $fh = @fopen($file, 'c+');
+    if (!$fh) return;                       // stockage indisponible : on ne bloque pas
+    flock($fh, LOCK_EX);                    // lecture-écriture atomique (requêtes concurrentes)
+    $data = json_decode(stream_get_contents($fh) ?: '[]', true);
+    if (!is_array($data)) $data = [];
+    $now  = time();
+    // Nettoyer les anciennes entrées
+    $data = array_values(array_filter($data, fn($t) => is_int($t) && ($now - $t) < $windowSeconds));
+    if (count($data) >= $maxAttempts) {
+        flock($fh, LOCK_UN); fclose($fh);
+        // Log de sécurité — utile pour détecter les bruteforce
+        if (class_exists('SecurityLog')) {
+            SecurityLog::rateLimited($key, $maxAttempts);
+        }
+        json_error('Trop de tentatives. Réessayez dans quelques minutes.', 429);
+    }
+    if ($noter) $data[] = $now;
+    ftruncate($fh, 0); rewind($fh);
+    fwrite($fh, json_encode($data));
+    flock($fh, LOCK_UN); fclose($fh);
+}
+
+/** Note un évènement (typiquement un échec) pour une clé de limite de débit. */
+function rate_limit_noter(string $key): void {
+    $dir = __DIR__ . '/../data/rate_limits';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $fenetre = (int)($GLOBALS['_rate_limit_fenetres'][$key] ?? 3600);
+    $fh = @fopen($dir . '/' . sha1($key) . '.json', 'c+');
+    if (!$fh) return;
+    flock($fh, LOCK_EX);
+    $data = json_decode(stream_get_contents($fh) ?: '[]', true);
+    if (!is_array($data)) $data = [];
+    $now  = time();
+    $data = array_values(array_filter($data, fn($t) => is_int($t) && ($now - $t) < $fenetre));
+    $data[] = $now;
+    ftruncate($fh, 0); rewind($fh);
+    fwrite($fh, json_encode($data));
+    flock($fh, LOCK_UN); fclose($fh);
+}
+
+// ── Rate limiting global par IP (200 req / 60s — anti-DDoS basique) ─────────
+$_clientIp = client_ip(); // IP réelle, y compris derrière un proxy de confiance
+if ($action && !in_array($action, ['auth_config', 'server_url', 'push_vapid_key'])) {
+    check_rate_limit('global_' . $_clientIp, 200, 60);
+}
+
 
 if (in_array($action, $dbOptionalActions, true)) {
     try {
@@ -454,7 +587,8 @@ if (in_array($action, $dbOptionalActions, true)) {
 
 // ── Dispatch des routes ───────────────────────────────────────────────────────
 try {
-    $db = new Database();
+    // Déjà ouverte par utilisateur_session() quand une session est active.
+    $db = (($GLOBALS['db'] ?? null) instanceof Database) ? $GLOBALS['db'] : new Database();
     // À partir d'ici le journal écrit en base (et vide son tampon de bootstrap).
     Journal::attacherBase($db->getPdo());
 

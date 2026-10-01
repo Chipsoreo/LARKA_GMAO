@@ -6,8 +6,6 @@
 // All rights reserved. Use is subject to the license terms; copying,
 // distribution, modification or reverse-engineering without the author's
 // prior written permission is prohibited. See the LICENSE file for details.
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$uri = ltrim($uri, '/');
 
 function deny_request(int $code = 403, string $message = 'Accès interdit'): never {
     http_response_code($code);
@@ -15,6 +13,45 @@ function deny_request(int $code = 403, string $message = 'Accès interdit'): nev
     echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
     exit;
 }
+
+// ── Chemin demandé, NORMALISÉ avant toute décision ───────────────────────────
+//
+// ⚠️ LES REFUS CI-DESSOUS PORTAIENT SUR LE CHEMIN BRUT.
+//
+// Ils comparaient la chaîne reçue (« data/… », « config.json »…) sans résoudre
+// les segments « . » et « .. » — alors que le serveur intégré, lui, les résout
+// au moment de servir le fichier. Conséquence mesurée : « /./.env »,
+// « /js/../.env », « /api/../.env », « /./config.json » et
+// « /./data/logs/journal-AAAA-MM-JJ.jsonl » passaient TOUS les contrôles et
+// livraient les secrets (mots de passe de base, secrets OAuth/SMTP, clé VAPID),
+// la configuration et les journaux d'activité.
+//
+// Règle désormais : le chemin est décodé puis découpé, et l'on refuse tout
+// segment « . » ou « .. », tout séparateur ou point encodé (%2e, %2f), tout
+// antislash et tout octet de contrôle. Aucune URL légitime de cette
+// application n'en contient : refuser est donc sans effet de bord, et bien plus
+// sûr que tenter de « nettoyer » le chemin.
+$_rawPath = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+// Décodage : « %2e%2e%2f » doit être vu comme « ../ », pas comme un nom de
+// fichier exotique. On décode AVANT d'analyser, jamais après.
+$_decoded = rawurldecode($_rawPath);
+if (str_contains($_decoded, "\0") || preg_match('/[\x00-\x1f\x7f]/', $_decoded) || str_contains($_decoded, '\\')) {
+    deny_request(400, 'Requête invalide');
+}
+$_segments = explode('/', ltrim($_decoded, '/'));
+$_last     = count($_segments) - 1;
+foreach ($_segments as $_i => $_seg) {
+    if ($_seg === '.' || $_seg === '..') deny_request(404, 'Introuvable');
+    // Segment vide : anodin en fin de chemin (simple « / » final), suspect
+    // ailleurs (« //./ », « /js//../ »…).
+    if ($_seg === '' && $_i !== $_last) deny_request(404, 'Introuvable');
+}
+// Chemin canonique : c'est LUI que testent tous les blocages ci-dessous, et lui
+// que l'on sert. Les segments « . » / « .. » et les séparateurs encodés ayant
+// été refusés, la forme canonique et la forme brute désignent le même fichier —
+// le serveur intégré ne peut donc plus résoudre autre chose que ce qu'on a
+// autorisé.
+$uri = implode('/', array_filter($_segments, static fn($s) => $s !== ''));
 
 // Bloquer les fichiers / dossiers sensibles exposés à la racine web.
 // Important : le serveur PHP de développement sert les fichiers statiques tels quels.
@@ -34,6 +71,15 @@ $blockedPrefixes = [
 foreach ($blockedPrefixes as $prefix) {
     if ($uri === rtrim($prefix, '/') || str_starts_with($uri, $prefix)) {
         deny_request();
+    }
+}
+
+// Tout fichier ou dossier caché (« .env », « .gitignore », « .user.ini »…) :
+// refusé où qu'il se trouve, pas seulement à la racine. Miroir de la règle
+// nginx « location ~ /\. ».
+foreach ($_segments as $_seg) {
+    if ($_seg !== '' && $_seg[0] === '.') {
+        deny_request(404, 'Introuvable');
     }
 }
 
@@ -59,7 +105,9 @@ if (str_starts_with($uri, 'extensions/')) {
 
 $blockedExact = [
     'config.json',
+    'config.example.json',
     'config.key',
+    'tenants.json',
     'api/env.php',
 ];
 if (in_array($uri, $blockedExact, true)) {
@@ -71,6 +119,8 @@ if ($uri !== '') {
     $blockedExtensions = [
         '.pem', '.key', '.crt', '.cer', '.p12', '.pfx',
         '.db', '.sqlite', '.sqlite3', '.log', '.bak', '.backup', '.sql', '.gz',
+        // Paquets de modules et de thèmes : jamais servis en direct (comme nginx).
+        '.larka', '.larka_thematique', '.phar',
     ];
     foreach ($blockedExtensions as $ext) {
         if (str_ends_with($lowerUri, $ext)) {
@@ -110,6 +160,16 @@ if ($uri === 'apple-touch-icon.png') {
 
 // Fichiers statiques
 if ($uri !== '' && file_exists(__DIR__ . '/' . $uri) && !is_dir(__DIR__ . '/' . $uri)) {
+    // Ceinture par-dessus la bretelle : la cible résolue doit rester SOUS la
+    // racine du projet. Les segments « .. » sont déjà refusés plus haut ; ce
+    // contrôle couvre le cas résiduel d'un lien symbolique qui sortirait de
+    // l'arborescence.
+    $_racine = realpath(__DIR__);
+    $_cible  = realpath(__DIR__ . '/' . $uri);
+    if ($_racine === false || $_cible === false
+        || !str_starts_with($_cible, $_racine . DIRECTORY_SEPARATOR)) {
+        deny_request(404, 'Introuvable');
+    }
     return false;
 }
 

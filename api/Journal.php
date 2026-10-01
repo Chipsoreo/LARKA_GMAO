@@ -201,11 +201,35 @@ final class Journal
     {
         // Contexte utilisateur : lu depuis la session, sans la démarrer si elle
         // ne l'est pas (on ne veut aucun effet de bord ici).
+        //
+        // ⚠️ LE JOURNAL D'AUDIT N'A JAMAIS ENREGISTRÉ SON AUTEUR.
+        // Ce bloc lisait $_SESSION['user_login'], ['user_role'] et ['user_id'],
+        // clés que l'application n'a jamais posées : l'utilisateur connecté vit
+        // dans $_SESSION['user'] (Id, Login, Role — voir routes/auth.php), le
+        // super administrateur dans $_SESSION['superadmin']. Toutes les entrées
+        // d'audit (création, modification, suppression) portaient donc un auteur
+        // vide : impossible de savoir qui avait supprimé quoi.
+        //
+        // On lit aussi la session quand elle a déjà été fermée par
+        // session_write_close() (assistant, mises à jour…) : le tableau
+        // $_SESSION reste lisible, seul l'ÉCRITURE est close. Lire le
+        // superglobal ne démarre aucune session.
         $login = $role = ''; $uid = null;
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            $login = (string)($_SESSION['user_login'] ?? $_SESSION['login'] ?? '');
-            $role  = (string)($_SESSION['user_role']  ?? $_SESSION['role']  ?? '');
-            $uid   = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+        if (isset($_SESSION) && is_array($_SESSION)) {
+            $u = $_SESSION['user'] ?? null;
+            if (is_array($u) && !empty($u['Login'])) {
+                $login = (string)$u['Login'];
+                $role  = (string)($u['Role'] ?? '');
+                $uid   = isset($u['Id']) ? (int)$u['Id'] : null;
+            } elseif (!empty($_SESSION['superadmin']['authenticated'])) {
+                $login = (string)($_SESSION['superadmin']['login'] ?? 'superadmin');
+                $role  = 'SuperAdmin';
+            } else {
+                // Anciennes clés, conservées par compatibilité.
+                $login = (string)($_SESSION['user_login'] ?? $_SESSION['login'] ?? '');
+                $role  = (string)($_SESSION['user_role']  ?? $_SESSION['role']  ?? '');
+                $uid   = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+            }
         }
         // Un appelant peut surcharger (ex. journaliser une action pour le compte
         // d'un utilisateur identifié autrement que par la session).
@@ -267,6 +291,10 @@ final class Journal
     /** IP réelle du client, en tenant compte d'un éventuel reverse proxy. */
     private static function ip(): string
     {
+        // ⚠️ FIX : X-Forwarded-For était cru quelle que soit la provenance —
+        // n'importe quel client pouvait inscrire l'IP de son choix au journal.
+        // client_ip() (config.php) ne le lit que derrière un proxy de confiance.
+        if (function_exists('client_ip')) return substr(client_ip(), 0, 45);
         foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'] as $k) {
             $v = $_SERVER[$k] ?? '';
             if ($v !== '') {

@@ -579,6 +579,65 @@ class TenantResolver {
         return null;
     }
 
+    /**
+     * Tenant d'un compte au moment de la CONNEXION (login local, mot de passe
+     * oublié, réinitialisation, callbacks OAuth).
+     *
+     * ⚠️ FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
+     * locaux) ignoraient l'état « actif » du tenant ; une organisation
+     * désactivée restait accessible par ce chemin. Et chaque point d'entrée
+     * avait sa propre copie de la logique (mot de passe oublié n'en avait pas).
+     *
+     * $comptesLocaux : consulter aussi le registre des comptes locaux (pas pour
+     * l'OAuth, où seule l'adresse vérifiée par le fournisseur fait foi).
+     *
+     * Retourne ['cle' => ?string, 'erreur' => ?string, 'code' => int] ;
+     * en mono-tenant : cle = null, sans erreur.
+     */
+    public static function tenantPourConnexion(string $login, bool $comptesLocaux = true): array {
+        if (!self::isMultiTenant()) return ['cle' => null, 'erreur' => null, 'code' => 200];
+        $desactivee = ['cle' => null, 'erreur' => "Cette organisation est désactivée. Contactez l'administrateur.", 'code' => 403];
+        $joker = static function (): ?string {
+            foreach (self::getAllTenants() as $k => $t) {
+                if (!empty($t['actif']) && in_array('*', $t['domaines_email'] ?? [], true)) return $k;
+            }
+            return null;
+        };
+        $estActif = static function (?string $k): bool {
+            if (!$k) return false;
+            $t = self::getTenant($k);
+            return $t && !empty($t['actif']);
+        };
+
+        if (str_contains($login, '@')) {
+            // Email : domaine / exceptions (tenants actifs) → joker → registre local.
+            $cle = self::resolveByEmailDomain($login) ?: $joker();
+            if (!$cle && $comptesLocaux) {
+                $cle = self::resolveLocalAccount($login);
+                if ($cle && !$estActif($cle)) return $desactivee;
+            }
+            if (!$cle) {
+                $domain = strtolower(substr(strrchr($login, '@'), 1));
+                return ['cle' => null, 'erreur' => "Aucune organisation trouvée pour le domaine @{$domain}. Contactez l'administrateur.", 'code' => 403];
+            }
+            return ['cle' => $cle, 'erreur' => null, 'code' => 200];
+        }
+
+        // Login sans @ : registre des comptes locaux → joker.
+        $cle = $comptesLocaux ? self::resolveLocalAccount($login) : null;
+        if ($cle) {
+            // Le compte appartient à une organisation précise : si elle est
+            // désactivée on refuse — surtout pas de repli sur le joker, qui
+            // vérifierait le mot de passe contre les comptes d'un AUTRE tenant.
+            return $estActif($cle) ? ['cle' => $cle, 'erreur' => null, 'code' => 200] : $desactivee;
+        }
+        $cle = $joker();
+        if (!$cle) {
+            return ['cle' => null, 'erreur' => "Compte \"{$login}\" non rattaché à une base de données. Contactez l'administrateur.", 'code' => 403];
+        }
+        return ['cle' => $cle, 'erreur' => null, 'code' => 200];
+    }
+
     public static function getTenantPublicInfo(): array {
         $result = self::resolve();
         $t = $result['tenant'];

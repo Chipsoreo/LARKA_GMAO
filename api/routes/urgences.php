@@ -152,7 +152,7 @@ if ($action === 'urgences_media_upload') {
     @chmod($dest, 0644);
 
     // Nom d'origine conservé uniquement pour l'affichage (assaini)
-    $nomAffiche = basename(preg_replace('/[\r\n\x00-\x1f\x7f"\/\\\\]/', '_', (string)$file['name']));
+    $nomAffiche = basename(preg_replace('/[\r\n\x00-\x1f\x7f"<>\/\\\\]/', '_', (string)$file['name']));
     if ($nomAffiche === '' || $nomAffiche === '.' || $nomAffiche === '..') $nomAffiche = 'fichier.' . $ext;
     if (strlen($nomAffiche) > 120) $nomAffiche = substr($nomAffiche, 0, 120);
 

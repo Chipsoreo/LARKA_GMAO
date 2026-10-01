@@ -1037,6 +1037,23 @@ function escHtml(s) {
 }
 
 /**
+ * Argument de chaîne pour un gestionnaire inline : onclick="f(${jsArg(nom)})".
+ *
+ * ⚠️ DEUX ANALYSEURS SE SUCCÈDENT SUR UN ATTRIBUT onclick.
+ * Le navigateur DÉCODE d'abord les entités HTML de l'attribut, PUIS passe le
+ * résultat au moteur JavaScript. L'ancien motif « '${nom.replace(/'/g,"\\'")}' »
+ * ne protégeait que la seconde étape : un nom de fichier contenant « &#39; »
+ * redevenait une apostrophe au décodage et refermait la chaîne JS.
+ *
+ * On encode donc dans l'ordre inverse de lecture : littéral JS complet
+ * (JSON.stringify : guillemets, antislashs, retours ligne), puis échappement
+ * HTML. Renvoie le littéral AVEC ses guillemets — ne pas en rajouter autour.
+ */
+function jsArg(s) {
+  return escHtml(JSON.stringify(s === null || s === undefined ? '' : String(s)));
+}
+
+/**
  * Recherche « intelligente » PARTAGÉE par toute l'application :
  *  - insensible à la casse,
  *  - insensible aux accents (étage ↔ etage, Sécurité ↔ securite),

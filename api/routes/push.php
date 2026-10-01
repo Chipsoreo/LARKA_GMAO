@@ -51,6 +51,19 @@ if ($action === 'push_subscribe' && $method === 'POST') {
     if (!$endpoint || !$p256dh || !$auth) {
         json_error('Clés de souscription manquantes (p256dh, auth).');
     }
+    // Endpoint limité aux services push des navigateurs (voir WebPush::endpointAutorise),
+    // clés au format base64url attendu.
+    require_once __DIR__ . '/../WebPush.php';
+    if (!is_string($endpoint) || !WebPush::endpointAutorise($endpoint)) {
+        json_error('Service de notifications non reconnu.', 400);
+    }
+    if (!is_string($p256dh) || !is_string($auth)
+        || !preg_match('/^[A-Za-z0-9_\-]{40,200}={0,2}$/', $p256dh)
+        || !preg_match('/^[A-Za-z0-9_\-]{8,64}={0,2}$/', $auth)) {
+        json_error('Clés de souscription invalides.', 400);
+    }
+    $platform = mb_substr(preg_replace('/[^\w .\-\/()]/u', '', (string)$platform), 0, 40);
+    $ua       = mb_substr((string)$ua, 0, 300);
 
     $db->savePushSubscription(
         (int) $user['Id'],

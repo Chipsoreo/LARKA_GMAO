@@ -257,7 +257,7 @@ async function _renderBordereaux() {
               <td>${_esc_a(b.Service||'—')}</td>
               <td>${_renderStatutBordereau(b.Statut)}</td>
               <td>${_renderLocBordereau(b.Localisation)}</td>
-              <td>${b.NomFichier ? `<button class="btn btn-sm" onclick="ArchivesApi.downloadBordereau(${b.Id},'${_esc_a(b.NomFichier)}')" style="font-size:11px">📥 ${_esc_a(b.NomFichier)}</button>` : '—'}</td>
+              <td>${b.NomFichier ? `<button class="btn btn-sm" onclick="ArchivesApi.downloadBordereau(${b.Id},${jsArg(b.NomFichier)})" style="font-size:11px">📥 ${_esc_a(b.NomFichier)}</button>` : '—'}</td>
               <td>${canEdit() ? `<button class="btn btn-sm btn-danger" onclick="supprimerBordereau(${b.Id})">🗑️ Supprimer</button>` : ''}</td>
             </tr>`).join('')}
           </tbody>

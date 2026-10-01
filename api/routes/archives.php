@@ -14,9 +14,13 @@
  */
 
 // ── Boîtes d'archives ─────────────────────────────────────────────────────────
+// ⚠️ LE VISIONNEUR POUVAIT ÉCRIRE : seul DELETE revérifiait le rôle, POST et
+// PUT passaient avec la garde de lecture. L'écran (canEdit) réserve pourtant la
+// saisie à la gestion : le serveur applique désormais la même règle.
 if ($action === 'archives_boites') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
     if ($method === 'GET')    json_ok($db->getAllArchivesBoites());
+    require_role($user, ['Admin','Gestionnaire']);
     if ($method === 'POST')   json_ok(['id' => $db->addArchivesBoite(get_body(), $user['Login'])]);
     if ($method === 'PUT')    { $db->updateArchivesBoite($id, get_body(), $user['Login']); json_ok('OK'); }
     if ($method === 'DELETE') { require_role($user, ['Admin','Gestionnaire']); $db->deleteArchivesBoite($id); json_ok('OK'); }
@@ -26,14 +30,18 @@ if ($action === 'archives_boites') {
 if ($action === 'archives_dossiers') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
     if ($method === 'GET')    json_ok($db->getAllArchivesDossiers());
+    require_role($user, ['Admin','Gestionnaire']);
     if ($method === 'POST')   json_ok(['id' => $db->addArchivesDossier(get_body(), $user['Login'])]);
     if ($method === 'PUT')    { $db->updateArchivesDossier($id, get_body(), $user['Login']); json_ok('OK'); }
     if ($method === 'DELETE') { require_role($user, ['Admin','Gestionnaire']); $db->deleteArchivesDossier($id); json_ok('OK'); }
 }
 
 // ── Recherche avancée dossiers ────────────────────────────────────────────────
+// ⚠️ LA RECHERCHE ÉTAIT OUVERTE À TOUT COMPTE : la liste des dossiers était
+// refusée à un demandeur (« données nominatives, hors consultation »), mais la
+// recherche sans filtre lui rendait les mêmes dossiers. Même garde que la liste.
 if ($action === 'archives_recherche' && $method === 'GET') {
-    require_auth();
+    $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
     $filtres = [
         'annee'          => $_GET['annee']          ?? '',
         'mois'           => $_GET['mois']           ?? '',
@@ -61,17 +69,29 @@ if ($action === 'archives_recherche' && $method === 'GET') {
 if ($action === 'archives_bordereaux') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
     if ($method === 'GET')    json_ok($db->getAllArchivesBordereaux());
+    require_role($user, ['Admin','Gestionnaire']);
     if ($method === 'POST')   json_ok(['id' => $db->addArchivesBordereau(get_body(), $user['Login'])]);
     if ($method === 'DELETE') { require_role($user, ['Admin','Gestionnaire']); $db->deleteArchivesBordereau($id); json_ok('OK'); }
 }
 
 // ── Téléchargement d'un bordereau ─────────────────────────────────────────────
+// Même garde que la liste des bordereaux (le téléchargement n'exigeait qu'une
+// session). Type servi : celui du dépôt s'il est connu, sinon octet-stream ;
+// toujours en pièce jointe, avec nosniff.
 if ($action === 'archives_bordereau_download' && $method === 'GET') {
-    require_auth();
-    $doc = $db->getArchivesBordereauData($id);
+    $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
+    $doc = $db->getArchivesBordereauData((int)$id);
     if (!$doc) json_error('Bordereau introuvable.', 404);
-    header('Content-Type: '        . ($doc['TypeMime'] ?: 'application/octet-stream'));
-    header('Content-Disposition: attachment; filename="' . basename($doc['NomFichier'] ?: 'bordereau') . '"');
-    echo base64_decode($doc['Donnees']);
+    $mime = strtolower((string)($doc['TypeMime'] ?? ''));
+    $mimesSurs = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp',
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  'application/vnd.ms-excel', 'application/msword', 'text/csv'];
+    $nom = basename(preg_replace('/[\r\n\x00-\x1f\x7f"<>\/\\\\]/', '_', (string)($doc['NomFichier'] ?: 'bordereau')));
+    if (ob_get_level()) ob_end_clean();
+    header('Content-Type: ' . (in_array($mime, $mimesSurs, true) ? $mime : 'application/octet-stream'));
+    header('Content-Disposition: attachment; filename="' . ($nom !== '' ? $nom : 'bordereau') . '"');
+    header('X-Content-Type-Options: nosniff');
+    echo base64_decode((string)$doc['Donnees']);
     exit;
 }

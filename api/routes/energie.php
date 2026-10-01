@@ -59,6 +59,9 @@ if ($action === 'energie_facteurs_carbone') {
 // ── Purger TOUS les facteurs d'une méthode ───────────────────────────────────
 if ($action === 'energie_purger_facteurs') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body = get_body();
     $methode = $body['methode'] ?? 'officielle';
     if (!in_array($methode, ['officielle', 'simplifiee'])) json_error('Méthode invalide.');
@@ -91,6 +94,9 @@ if ($action === 'energie_facteur_carbone') {
 // ═══════════════════════════════════════════════════════════════════════════════
 if ($action === 'energie_sync_carbone_ademe') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body  = get_body();
     $annee = intval($body['annee'] ?? date('Y'));
 
@@ -315,6 +321,9 @@ if ($action === 'energie_sync_carbone_ademe') {
 // ═══════════════════════════════════════════════════════════════════════════════
 if ($action === 'energie_sync_carbone_simplifiee') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body  = get_body();
     $annee = intval($body['annee'] ?? date('Y'));
 
@@ -383,6 +392,9 @@ if ($action === 'energie_sync_carbone_simplifiee') {
 // ═══════════════════════════════════════════════════════════════════════════════
 if ($action === 'energie_recalcul_carbone') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body    = get_body();
     $methode = $body['methode'] ?? 'officielle';
     if (!in_array($methode, ['officielle', 'simplifiee'])) $methode = 'officielle';
@@ -529,6 +541,9 @@ if ($action === 'energie_recherche_reseau') {
 // ── Import réseaux depuis saisie manuelle ou CSV ────────────────────────────
 if ($action === 'energie_import_reseau') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body = get_body();
     $reseaux = $body['reseaux'] ?? [];
     if (empty($reseaux)) json_error('Aucun réseau à importer.');

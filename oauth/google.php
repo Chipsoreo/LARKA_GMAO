@@ -118,6 +118,10 @@ function cleanOldTokens(): void {
 }
 
 function closeOk(array $user): void {
+    // Nouvel identifiant de session à la connexion (fixation de session), et
+    // fin d'une éventuelle bascule super admin sur un autre tenant.
+    if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+    unset($_SESSION['forced_tenant']);
     $_SESSION['user'] = $user;
     session_write_close();
 
@@ -261,28 +265,31 @@ $nom    = $profile['family_name'] ?? '';
 $gId    = $profile['sub']         ?? '';
 
 if (!$email) closeError('Email introuvable dans le profil Google.');
+// ⚠️ FIX SÉCURITÉ : l'adresse n'était pas contrôlée. Un compte Google peut
+// porter une adresse NON vérifiée (compte créé avec une adresse tierce dont
+// la propriété n'a jamais été prouvée) : il suffisait d'y mettre l'adresse
+// d'un agent pour se connecter sous son identité.
+$_verifie = $profile['email_verified'] ?? false;
+if (!($_verifie === true || $_verifie === 'true' || $_verifie === 1)) {
+    closeError('Adresse email Google non vérifiée.');
+}
 
 /* ── Résolution multi-tenant par domaine email ─────────────────────────── */
+// ⚠️ FIX SÉCURITÉ : voir oauth/microsoft.php (tenants désactivés exclus, pas
+// de repli sur la base par défaut, tenant_key écrit après acceptation).
 require_once __DIR__ . '/../api/TenantResolver.php';
 $_tenantDbCfg = null;
+$tenantKey = null;
 if (TenantResolver::isMultiTenant()) {
-    $tenantKey = TenantResolver::resolveByEmailDomain($email);
-    if (!$tenantKey) {
-        // Chercher un tenant wildcard (*)
-        foreach (TenantResolver::getAllTenants() as $k => $t) {
-            if (in_array('*', $t['domaines_email'] ?? [])) { $tenantKey = $k; break; }
-        }
-    }
-    if ($tenantKey) {
-        $_tenantDbCfg = TenantResolver::getDbConfigForTenant($tenantKey);
-        $_SESSION['tenant_key'] = $tenantKey;
-    } else {
-        $domain = strtolower(substr(strrchr($email, '@'), 1));
-        closeError("Aucune organisation trouvée pour le domaine @{$domain}.");
-    }
+    $res = TenantResolver::tenantPourConnexion($email, false);
+    if ($res['erreur']) closeError($res['erreur']);
+    $tenantKey = $res['cle'];
+    $_tenantDbCfg = TenantResolver::getDbConfigForTenant($tenantKey);
+    if (!$_tenantDbCfg) closeError('Configuration de l\'organisation indisponible. Contactez l\'administrateur.');
 }
 
 /* ── Vérification domaine ────────────────────────────────────────────────── */
+// (domaines de la Configuration ET acces.domaine_email_autorise de config.json)
 $db = $_tenantDbCfg ? new Database($_tenantDbCfg) : new Database();
 if (!$db->isEmailDomainAllowed($email)) {
     $domain = strtolower(substr(strrchr($email, '@'), 1));
@@ -293,4 +300,5 @@ if (!$db->isEmailDomainAllowed($email)) {
 $user = $db->findOrCreateGoogleUser($email, $prenom, $nom, $gId);
 if (!$user) closeError('Compte désactivé ou erreur lors de la création.');
 
+if ($tenantKey) $_SESSION['tenant_key'] = $tenantKey;
 closeOk($user);

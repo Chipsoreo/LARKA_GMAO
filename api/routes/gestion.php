@@ -31,6 +31,9 @@ if ($action === 'gestion_materiel') {
 
 if ($action === 'gestion_materiel_cloturer') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $b = get_body();
     $db->cloturerGestionMateriel((int)$b['id'], $b['motif'] ?? '', $user['Login'] ?? '');
     json_ok('OK');
@@ -190,7 +193,30 @@ if ($action === 'demandes') {
     if ($method === 'PUT') {
         $body = get_body();
         // Relance utilisateur (pas besoin d'être admin)
+        //
+        // ⚠️ LA RELANCE N'ÉTAIT SOUMISE À AUCUNE CONDITION.
+        // N'importe quel compte, visionneur compris, pouvait passer n'importe
+        // quelle demande à « Relancé » en changeant l'identifiant — y compris
+        // une demande close (Traité / Refusé), qui revenait alors dans la liste
+        // des demandes à traiter. Le serveur applique désormais la règle de
+        // l'écran (peutRelancer, js/pages/demandes.js) : SA demande, encore
+        // ouverte, et après le délai de relance.
         if (($body['action'] ?? '') === 'relancer') {
+            $d = $id ? $db->fetchOne(
+                "SELECT UtilisateurId, Statut, DelaiRelanceJours, DateDerniereRelance, DateCreation
+                   FROM DemandesIntervention WHERE Id = :id", ['id' => (int)$id]) : null;
+            // 404 aussi pour la demande d'autrui : ne pas confirmer qu'elle existe.
+            if (!$d || (int)($d['UtilisateurId'] ?? 0) !== (int)($user['Id'] ?? -1)) {
+                json_error('Demande introuvable.', 404);
+            }
+            if (!in_array($d['Statut'] ?? '', ['Nouveau', 'En cours', 'Relancé'], true)) {
+                json_error('Cette demande est close : elle ne peut plus être relancée.', 409);
+            }
+            $delai = max(1, (int)($d['DelaiRelanceJours'] ?? 7));
+            $ref   = strtotime((string)($d['DateDerniereRelance'] ?: $d['DateCreation'] ?: '')) ?: 0;
+            if ($ref && (time() - $ref) < $delai * 86400) {
+                json_error("Relance possible $delai jour(s) après la création ou la dernière relance.", 409);
+            }
             $db->relancerDemande($id);
             json_ok('OK');
         }

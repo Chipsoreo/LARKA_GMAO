@@ -685,7 +685,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
         const el = document.getElementById('f_facturePdfExisting');
         if (el && pdfs.length > 0) {
           el.innerHTML = pdfs.map(d =>
-            `<a href="api/index.php?action=document_download&id=${d.Id}" download="${d.NomFichier}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--blue-pale);color:var(--blue);border-radius:6px;font-size:11px;text-decoration:none;margin:2px">📄 ${d.NomFichier}</a>`
+            `<a href="api/index.php?action=document_download&id=${d.Id}" download="${escHtml(d.NomFichier)}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--blue-pale);color:var(--blue);border-radius:6px;font-size:11px;text-decoration:none;margin:2px">📄 ${escHtml(d.NomFichier)}</a>`
           ).join('');
         }
       }).catch(() => {});

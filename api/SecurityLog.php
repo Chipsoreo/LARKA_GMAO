@@ -71,7 +71,7 @@ final class SecurityLog
             $entry = [
                 'ts'    => date('c'),
                 'event' => $event,
-                'ip'    => $context['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? 'unknown'),
+                'ip'    => $context['ip'] ?? (function_exists('client_ip') ? client_ip() : ($_SERVER['REMOTE_ADDR'] ?? 'unknown')),
                 'ua'    => substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200),
             ];
             // Filtrer le contexte : pas de PII, pas de secrets

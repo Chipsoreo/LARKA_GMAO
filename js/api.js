@@ -389,8 +389,8 @@ const SharePointApi = {
   files:     (driveId, itemId = '')           => apiRequest(`sharepoint_files&driveId=${encodeURIComponent(driveId)}${itemId ? '&itemId='+encodeURIComponent(itemId) : ''}`),
   search:    (driveId, q)                    => apiRequest(`sharepoint_search&driveId=${encodeURIComponent(driveId)}&q=${encodeURIComponent(q)}`),
   searchFiles:(q, top = 0)                   => apiRequest(`sharepoint_search_files&q=${encodeURIComponent(q)}${top ? '&top='+encodeURIComponent(top) : ''}`),
-  link:      (entiteType, entiteId, file)    => apiRequest('sharepoint_link', 'POST', {
-    entiteType, entiteId,
+  link:      (entiteType, entiteId, file, copieLocale = false) => apiRequest('sharepoint_link', 'POST', {
+    entiteType, entiteId, copieLocale: !!copieLocale,
     nom: file.name, mime: file.mimeType || 'application/octet-stream',
     url: file.webUrl, driveItemId: file.id,
     // driveId : indispensable pour retrouver le fichier par son identifiant
@@ -400,6 +400,9 @@ const SharePointApi = {
     siteId:  file.siteId  || (typeof _spContext !== 'undefined' && _spContext ? (_spContext.siteId  || '') : ''),
     taille: file.size || 0, categorie: _spCategorie(file.mimeType),
   }),
+  // Copie du fichier dans Larka, pour les comptes sans connexion Microsoft.
+  copieLocale:  (docId) => apiRequest('sharepoint_copie_locale', 'POST', {}, docId),
+  retirerCopie: (docId) => apiRequest('sharepoint_copie_locale', 'DELETE', null, docId),
 };
 
 function _spCategorie(mime) {

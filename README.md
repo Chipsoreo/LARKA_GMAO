@@ -6,7 +6,7 @@
 Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans build, installable en PWA.
 **Extensible par des modules qui ne contiennent aucun code.**
 
-[![Version](https://img.shields.io/badge/version-2.0.1%20(V2)-0a1628.svg)](Documentations/)
+[![Version](https://img.shields.io/badge/version-2.0.2%20(V2)-0a1628.svg)](Documentations/)
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir%20le%20projet-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chipsoreo)
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
@@ -59,18 +59,63 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-Cette livraison est la **version 2.0.1 — V.Beta 2.0.1** : des **ajustements de l'assistant IA et de
-son système** (voir ci-dessous). La 2.0.0 ajoutait à la V1 une couche d'extension complète : des
-**modules déclaratifs**, qui étendent l'application sans y exécuter la moindre ligne de code tiers.
+Cette livraison est la **version 2.0.2 — V.Beta 2.0.2** : des **correctifs de sécurité et de fiabilité**
+du cœur, et la **copie locale des documents SharePoint** (voir ci-dessous). La 2.0.1 ajustait l'assistant IA
+et son système ; la 2.0.0 ajoutait à la V1 une couche d'extension complète : des **modules déclaratifs**, qui
+étendent l'application sans y exécuter la moindre ligne de code tiers.
 
 | Élément | Valeur | Où |
 |---|---|---|
-| Version applicative | `2.0.1` | `version.json` — source unique, lue par `api/Version.php` |
-| Libellé affiché | `V.Beta 2.0.1` | `LARKA_VERSION_LABEL`, bas de la page de connexion |
-| Service Worker | `2.0.1` | `SW_VERSION` (`sw.js`) |
-| Manifeste PWA | `2.0.1` | `manifest.webmanifest` |
+| Version applicative | `2.0.2` | `version.json` — source unique, lue par `api/Version.php` |
+| Libellé affiché | `V.Beta 2.0.2` | `LARKA_VERSION_LABEL`, bas de la page de connexion |
+| Service Worker | `2.0.2` | `SW_VERSION` (`sw.js`) |
+| Manifeste PWA | `2.0.2` | `manifest.webmanifest` |
 | Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.3`) |
 | Documentation | manuels v2.0 | `Documentations/` |
+
+### 📝 Notes de version — V.Beta 2.0.2 · sécurité, fiabilité et copie locale SharePoint
+
+**Nouveau : copie locale des documents SharePoint.** En liant un fichier SharePoint à une fiche, une case
+*« Copier aussi le fichier dans Larka »* range son contenu dans la base : les comptes **sans connexion Microsoft**
+(comptes locaux) peuvent alors le consulter. Un fichier Office est enregistré en PDF (conversion Microsoft Graph),
+lisible dans le navigateur. La copie est un instantané : le badge 💾 de la carte permet de la voir, de la mettre à
+jour depuis SharePoint ou de la retirer (le lien est conservé). Mêmes limites qu'un dépôt (taille, types autorisés,
+contrôle du contenu), mêmes droits que la fiche, et le mode *consultation seule* est respecté (copie interdite,
+affichage sans téléchargement). Au passage : un compte local qui cliquait sur un document SharePoint était
+**déconnecté** (réponse 401 prise pour une session expirée) — corrigé. Schéma : `SCHEMA_VERSION` 10 → 11.
+
+**Correctifs.** Des défauts du **cœur** (hors modules) ont été reproduits sur une instance de test, puis corrigés.
+La nouvelle épreuve `outils/epreuves/test-acces-coeur.php` (58 contrôles, autonome) les garde fermés : 46 de ses
+53 premiers contrôles échouent sur la 2.0.1.
+
+| Ce qui était possible | Corrigé par |
+|---|---|
+| **Serveur intégré** (`start.sh start`, `autostart`, `gmao.service`) : `/./.env`, `/js/../config.json`, `/./data/logs/…` livraient les secrets, la configuration et les journaux | `router.php` normalise le chemin avant tout contrôle ; segments `.`/`..`, séparateurs encodés et fichiers cachés refusés |
+| **XSS stockée** : un nom de fichier déposé par un demandeur s'exécutait chez le gestionnaire qui ouvrait la fiche (aussi : navigateur SharePoint, test des notifications push) | Échappement à l'affichage (`escHtml`, `jsArg()` pour les gestionnaires inline) ; `<` et `>` retirés des noms stockés |
+| **Documents** : tout compte listait, téléchargeait et déposait les pièces de n'importe quelle fiche ; un visionneur supprimait n'importe quel document | `api/DocumentsAcl.php` : droits rapportés à la fiche (rôle, onglet ouvert, auteur de la demande) ; 404 pour ce qui n'est pas lisible |
+| **Rôles en lecture seule** : un visionneur créait, modifiait et supprimait des interventions et des archives ; tout compte relançait (et rouvrait) la demande d'autrui | `require_role` avant toute écriture ; relance réservée à l'auteur, demande ouverte, après le délai |
+| **CSRF** : huit actions (dont la purge de **tous** les facteurs carbone) répondaient à un simple GET — avec SameSite=Lax, un lien suffisait | POST obligatoire ; un corps sans Content-Type est refusé |
+| **Multi-pilote** : un tenant SQLite créé sur une installation PostgreSQL recevait un schéma dans le mauvais dialecte (colonnes absentes, admin impossible à créer) | Dialecte de la base ouverte et non de la requête ; `SCHEMA_VERSION` 9 → 10 répare les colonnes. Un tenant SQLite créé avant ce correctif garde un `Id SERIAL` : le purger puis le recréer |
+| **Journal d'audit** : aucune entrée ne portait son auteur | Identité lue dans `$_SESSION['user']` (et la session super admin) |
+| **Multi-tenant** : un utilisateur connecté qui ratait une connexion avec le login d'une **autre organisation** voyait sa session basculer sur la base de celle-ci, avec ses propres droits | `tenant_key` n'est écrit en session qu'après vérification du mot de passe |
+| **Sessions** : un compte désactivé, supprimé ou rétrogradé gardait ses droits jusqu'à expiration (24 h) ; un tenant désactivé restait ouvert, et accessible à la connexion par le registre des comptes locaux ou le tenant joker | Fiche relue à chaque requête (`utilisateur_session()`) ; tenant inactif, supprimé (y compris le dernier) ou registre injoignable : session fermée dès `config.php`, connexion refusée (`TenantResolver::tenantPourConnexion`, commune à la connexion, au mot de passe oublié et à l'OAuth) |
+| **OAuth** : Microsoft (tenant `common`) retenait l'attribut `mail`, librement renseigné par l'administrateur de n'importe quelle organisation ; Google ne vérifiait pas `email_verified` ; `acces.domaine_email_autorise` était ignoré | En mode multi-organisation (`common`, `organizations`) : adresse retenue seulement si son domaine est vérifié par l'organisation du compte (Graph `/organization`) ; application limitée à une organisation : comportement inchangé (invités compris) ; `email_verified` exigé ; domaine autorisé appliqué |
+| **Setup super admin** : derrière un proxy local, `REMOTE_ADDR` valant 127.0.0.1 pour tous, la configuration initiale restait ouverte à Internet ; les limites de débit étaient partagées par tous les visiteurs | `client_ip()` (X-Forwarded-For lu seulement derrière `securite.trusted_proxies`) ; setup refusé quand la requête est relayée |
+| **Chorus Pro** : tout compte, demandeur compris, appelait n'importe quel point d'API `/cpro/` avec le compte technique | Administrateur / Gestionnaire, règles de visibilité vérifiées côté serveur, chemin validé |
+| **Notifications push** : l'endpoint d'une souscription, fourni par le navigateur, faisait du serveur un relais vers son réseau interne (TLS non vérifié) | Endpoints HTTPS des services push connus (`push.endpoints_autorises` pour en ajouter) ; TLS vérifié |
+| **install.sh** : la configuration nginx générée exécutait n'importe quel `.php` et servait `/data/…` et `/config.key` (refus placés après la regex des fichiers statiques) | Corps commun repris de `deploy/nginx.conf` (refus en tête, PHP en liste blanche) ; en-têtes de sécurité répétés dans chaque bloc qui pose les siens — nginx ne les hérite pas (défaut corrigé aussi dans `deploy/nginx.conf`, où la page d'accueil les perdait) — vérifié avec nginx 1.24 |
+| **Mot de passe imposé** : après le changement, la session restait bloquée jusqu'à reconnexion, et rien ne proposait de le faire | Drapeau de session remis à zéro ; écran de changement présenté avant l'ouverture de l'application |
+| **Mot de passe oublié** en multi-tenant : code cherché et écrit dans la base choisie par le nom d'hôte | Même résolution de tenant que la connexion |
+| **Numérotation / stock** : numéros `INT-` et `FAC-` en double après une suppression ; consommation au-delà du stock (plafonnée à 0, puis restituée en entier) et quantités négatives acceptées | Numéro suivant tiré du plus grand attribué, dédoublonnage après insertion ; consommation atomique, 409 si stock insuffisant, 400 si quantité ≤ 0 |
+| **Limite de connexion** : les connexions réussies comptaient — cinq en cinq minutes bloquaient le compte | Seuls les échecs comptent |
+
+Autres corrections : le cookie de session s'appelle bien `GMAO_SID` (la directive `session.cookie_name` n'existe pas —
+au premier déploiement, chacun se reconnecte une fois) ; `toutes.sh` annonce les suites **sautées** faute de
+configuration au lieu de les compter réussies, et vérifie enfin les packs de langue (`extensions/langues/`, signalés
+sans bloquer : *en* 54 libellés manquants, *es* 6 % traduit et 27 traductions encore en français) ; le contrôle
+avant production de `start.sh` n'affiche plus « ✓ » pour une épreuve sautée.
+
+Les `?v=` d'`index.html` ont été régénérés pour que les scripts corrigés atteignent les postes.
 
 ### 📝 Notes de version — V.Beta 2.0.1 · ajustements de l'assistant IA et de son système
 
@@ -272,7 +317,7 @@ les fiches du jeu, pas seulement les siennes — le format n'a pas de notion de 
 - 📱 **PWA** installable (poste et mobile), notifications push iOS 16.4+ en mode écran d'accueil.
 - ⚡ **Chargement paresseux** du frontend (lazy-loading) avec préchargement intelligent selon le rôle.
 - 🎨 **Écran de connexion personnalisable** par le super-administrateur (couleurs, fond animé, CSS filtré — voir plus bas).
-- 🧪 **11 suites d'épreuves automatisées** (456 contrôles), exécutées avant chaque mise en production, qui refusent le déploiement si une protection tombe.
+- 🧪 **12 suites d'épreuves automatisées** (514 contrôles), exécutées avant chaque mise en production, qui refusent le déploiement si une protection tombe.
 
 ---
 
@@ -649,7 +694,7 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ## ⬆️ Mises à jour
 
-La version installée est dans `version.json` (affichée sur la page de connexion : « V.Beta 2.0.1 »).
+La version installée est dans `version.json` (affichée sur la page de connexion : « V.Beta 2.0.2 »).
 
 **Détection automatique, installation validée.** Larka vérifie la source des versions (GitHub Releases de
 `mises_a_jour.depot`, ou un manifeste `latest.json`) au plus toutes les 12 h. Quand une version plus récente existe,
@@ -719,7 +764,7 @@ Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 larka/
 ├── index.html              Coquille SPA / PWA (porte le ?v= des assets)
 ├── manifest.webmanifest    Métadonnées PWA
-├── sw.js                   Service Worker (push) — v2.0.1
+├── sw.js                   Service Worker (push) — v2.0.2
 ├── router.php              Routeur du serveur PHP intégré (dev / autonome)
 ├── start.sh  Makefile      Lanceur unifié + raccourcis
 ├── .env.example            Modèle de secrets      config.example.json  Modèle de config
@@ -819,7 +864,7 @@ Les contributions sont les bienvenues. Quelques points utiles :
 
 - Lancez `./start.sh doctor` avant d'ouvrir une issue d'installation.
 - Avant un commit : `php -l` sur les fichiers PHP modifiés et `node --check` sur les fichiers JS.
-- Avant une livraison : `bash outils/epreuves/toutes.sh` (456 contrôles, quelques
+- Avant une livraison : `bash outils/epreuves/toutes.sh` (514 contrôles, quelques
   secondes ; quatre suites demandent une base, SQLite suffit). `./start.sh prod`
   lance les plus rapides tout seul et **refuse de déployer** si l'une échoue.
 - En ajoutant une primitive au format déclaratif, nourrissez

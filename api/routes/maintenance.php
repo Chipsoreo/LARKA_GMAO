@@ -254,6 +254,13 @@ if ($action === 'interventions') {
             json_ok($db->getAllInterventions());
         }
     }
+    // ⚠️ L'ÉCRITURE N'ÉTAIT GARDÉE QUE PAR require_lecture().
+    // Un visionneur — et un demandeur à qui l'onglet avait été ouvert en
+    // consultation — pouvait créer, modifier et SUPPRIMER des interventions
+    // (avec leurs documents, lignes de stock et devis). require_lecture() est
+    // une garde de lecture seule (voir api/index.php) : l'écriture exige la
+    // gestion, comme partout ailleurs.
+    require_role($user, ['Admin','Gestionnaire']);
     if ($method==='POST') {
         $nouvelId = $db->addIntervention(get_body(), $user['Login']);
         json_ok(['id' => $nouvelId]);

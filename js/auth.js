@@ -52,6 +52,12 @@ async function doLogin() {
   spinner.style.display = 'block';
   try {
     const user = await Auth.login(login, password);
+    if (doitChangerMotDePasse(user)) {
+      btn.style.display     = 'block';
+      spinner.style.display = 'none';
+      showForcedPasswordChange(user, password);
+      return;
+    }
     initApp(user);
   } catch(e) {
     errEl.textContent     = e.message;
@@ -92,11 +98,74 @@ let _initAppCalled = false;
 async function checkSession() {
   try {
     const user = await Auth.me();
+    if (doitChangerMotDePasse(user)) { showForcedPasswordChange(user); return; }
     if (!_initAppCalled) {
       _initAppCalled = true;
       initApp(user, true); // session restore → pas d'animation, restaure l'onglet
     }
   } catch(_) {}
+}
+
+// ── Changement de mot de passe imposé ─────────────────────────────────────────
+// ⚠️ FIX BUG : un compte marqué « mot de passe à changer » (admin/admin
+// d'origine, compte réinitialisé par un gestionnaire) ouvrait l'application
+// normalement… puis chaque appel était refusé par le serveur (« Vous devez
+// changer votre mot de passe ») sans que rien ne propose de le faire. On
+// présente désormais l'écran de changement AVANT d'ouvrir l'application.
+function doitChangerMotDePasse(user) {
+  return !!user && Number(user.MustChangePassword) === 1;
+}
+
+function showForcedPasswordChange(user, ancienSaisi = '') {
+  document.getElementById('forcedPwdPopup')?.remove();
+  const champ = 'width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font-size:14px;box-sizing:border-box';
+  const etiquette = 'display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:rgba(255,255,255,.7)';
+  const popup = document.createElement('div');
+  popup.id = 'forcedPwdPopup';
+  popup.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)';
+  popup.innerHTML = `
+    <form id="forcedPwdForm" style="background:#1e293b;border-radius:16px;padding:32px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.5);color:#e2e8f0">
+      <h2 style="margin:0 0 6px;font-size:18px;color:#fff">🔑 Nouveau mot de passe requis</h2>
+      <p style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 18px">Votre mot de passe doit être changé avant d'accéder à l'application.</p>
+      <div style="margin-bottom:12px"><label style="${etiquette}">Mot de passe actuel</label>
+        <input type="password" id="forcedOld" autocomplete="current-password" style="${champ}"></div>
+      <div style="margin-bottom:12px"><label style="${etiquette}">Nouveau mot de passe (8 caractères minimum)</label>
+        <input type="password" id="forcedNew1" autocomplete="new-password" style="${champ}"></div>
+      <div style="margin-bottom:14px"><label style="${etiquette}">Confirmer le nouveau mot de passe</label>
+        <input type="password" id="forcedNew2" autocomplete="new-password" style="${champ}"></div>
+      <div id="forcedErr" style="display:none;color:#fca5a5;font-size:12px;margin:0 0 10px;text-align:center"></div>
+      <button type="submit" style="width:100%;padding:10px;border:none;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-weight:600;font-size:14px;cursor:pointer">Changer et continuer</button>
+      <button type="button" id="forcedLogout" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:8px;background:none;color:rgba(255,255,255,.55);font-size:13px;cursor:pointer">Se déconnecter</button>
+    </form>`;
+  document.body.appendChild(popup);
+  const old = document.getElementById('forcedOld');
+  if (ancienSaisi) old.value = ancienSaisi;
+  (ancienSaisi ? document.getElementById('forcedNew1') : old).focus();
+  document.getElementById('forcedLogout').addEventListener('click', () => { popup.remove(); doLogout(); });
+  document.getElementById('forcedPwdForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const errEl = document.getElementById('forcedErr');
+    const montrer = (m) => { errEl.textContent = m; errEl.style.display = 'block'; };
+    errEl.style.display = 'none';
+    const oldPwd = old.value, p1 = document.getElementById('forcedNew1').value, p2 = document.getElementById('forcedNew2').value;
+    if (!oldPwd) return montrer('Mot de passe actuel requis.');
+    if (!p1 || p1.length < 8) return montrer('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+    if (p1 !== p2) return montrer('Les mots de passe ne correspondent pas.');
+    if (p1 === oldPwd) return montrer("Le nouveau mot de passe doit être différent de l'ancien.");
+    try {
+      const res = await fetch('api/index.php?action=change_password', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, credentials: 'include',
+        body: JSON.stringify({ oldPassword: oldPwd, newPassword: p1 })
+      });
+      const data = await res.json();
+      if (!data.success) return montrer(data.error || 'Erreur.');
+      popup.remove();
+      const frais = await Auth.me().catch(() => Object.assign({}, user, { MustChangePassword: 0 }));
+      if (!_initAppCalled) _initAppCalled = true;
+      initApp(frais);
+      if (typeof toast === 'function') toast('Mot de passe modifié.', 'success');
+    } catch (e) { montrer('Erreur réseau.'); }
+  });
 }
 
 // ── Détection mobile ──────────────────────────────────────────────────────────

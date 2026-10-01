@@ -67,7 +67,8 @@ function _ensureMobiliteSchema(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    $driver = DB_DRIVER;
+    // Dialecte de la connexion reçue (« mysql » pour MariaDB), pas DB_DRIVER.
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
     // Vérifier si la table existe
     try {

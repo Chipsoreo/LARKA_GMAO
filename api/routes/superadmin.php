@@ -64,12 +64,14 @@ if ($action === 'superadmin_login' && $method === 'POST') {
     $password = $body['password'] ?? '';
 
     // Rate limiting
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    check_rate_limit('sa_login_' . $clientIp, 5, 600);
+    $clientIp = client_ip();
+    // Seuls les échecs comptent (voir check_rate_limit / rate_limit_noter).
+    check_rate_limit('sa_login_' . $clientIp, 5, 600, false);
 
     if (!$login || !$password) json_error('Identifiant et mot de passe requis.');
 
     if (!TenantResolver::authenticateSuperAdmin($login, $password)) {
+        rate_limit_noter('sa_login_' . $clientIp);
         json_error('Identifiant ou mot de passe super admin incorrect.', 401);
     }
 
@@ -138,7 +140,7 @@ if ($action === 'superadmin_oauth_check' && $method === 'POST') {
     }
 
     // ── Voie 2 : jeton à usage unique émis par le serveur ────────────────────
-    $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $clientIp = client_ip();
     check_rate_limit('sa_oauth_' . $clientIp, 10, 600);
 
     $body  = get_body();
@@ -1532,11 +1534,16 @@ if ($action === 'superadmin_setup' && $method === 'POST') {
     // provenant du serveur lui-même (IP de confiance / proxy local). Pour un
     // setup à distance délibéré, activer temporairement
     // securite.allow_remote_setup=true dans config.json.
-    $__trusted = cfg('securite', 'trusted_proxies');
-    if (!is_array($__trusted)) $__trusted = ['127.0.0.1', '::1'];
-    $__ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    //
+    // ⚠️ FIX SÉCURITÉ : le contrôle portait sur REMOTE_ADDR. Derrière un
+    // reverse proxy local (Caddy, tunnel, nginx devant « php -S »), REMOTE_ADDR
+    // vaut 127.0.0.1 pour tous les visiteurs : le setup redevenait ouvert à
+    // Internet. On regarde désormais l'IP réelle du client (client_ip) et on
+    // exige la boucle locale — un proxy de confiance distant (répartiteur de
+    // charge) n'est pas « le serveur lui-même ».
+    $__ip = client_ip();
     $__allowRemote = (bool)(cfg('securite', 'allow_remote_setup') ?? false);
-    if (!$__allowRemote && !in_array($__ip, $__trusted, true)) {
+    if (!$__allowRemote && !requete_locale()) {
         error_log('[SECURITY] superadmin_setup refusé depuis une IP non locale (' . $__ip . '). '
             . 'Activez securite.allow_remote_setup pour autoriser un setup à distance.');
         json_error("Configuration initiale autorisée uniquement depuis le serveur. Pour un setup à distance, activez temporairement \"securite.allow_remote_setup\": true dans config.json.", 403);

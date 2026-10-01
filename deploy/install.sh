@@ -521,8 +521,10 @@ if [[ -z "$PHP_FPM_DIR" ]]; then
 elif [[ -f "${INSTALL_DIR}/deploy/php-fpm-gmao.conf" ]]; then
     # Adapter la version dans le fichier
     sed "s/php8\.3/php${PHP_VERSION}/g" "${INSTALL_DIR}/deploy/php-fpm-gmao.conf" > "${PHP_FPM_DIR}/gmao.conf"
+    BODY_MAX="500M"   # aligné sur upload_max_filesize du pool fourni
     ok "Pool PHP-FPM copié dans ${PHP_FPM_DIR}/gmao.conf"
 else
+    BODY_MAX="32M"    # aligné sur post_max_size du pool minimal ci-dessous
     cat > "${PHP_FPM_DIR}/gmao.conf" <<EOFPM
 [gmao]
 user = www-data
@@ -557,6 +559,125 @@ ok "PHP-FPM configuré."
 # ═══════════════════════════════════════════════════════════════════════════════
 info "Configuration Nginx..."
 
+# ── Corps commun des deux modes (HTTP derrière proxy / HTTPS direct) ──────────
+# ⚠️ FIX SÉCURITÉ : les configurations générées ici divergeaient de
+# deploy/nginx.conf, durcie, et étaient permissives :
+#   • « location ~ \.php$ » exécutait N'IMPORTE QUEL fichier .php (au lieu de
+#     la liste blanche des points d'entrée) ;
+#   • les refus « ~ /data/ », « ~ /config\.json$ »… étaient placés APRÈS le
+#     bloc des fichiers statiques : nginx retenant la PREMIÈRE regex qui
+#     correspond, /data/…/photo.jpg était servi, et /config.key aussi ;
+#   • ni /extensions/, ni les .sqlite / .key / .log, ni les outils n'étaient
+#     refusés.
+# Le corps ci-dessous reprend deploy/nginx.conf : refus en tête (exact et ^~,
+# qui priment sur toute regex), PHP en liste blanche, tout autre .php refusé.
+#
+# En-têtes de sécurité : nginx n'hérite PAS des add_header du serveur dans un
+# bloc location qui pose les siens (Cache-Control…). « @SECU@ » les répète
+# donc dans chacun de ces blocs, sinon la page d'accueil les perdrait.
+nginx_corps() {
+    local https_param="$1" hsts="${2:-}"
+    local secu='add_header X-Frame-Options "SAMEORIGIN" always;\n        add_header X-Content-Type-Options "nosniff" always;\n        add_header Referrer-Policy "no-referrer" always;'
+    [[ -n "$hsts" ]] && secu="${secu}\\n        ${hsts}"
+    sed -e "s|@INSTALL_DIR@|${INSTALL_DIR}|g" \
+        -e "s|@PHP_VERSION@|${PHP_VERSION}|g" \
+        -e "s|@BODY_MAX@|${BODY_MAX:-32M}|g" \
+        -e "s|@FASTCGI_HTTPS@|${https_param}|g" \
+        -e "s|@SECU@|${secu}|g" <<'EOCORPS'
+    root @INSTALL_DIR@;
+    index index.html;
+    charset utf-8;
+    client_max_body_size @BODY_MAX@;
+    server_tokens off;
+
+    @SECU@
+
+    gzip            on;
+    gzip_vary       on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_proxied    any;
+    gzip_types text/plain text/css text/javascript application/javascript application/json
+               application/manifest+json image/svg+xml font/ttf;
+
+    # ── Refus — EN TÊTE (exact / ^~ priment sur toutes les regex) ────────────
+    location ~ /\.                      { deny all; return 404; }
+    location = /config.json             { deny all; return 404; }
+    location = /config.example.json     { deny all; return 404; }
+    location = /config.key              { deny all; return 404; }
+    location = /tenants.json            { deny all; return 404; }
+    location = /.env                    { deny all; return 404; }
+    location = /.env.example            { deny all; return 404; }
+    location = /README.md               { deny all; return 404; }
+    location ^~ /data/                  { deny all; return 404; }
+    location ^~ /deploy/                { deny all; return 404; }
+    location ^~ /logs/                  { deny all; return 404; }
+    location ^~ /backups/               { deny all; return 404; }
+    location ^~ /vendor/                { deny all; return 404; }
+    location ^~ /outils/                { deny all; return 404; }
+    location ^~ /Documentations/        { deny all; return 404; }
+    location ^~ /extensions/            { deny all; return 404; }
+    location ^~ /node_modules/          { deny all; return 404; }
+    location ~* \.(larka|larka_thematique|phar)$ { deny all; return 404; }
+    location ~* \.(pem|key|crt|cer|p12|pfx|sql|gz|bak|backup|old|orig|log|dump|ini|conf|db|sqlite|sqlite3)$ {
+        deny all; return 404;
+    }
+    location = /api/diagnostic.php      { deny all; return 404; }
+
+    # ── Routes applicatives ──────────────────────────────────────────────────
+    location /api/ { try_files $uri /api/index.php?$query_string; }
+    location = /oauth/microsoft { rewrite ^ /oauth/microsoft.php last; }
+    location = /oauth/google    { rewrite ^ /oauth/google.php    last; }
+    location /oauth/ { try_files $uri =404; }
+
+    # PHP : UNIQUEMENT les points d'entrée légitimes.
+    location ~ ^/(api/index|router|oauth/microsoft|oauth/google)\.php$ {
+        fastcgi_pass unix:/run/php/php@PHP_VERSION@-fpm-gmao.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        @FASTCGI_HTTPS@
+        include fastcgi_params;
+        fastcgi_read_timeout 300;
+        fastcgi_hide_header X-Powered-By;
+        fastcgi_param HTTP_PROXY "";
+    }
+    # Tout autre .php : refusé (fichier déposé, ancien script…).
+    location ~ \.php$ { deny all; return 404; }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        @SECU@
+    }
+    location ~* \.html$ {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        @SECU@
+    }
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|webmanifest)$ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+        @SECU@
+    }
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Service-Worker-Allowed "/";
+        @SECU@
+    }
+    location = /apple-touch-icon.png { rewrite ^ /icon.png last; }
+    location = /manifest.webmanifest {
+        expires 1h;
+        add_header Cache-Control "public";
+        @SECU@
+    }
+    location / {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        @SECU@
+        try_files $uri $uri/ /index.html;
+    }
+
+    access_log /var/log/nginx/gmao_access.log;
+    error_log  /var/log/nginx/gmao_error.log;
+EOCORPS
+}
+
 if [[ "$BEHIND_PROXY" == "1" ]]; then
     # ── Mode reverse-proxy / tunnel (Cloudflare, etc.) : HTTP local, TLS en amont ──
     info "Mode reverse-proxy/tunnel : Nginx en HTTP sur le port ${HTTP_PORT} (pas de Let's Encrypt)."
@@ -569,44 +690,7 @@ server {
     # TLS assuré en amont (tunnel/proxy). On force la détection HTTPS côté PHP :
     # REMOTE_ADDR = proxy local (127.0.0.1, déjà dans trusted_proxies), donc
     # api/config.php fait confiance à X-Forwarded-Proto et active les cookies « secure ».
-    add_header X-Frame-Options        "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy        "no-referrer" always;
-
-    root ${INSTALL_DIR};
-    index index.html;
-    charset utf-8;
-    client_max_body_size 30M;
-
-    location /api/ { try_files \$uri /api/index.php?\$query_string; }
-    location = /oauth/microsoft { rewrite ^ /oauth/microsoft.php last; }
-    location = /oauth/google    { rewrite ^ /oauth/google.php    last; }
-    location /oauth/ { try_files \$uri =404; }
-
-    location ~ \.php\$ {
-        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm-gmao.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_param HTTP_X_FORWARDED_PROTO https;
-        include fastcgi_params;
-        fastcgi_read_timeout 120;
-    }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|webmanifest)\$ {
-        expires 7d;
-        add_header Cache-Control "public, immutable";
-    }
-
-    location / { try_files \$uri \$uri/ /index.html; }
-
-    location ~ /\.(ht|git|env)  { deny all; }
-    location ~ /data/           { deny all; }
-    location ~ /config\.json\$  { deny all; }
-    location ~ /tenants\.json\$ { deny all; }
-    location ~ \.pem\$          { deny all; }
-    location ~ /deploy/         { deny all; }
-
-    access_log /var/log/nginx/gmao_access.log;
-    error_log  /var/log/nginx/gmao_error.log;
+$(nginx_corps 'fastcgi_param HTTP_X_FORWARDED_PROTO https;')
 }
 EONGINX
     ln -sf /etc/nginx/sites-available/gmao /etc/nginx/sites-enabled/
@@ -633,46 +717,9 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
+    ssl_session_cache   shared:SSL:10m;
 
-    add_header X-Frame-Options        "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy        "no-referrer" always;
-    add_header Strict-Transport-Security "max-age=31536000" always;
-
-    root ${INSTALL_DIR};
-    index index.html;
-    charset utf-8;
-    client_max_body_size 30M;
-
-    location /api/ { try_files \$uri /api/index.php?\$query_string; }
-    location = /oauth/microsoft { rewrite ^ /oauth/microsoft.php last; }
-    location = /oauth/google    { rewrite ^ /oauth/google.php    last; }
-    location /oauth/ { try_files \$uri =404; }
-
-    location ~ \.php\$ {
-        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm-gmao.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_param HTTPS on;
-        include fastcgi_params;
-        fastcgi_read_timeout 120;
-    }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|webmanifest)\$ {
-        expires 7d;
-        add_header Cache-Control "public, immutable";
-    }
-
-    location / { try_files \$uri \$uri/ /index.html; }
-
-    location ~ /\.(ht|git|env)  { deny all; }
-    location ~ /data/           { deny all; }
-    location ~ /config\.json\$  { deny all; }
-    location ~ /tenants\.json\$ { deny all; }
-    location ~ \.pem\$          { deny all; }
-    location ~ /deploy/         { deny all; }
-
-    access_log /var/log/nginx/gmao_access.log;
-    error_log  /var/log/nginx/gmao_error.log;
+$(nginx_corps 'fastcgi_param HTTPS on;' 'add_header Strict-Transport-Security "max-age=31536000" always;')
 }
 EONGINX
 

@@ -182,34 +182,63 @@ function cpro_get_token(): string {
 
     return (string)$json['access_token'];
 }
+
+/**
+ * Droit d'utiliser le proxy Chorus Pro.
+ *
+ * ⚠️ FIX SÉCURITÉ : chorus_call et chorus_token_test n'exigeaient qu'une
+ * session. N'importe quel compte — Demandeur compris — pouvait donc appeler
+ * N'IMPORTE QUEL point d'API /cpro/ (dépôt et traitement de factures inclus)
+ * avec le COMPTE TECHNIQUE de l'organisation. Et les règles de visibilité
+ * (domaines autorisés, connexion Microsoft exigée) n'étaient appliquées
+ * qu'à l'affichage, côté navigateur.
+ * Désormais : Administrateur / Gestionnaire uniquement, et mêmes règles de
+ * visibilité que chorus_visibility, vérifiées ici.
+ */
+function cpro_exiger_acces(array $user): void {
+    require_role($user, ['Admin', 'Gestionnaire']);
+    $raison = cpro_refus_visibilite($user);
+    if ($raison !== '') json_error($raison, 403);
+}
+
+/** Raison du refus selon chorus_pro.visibility, ou '' si l'accès est permis. */
+function cpro_refus_visibilite(array $user): string {
+    $vis = cpro_cfg('visibility', []);
+    if (!is_array($vis)) return '';
+    $domains = $vis['allowed_domains'] ?? [];
+    if (!empty($domains) && is_array($domains)) {
+        // Comptes Google et nombre de comptes locaux n'ont que leur login
+        // comme adresse : on s'y rabat quand il en est une.
+        $email  = (string)($user['Email'] ?? '');
+        if ($email === '' && str_contains((string)($user['Login'] ?? ''), '@')) $email = (string)$user['Login'];
+        $domain = strtolower(substr(strrchr($email, '@') ?: '', 1));
+        // Sans adresse, le domaine ne peut pas être vérifié : refus (le
+        // contrôle d'origine laissait passer les comptes sans email).
+        if ($domain === '' || !in_array($domain, array_map('strtolower', $domains), true)) {
+            return $domain === ''
+                ? "Chorus Pro est réservé aux comptes d'un domaine autorisé (aucune adresse email sur ce compte)."
+                : 'Votre domaine email (' . $domain . ') n\'est pas autorisé pour Chorus Pro.';
+        }
+    }
+    if (!empty($vis['require_microsoft'])) {
+        $provider = (string)($user['Provider'] ?? 'local');
+        if (strtolower($provider) !== 'microsoft') {
+            return 'L\'accès Chorus Pro nécessite une connexion Microsoft (actuellement : ' . $provider . ').';
+        }
+    }
+    return '';
+}
 } // end function_exists('cpro_cfg')
 
 // ── Visibilité (accès conditionnel) ─────────────────────────────────────────
 if ($action === 'chorus_visibility') {
     $user = require_auth();
     $vis  = cpro_cfg('visibility', []);
-    $allowed = true;
-    $reason  = '';
-
-    // Vérification domaine si configuré
-    $domains = $vis['allowed_domains'] ?? [];
-    if (!empty($domains) && is_array($domains)) {
-        $email   = $user['Email'] ?? '';
-        $domain  = strtolower(substr(strrchr($email, '@') ?: '', 1));
-        if ($domain && !in_array($domain, array_map('strtolower', $domains))) {
-            $allowed = false;
-            $reason  = 'Votre domaine email (' . $domain . ') n\'est pas autorisé pour Chorus Pro.';
-        }
-    }
-
-    // Vérification provider Microsoft si exigé
-    if ($allowed && !empty($vis['require_microsoft'])) {
-        $provider = $user['Provider'] ?? 'local';
-        if (strtolower($provider) !== 'microsoft') {
-            $allowed = false;
-            $reason  = 'L\'accès Chorus Pro nécessite une connexion Microsoft (actuellement : ' . $provider . ').';
-        }
-    }
+    // Même règle que celle appliquée aux appels (cpro_exiger_acces).
+    $reason = in_array($user['Role'] ?? '', ['Admin', 'Gestionnaire'], true)
+        ? cpro_refus_visibilite($user)
+        : 'Chorus Pro est réservé aux administrateurs et gestionnaires.';
+    $allowed = $reason === '';
 
     json_ok([
         'allowed'          => $allowed,
@@ -223,6 +252,7 @@ if ($action === 'chorus_visibility') {
 // ── Statut de configuration ──────────────────────────────────────────────────
 if ($action === 'chorus_status') {
     $user  = require_auth();
+    require_role($user, ['Admin', 'Gestionnaire']);
     $hosts = cpro_resolve_hosts();
 
     json_ok([
@@ -241,6 +271,7 @@ if ($action === 'chorus_status') {
 // ── Test du token OAuth2 ─────────────────────────────────────────────────────
 if ($action === 'chorus_token_test' && $method === 'POST') {
     $user = require_auth();
+    cpro_exiger_acces($user);
     if (!cpro_is_active()) json_error('Le proxy Chorus Pro est désactivé.', 400);
     if (!cpro_is_client_configured()) json_error('Client PISTE non configuré.', 400);
 
@@ -255,6 +286,7 @@ if ($action === 'chorus_token_test' && $method === 'POST') {
 // ── Appel proxy Chorus Pro (POST) ───────────────────────────────────────────
 if ($action === 'chorus_call' && $method === 'POST') {
     $user = require_auth();
+    cpro_exiger_acces($user);
     if (!cpro_is_active()) json_error('Le proxy Chorus Pro est désactivé.', 400);
     if (!cpro_is_client_configured()) json_error('Client PISTE non configuré.', 400);
     if (!cpro_is_technical_configured()) json_error('Compte technique Chorus non configuré.', 400);
@@ -267,6 +299,12 @@ if ($action === 'chorus_call' && $method === 'POST') {
     // Sécurité : ne permettre que des chemins /cpro/...
     if (!str_starts_with($path, '/cpro/') && !str_starts_with($path, 'cpro/')) {
         json_error('Chemin API Chorus invalide (doit commencer par /cpro/).');
+    }
+    // Pas de « .. », de requête ni de fragment : « /cpro/../autre » sortait
+    // du périmètre une fois le chemin normalisé par curl.
+    if (!preg_match('~^/?cpro/[A-Za-z0-9_\-./]*$~', $path)
+        || preg_match('~(^|/)\.{1,2}(/|$)~', $path)) {
+        json_error('Chemin API Chorus invalide.');
     }
     if (!is_array($payload)) json_error('Payload JSON invalide.');
 

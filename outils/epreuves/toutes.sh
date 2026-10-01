@@ -4,24 +4,48 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 echec=0
+# ⚠️ FIX : une suite qui ne trouve pas de base (pas de config.json) s'arrête
+# avec « ⏭️ Section sautée » et le code 0. Le script concluait alors
+# « ✅ Toutes les épreuves sont passées » alors que quatre suites n'avaient
+# rien vérifié. Les suites sautées sont désormais comptées et annoncées.
+# LARKA_EPREUVES_STRICT=1 : une suite sautée fait échouer (intégration).
+sautees=()
+avertissements=()
 
-for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant; do
+for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant acces-coeur; do
   f="outils/epreuves/test-$e.php"
   [[ -f "$f" ]] || continue
   echo
   echo "─── $e ───────────────────────────────────────────────────────────"
-  php "$f" | tail -6
-  [[ ${PIPESTATUS[0]} -eq 0 ]] || echec=1
+  sortie=$(php "$f" 2>&1); code=$?
+  printf '%s\n' "$sortie" | tail -6
+  if grep -q 'config.json introuvable' <<<"$sortie"; then
+    # Suite qui exige une installation configurée : sautée, pas réussie.
+    sautees+=("$e"); continue
+  fi
+  [[ $code -eq 0 ]] || echec=1
+  if [[ $code -eq 0 ]] && grep -q '⏭️' <<<"$sortie"; then sautees+=("$e"); fi
 done
 
 
 # Les packs de langue sont-ils complets et sans français résiduel ?
+# ⚠️ FIX : le motif cherchait extensions/larka.langue-*/ alors que les packs
+# vivent dans extensions/langues/ : aucun pack n'était jamais vérifié, et la
+# section restait muette. Les écarts sont signalés ; ils ne bloquent que si
+# LARKA_LANGUES_STRICT=1 (un pack en cours de traduction n'est pas une
+# régression du moteur).
 echo
 echo "─── packs de langue ───────────────────────────────────────────────"
-for pack in extensions/larka.langue-*/extension.json; do
+packs=0
+for pack in extensions/langues/larka.langue-*/extension.json extensions/larka.langue-*/extension.json; do
   [ -f "$pack" ] || continue
-  php outils/langues/verifier-traduction.php "$pack" || echec=1
+  packs=$((packs + 1))
+  if ! php outils/langues/verifier-traduction.php "$pack"; then
+    if [[ "${LARKA_LANGUES_STRICT:-0}" == "1" ]]; then echec=1
+    else avertissements+=("pack $(basename "$(dirname "$pack")") incomplet"); fi
+  fi
 done
+[[ $packs -gt 0 ]] || echo "  (aucun pack de langue trouvé)"
 
 # Des accès « window.X » condamnés à rendre undefined ?
 echo
@@ -53,11 +77,20 @@ php Documentations/exemples-declaratifs/verifier.php | tail -2
 [[ ${PIPESTATUS[0]} -eq 0 ]] || echec=1
 
 echo
-if [[ $echec -eq 0 ]]; then
+# (forme « ${t[@]+…} » : un tableau vide sous « set -u » interrompt bash < 4.4)
+for a in ${avertissements[@]+"${avertissements[@]}"}; do echo "⚠️  $a (non bloquant)"; done
+if [[ ${#sautees[@]} -gt 0 ]]; then
+  echo "⚠️  ${#sautees[@]} suite(s) SAUTÉE(S), donc non vérifiée(s) : ${sautees[*]}"
+  echo "    (aucune base accessible — lancez les épreuves depuis une installation configurée)"
+  [[ "${LARKA_EPREUVES_STRICT:-0}" == "1" ]] && echec=1
+fi
+if [[ $echec -eq 0 && ${#sautees[@]} -eq 0 ]]; then
   echo "✅ Toutes les épreuves sont passées."
   # Il y avait ici un renvoi vers « test-bac-client.html », l'épreuve du bac à
   # sable navigateur. Le fichier a disparu avec le bac à sable lui-même : on
   # envoyait donc l'utilisateur vers une page inexistante après un succès.
+elif [[ $echec -eq 0 ]]; then
+  echo "✅ Aucune épreuve en échec — mais toutes n'ont pas tourné (voir ci-dessus)."
 else
   echo "❌ Au moins une épreuve a échoué."
 fi

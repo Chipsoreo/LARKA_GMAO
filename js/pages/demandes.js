@@ -790,8 +790,8 @@ async function traiterDemande(id) {
           <div id="demandePhotos" style="display:flex;flex-wrap:wrap;gap:8px">
             ${docs.map(doc => `
               <div style="position:relative;width:100px;height:100px;border-radius:6px;overflow:hidden;border:1px solid var(--gray-border);display:flex;align-items:center;justify-content:center;background:var(--gray-bg);font-size:11px;color:var(--gray-text)">
-                <div style="cursor:pointer;text-align:center;padding:4px" onclick="DocumentsApi.download(${doc.Id},'${(doc.NomFichier||'').replace(/'/g,"\\'")}')">
-                  📷 ${(doc.NomFichier||'').substring(0,12)}
+                <div style="cursor:pointer;text-align:center;padding:4px" onclick="DocumentsApi.download(${doc.Id},${jsArg(doc.NomFichier||'')})" title="${escHtml(doc.NomFichier||'')}">
+                  📷 ${escHtml((doc.NomFichier||'').substring(0,12))}
                 </div>
                 <button onclick="supprimerPhotoDemande(${doc.Id},${id})" style="position:absolute;top:2px;right:2px;background:#e74c3c;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center" title="Supprimer">×</button>
               </div>
@@ -1060,8 +1060,8 @@ async function voirDetailDemande(id) {
           <div id="demandePhotosView" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
             ${docs.map(doc => `
               <div style="position:relative;width:80px;height:80px;border-radius:6px;overflow:hidden;border:1px solid var(--gray-border);display:flex;align-items:center;justify-content:center;background:var(--gray-bg);font-size:10px;color:var(--gray-text)">
-                <div style="cursor:pointer;text-align:center;padding:4px" onclick="DocumentsApi.download(${doc.Id},'${(doc.NomFichier||'').replace(/'/g,"\\'")}')">
-                  📷 ${(doc.NomFichier||'').substring(0,10)}
+                <div style="cursor:pointer;text-align:center;padding:4px" onclick="DocumentsApi.download(${doc.Id},${jsArg(doc.NomFichier||'')})" title="${escHtml(doc.NomFichier||'')}">
+                  📷 ${escHtml((doc.NomFichier||'').substring(0,10))}
                 </div>
                 ${canDeletePhoto || isManager ? `<button onclick="supprimerPhotoDemande(${doc.Id},${id})" style="position:absolute;top:1px;right:1px;background:#e74c3c;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center" title="Supprimer">×</button>` : ''}
               </div>

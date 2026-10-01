@@ -217,6 +217,7 @@ class Database {
             'DemandeTitre','BienNumero','BienLabel','ContratSociete',
             'BienFamille','BienSousFamille','BienInfoProduit',
             'SharePointUrl','SharePointDriveItemId','SharePointDriveId','SharePointSiteId','SharePointLastSync',
+            'CopieLocaleMime','CopieLocaleDate','CopieLocalePar',
             'NumeroDevis','MontantTTC','Accepte','Raison',
             'TypeLocalisation','ArchiveData',
             'AssetNumero','AssetLabel','AssetEtat','AssetCommentaireSortie',
@@ -433,7 +434,17 @@ class Database {
     //      PlanLiens) sont désormais créées par initTables() et non plus à la
     //      première visite de l'écran Plans. Le bump force leur création sur
     //      les bases déjà déployées où personne n'a encore ouvert cet écran.
-    private const SCHEMA_VERSION = 9;
+    // v10 : initTables() bâtit désormais ses ordres dans le dialecte de la base
+    //       OUVERTE (et non celui de la requête, DB_DRIVER). Le bump rejoue les
+    //       migrations de colonnes sur les bases créées avec le mauvais dialecte
+    //       (tenant SQLite sur installation PostgreSQL, ou l'inverse), dont la
+    //       sentinelle disait « à jour » alors que les ALTER avaient tous échoué.
+    //       Idempotent ; une seule fois par base.
+    // v11 : copie locale des documents SharePoint — colonnes Documents
+    //       CopieLocaleMime, CopieLocaleDate, CopieLocalePar. Le bump force
+    //       l'ALTER TABLE sur les bases déjà déployées, sinon getDocuments()
+    //       plante (« la colonne copielocaledate n'existe pas »).
+    private const SCHEMA_VERSION = 11;
 
     /**
      * Fichier sentinelle utilisé pour court-circuiter initTables() quand
@@ -497,7 +508,17 @@ class Database {
             return;
         }
 
-        $driver  = DB_DRIVER;
+        // ⚠️ DIALECTE DE LA BASE OUVERTE, PAS DE LA REQUÊTE EN COURS.
+        // Cette ligne lisait la constante DB_DRIVER — le pilote du tenant résolu
+        // pour la requête (session, domaine) —, alors que l'instance peut viser
+        // une AUTRE base : le super admin qui crée un tenant, ou le login qui
+        // ouvre la base du tenant de l'utilisateur. Sur une installation
+        // PostgreSQL, un tenant SQLite (le choix par défaut de l'écran) recevait
+        // donc « SERIAL PRIMARY KEY » et des « ADD COLUMN IF NOT EXISTS » que
+        // SQLite refuse : toutes les migrations de colonnes échouaient en
+        // silence, le compte admin ne se créait pas (« no column named Email »)
+        // et la sentinelle marquait pourtant le schéma comme à jour.
+        $driver  = $this->driver;
         $isPg    = ($driver === 'pgsql');
         $isMysql = ($driver === 'mariadb' || $driver === 'mysql');
         $AI      = $isPg ? 'SERIAL PRIMARY KEY' : ($isMysql ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT');
@@ -932,6 +953,12 @@ class Database {
             // SharePoint. Sert à afficher « infos au JJ/MM » quand SharePoint est
             // injoignable, sans jamais rapatrier le contenu du fichier.
             ["Documents", "SharePointLastSync",   "TEXT"],
+            // Copie locale facultative d'un document SharePoint (contenu dans
+            // Donnees) : type du contenu copié — PDF pour un fichier Office
+            // converti —, date et auteur de la copie.
+            ["Documents", "CopieLocaleMime",      "TEXT"],
+            ["Documents", "CopieLocaleDate",      "TEXT"],
+            ["Documents", "CopieLocalePar",       "TEXT"],
 
             // Mobilité carbone : colonnes ajoutées après création initiale
             ["MobiliteCarbone", "Transport",     "TEXT DEFAULT ''"],
@@ -1031,7 +1058,7 @@ class Database {
         return $row['Valeur'] ?? '';
     }
     public function setConfig(string $cle, string $valeur): void {
-        $driver = DB_DRIVER;
+        $driver = $this->driver;   // dialecte de CETTE base (cf. initTables)
         if ($driver === 'pgsql') {
             $this->execute(
                 "INSERT INTO Configuration (Cle, Valeur) VALUES (:cle, :val) ON CONFLICT(Cle) DO UPDATE SET Valeur = EXCLUDED.Valeur",
@@ -1055,6 +1082,19 @@ class Database {
 
     // ══ DOMAINES EMAIL ══
     public function isEmailDomainAllowed(string $email): bool {
+        $emailDomain = strtolower((string)substr((string)strrchr($email, '@'), 1));
+        // ⚠️ FIX SÉCURITÉ : « acces.domaine_email_autorise » (config.json),
+        // documenté comme restreignant les comptes OAuth à un domaine, était lu
+        // (ALLOWED_EMAIL_DOMAIN) mais jamais appliqué. Il l'est désormais, EN
+        // PLUS de la liste « domaines_autorises » de la Configuration.
+        // Accepte un domaine, une liste « a.fr, b.fr » ou un tableau JSON.
+        if (defined('ALLOWED_EMAIL_DOMAIN')) {
+            $v = ALLOWED_EMAIL_DOMAIN;
+            $liste = is_array($v) ? $v : preg_split('/[\s,;]+/', (string)$v);
+            $liste = array_values(array_filter(array_map(
+                static fn($d) => strtolower(ltrim(trim((string)$d), '@')), $liste ?: [])));
+            if ($liste && !in_array($emailDomain, $liste, true)) return false;
+        }
         $domainesConfig = $this->getConfig('domaines_autorises');
         if (empty(trim($domainesConfig))) return true;
         $domaines = array_filter(array_map('trim', explode(',', $domainesConfig)));
@@ -1893,7 +1933,7 @@ public function findOrCreateGoogleUser(string $email, string $prenom, string $no
             $this->_colAccesLecture = true;
         } catch (\Throwable $e) {
             try {
-                $sql = (DB_DRIVER === 'pgsql')
+                $sql = ($this->driver === 'pgsql')
                     ? "ALTER TABLE Utilisateurs ADD COLUMN IF NOT EXISTS AccesLecture TEXT DEFAULT ''"
                     : "ALTER TABLE Utilisateurs ADD COLUMN AccesLecture TEXT DEFAULT ''";
                 $this->pdo->exec($sql);
@@ -2145,17 +2185,61 @@ public function deleteContrat(int $id): void {
     // ══ INTERVENTIONS ══
     // getAllInterventions defined above with JOINs
     public function getInterventionById(int $id): ?array { return $this->fetchOne("SELECT * FROM Interventions WHERE Id = :id", ['id' => $id]); }
+    /**
+     * Numéro d'intervention suivant : INT-AAAAMM-NNNN.
+     *
+     * ⚠️ FIX BUG : le compteur était un COUNT(*) des interventions dont la
+     * DateRealisation tombait dans le mois. Il produisait des DOUBLONS dès
+     * qu'une intervention du mois était supprimée (5 interventions, on supprime
+     * la n°2 → la suivante reprenait le n°5), ou qu'une intervention datée
+     * d'un autre mois portait un numéro du mois courant. On part désormais du
+     * plus grand numéro déjà attribué avec ce préfixe.
+     */
     public function generateInterventionNumero(): string {
-        $year  = date('Y');
-        $month = date('m');
-        $ym    = "$year-$month";
-        $colExpr = $this->isPg() ? "COALESCE(DateRealisation::DATE, CURRENT_DATE)" : "COALESCE(DateRealisation, DATE('now'))";
-        $col   = $this->sqlYearMonth($colExpr);
-        $stmt  = $this->pdo->prepare("SELECT COUNT(*) FROM Interventions WHERE $col = :ym");
-        $stmt->execute([':ym' => $ym]);
-        $count = (int)$stmt->fetchColumn();
-        return sprintf("INT-%s%s-%04d", $year, $month, $count + 1);
+        return $this->numeroSuivant('Interventions', 'INT-' . date('Ym') . '-');
     }
+
+    /**
+     * Plus grand suffixe numérique déjà attribué pour $prefixe dans $table, + 1.
+     * $famille  : suffixe cherché sur tous les préfixes de la même famille
+     *            (ex. « FAC- » quel que soit le mois) — séquence continue.
+     * $plancher : valeur minimale avant incrément (compatibilité).
+     */
+    private function numeroSuivant(string $table, string $prefixe, ?string $famille = null, int $plancher = 0): string {
+        $like = ($famille ?? $prefixe) . '%';
+        $motif = $famille === null
+            ? '/^' . preg_quote($prefixe, '/') . '(\d+)$/'
+            : '/^' . preg_quote($famille, '/') . '\d{6}-(\d+)$/';
+        $max = 0;
+        $stmt = $this->pdo->prepare("SELECT Numero FROM $table WHERE Numero LIKE :p");
+        $stmt->execute([':p' => $like]);
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $n) {
+            if (preg_match($motif, (string)$n, $m)) $max = max($max, (int)$m[1]);
+        }
+        return sprintf('%s%04d', $prefixe, max($max, $plancher) + 1);
+    }
+
+    /**
+     * Garantit qu'un numéro AUTOMATIQUE fraîchement inséré est unique.
+     *
+     * Deux agents qui ouvrent le formulaire en même temps reçoivent le même
+     * numéro pré-rempli (interv_autonumero) ; sans contrôle, les deux fiches
+     * étaient enregistrées sous le même numéro. La fiche la plus ancienne
+     * (Id le plus petit) garde le numéro, l'autre est renumérotée. Un numéro
+     * saisi à la main (hors motif automatique) n'est jamais modifié.
+     */
+    private function dedoublonnerNumero(string $table, int $id, string $numero, string $motif, callable $generer): string {
+        if ($id <= 0 || !preg_match($motif, $numero)) return $numero;
+        for ($essai = 0; $essai < 5; $essai++) {
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM $table WHERE Numero = :n AND Id < :id");
+            $stmt->execute([':n' => $numero, ':id' => $id]);
+            if ((int)$stmt->fetchColumn() === 0) return $numero;
+            $numero = $generer();
+            $this->execute("UPDATE $table SET Numero = :n WHERE Id = :id", ['n' => $numero, 'id' => $id]);
+        }
+        return $numero;
+    }
+
     public function addIntervention(array $i, string $login=''): int {
     if (empty($i['numero'])) { $i['numero'] = $this->generateInterventionNumero(); }
     $now = date('Y-m-d H:i:s');
@@ -2169,6 +2253,8 @@ public function deleteContrat(int $id): void {
         $p
     );
     $newId = $this->lastId();
+    $this->dedoublonnerNumero('Interventions', $newId, (string)$i['numero'], '/^INT-\d{6}-\d+$/',
+        fn() => $this->generateInterventionNumero());
     // Si lié à une demande, mettre à jour le statut de la demande
     if (!empty($i['demandeId'])) {
         $this->execute("UPDATE DemandesIntervention SET Statut='En cours' WHERE Id=:id AND Statut='Nouveau'", ['id'=>(int)$i['demandeId']]);
@@ -2253,12 +2339,32 @@ public function updateStock(int $id, array $s, string $login=''): void {
     $this->execute("UPDATE Stock SET Reference=:reference,Designation=:designation,Categorie=:categorie,Marque=:marque,Modele=:modele,TypeArticle=:typeArticle,Quantite=:quantite,SeuilAlerte=:seuilAlerte,PrixUnitaire=:prixUnitaire,Emplacement=:emplacement,Fournisseur=:fournisseur,Source=:source,ContratId=:contratId,UpdatedAt=:updatedAt,UpdatedBy=:updatedBy WHERE Id=:id", $p);
 }
 
+    /**
+     * Retire $qte unités du stock, de façon ATOMIQUE, ou lève une exception.
+     *
+     * ⚠️ FIX BUG : la quantité était plafonnée à 0 en silence (MAX(0, …)).
+     * Consommer 5 pièces sur un stock de 2 donnait un stock de 0 mais une ligne
+     * de 5 ; supprimer ensuite la ligne restituait 5 → le stock passait à 5,
+     * trois pièces apparues de nulle part. Une quantité négative, elle,
+     * AJOUTAIT du stock et un montant négatif. Désormais : quantité entière
+     * strictement positive, et refus si le stock ne suffit pas — la condition
+     * « Quantite >= :qte » dans l'UPDATE rend le contrôle sûr même si deux
+     * agents consomment la même pièce au même instant.
+     *
+     * @throws \InvalidArgumentException quantité invalide
+     * @throws \RuntimeException         article introuvable / stock insuffisant
+     */
     public function consommerStock(int $stockId, int $qte): void {
-        if ($this->isPg() || $this->isMysql()) {
-            $this->execute("UPDATE Stock SET Quantite = GREATEST(0, Quantite - :qte) WHERE Id = :id", ['qte'=>$qte,'id'=>$stockId]);
-        } else {
-            $this->execute("UPDATE Stock SET Quantite = MAX(0, Quantite - :qte) WHERE Id = :id", ['qte'=>$qte,'id'=>$stockId]);
+        if ($qte <= 0) throw new \InvalidArgumentException('La quantité doit être un entier strictement positif.');
+        $stmt = $this->pdo->prepare("UPDATE Stock SET Quantite = Quantite - :qte WHERE Id = :id AND Quantite >= :qte2");
+        $stmt->execute(['qte' => $qte, 'id' => $stockId, 'qte2' => $qte]);
+        if ($stmt->rowCount() === 0) {
+            $art = $this->fetchOne("SELECT Quantite, Designation FROM Stock WHERE Id = :id", ['id' => $stockId]);
+            if (!$art) throw new \RuntimeException('Article de stock introuvable.');
+            throw new \RuntimeException(sprintf('Stock insuffisant pour « %s » : %d disponible(s), %d demandé(s).',
+                (string)($art['Designation'] ?? ''), (int)$art['Quantite'], $qte));
         }
+        $this->auditerEcriture("UPDATE Stock SET Quantite = Quantite - :qte WHERE Id = :id", ['qte' => $qte, 'id' => $stockId]);
     }
     public function restituerStock(int $stockId, int $qte): void {
         $this->execute("UPDATE Stock SET Quantite = Quantite + :qte WHERE Id = :id", ['qte'=>$qte,'id'=>$stockId]);
@@ -2651,18 +2757,38 @@ private function mapGestionMateriel(array $c): array {
         );
     }
     public function addLigneIntervention(array $l): int {
-        $this->execute(
-            "INSERT INTO IntervStockLignes (InterventionId,StockId,Quantite,PrixUnitaire,Description,DateConsommation)
-             VALUES (:intervId,:stockId,:qte,:prix,:desc,:date)",
-            ['intervId'=>(int)$l['interventionId'],'stockId'=>(int)$l['stockId'],
-             'qte'=>(int)($l['quantite']??1),'prix'=>(float)($l['prixUnitaire']??0),
-             'desc'=>$l['description']??'','date'=>date('Y-m-d')]
-        );
+        $brut = $l['quantite'] ?? 1;
+        if (!is_numeric($brut) || (float)$brut != (int)$brut) {
+            throw new \InvalidArgumentException('La quantité doit être un entier strictement positif.');
+        }
+        $qte      = (int)$brut;
+        $stockId  = (int)($l['stockId'] ?? 0);
+        $intervId = (int)($l['interventionId'] ?? 0);
+        if ($qte <= 0) throw new \InvalidArgumentException('La quantité doit être un entier strictement positif.');
+        if ($intervId <= 0 || !$this->getInterventionById($intervId)) {
+            throw new \RuntimeException('Intervention introuvable.');
+        }
+        // Décrément d'abord (atomique, conditionnel) ; si la ligne ne peut pas
+        // être enregistrée, les pièces sont rendues au stock. Pas de
+        // transaction explicite : sous PostgreSQL, la resynchronisation des
+        // séquences et l'écriture du journal d'audit — best-effort — pourraient
+        // l'invalider et faire échouer l'ajout pour une raison étrangère.
+        $this->consommerStock($stockId, $qte);
+        try {
+            $this->execute(
+                "INSERT INTO IntervStockLignes (InterventionId,StockId,Quantite,PrixUnitaire,Description,DateConsommation)
+                 VALUES (:intervId,:stockId,:qte,:prix,:desc,:date)",
+                ['intervId'=>$intervId,'stockId'=>$stockId,
+                 'qte'=>$qte,'prix'=>(float)($l['prixUnitaire']??0),
+                 'desc'=>$l['description']??'','date'=>date('Y-m-d')]
+            );
+        } catch (\Throwable $e) {
+            $this->restituerStock($stockId, $qte);
+            throw $e;
+        }
         $id = $this->lastId();
-        // Décrémenter le stock
-        $this->consommerStock((int)$l['stockId'], (int)($l['quantite']??1));
         // Recalculer MontantPieces sur l'intervention
-        $this->recalcMontantPieces((int)$l['interventionId']);
+        $this->recalcMontantPieces($intervId);
         return $id;
     }
     public function deleteLigneIntervention(int $id): void {
@@ -2717,10 +2843,11 @@ private function mapGestionMateriel(array $c): array {
 
     /** Numéro de facture auto-suggéré (l'utilisateur peut le remplacer par le n° fournisseur). */
     public function generateFactureNumero(): string {
-        $year  = date('Y');
-        $month = date('m');
+        // Séquence continue (tous mois confondus), comme avant — mais calculée
+        // sur le plus grand numéro attribué et plus seulement sur COUNT(*), qui
+        // redonnait un numéro existant après toute suppression de facture.
         $count = (int)$this->pdo->query("SELECT COUNT(*) FROM Factures")->fetchColumn();
-        return sprintf("FAC-%s%s-%04d", $year, $month, $count + 1);
+        return $this->numeroSuivant('Factures', 'FAC-' . date('Ym') . '-', 'FAC-', $count);
     }
 
     /** Liste des factures + nb d'interventions rattachées et total ventilé. */
@@ -2758,7 +2885,10 @@ private function mapGestionMateriel(array $c): array {
                 'updatedAt'   => $now, 'updatedBy' => $login,
             ]
         );
-        return $this->lastId();
+        $newId = $this->lastId();
+        $this->dedoublonnerNumero('Factures', $newId, (string)$f['numero'], '/^FAC-\d{6}-\d+$/',
+            fn() => $this->generateFactureNumero());
+        return $newId;
     }
 
     public function updateFacture(int $id, array $f, string $login=''): void {
@@ -2885,7 +3015,10 @@ private function mapGestionMateriel(array $c): array {
             . "SharePointDriveItemId AS \"SharePointDriveItemId\","
             . "SharePointDriveId AS \"SharePointDriveId\","
             . "SharePointSiteId AS \"SharePointSiteId\","
-            . "SharePointLastSync AS \"SharePointLastSync\" "
+            . "SharePointLastSync AS \"SharePointLastSync\","
+            . "CopieLocaleMime AS \"CopieLocaleMime\","
+            . "CopieLocaleDate AS \"CopieLocaleDate\","
+            . "CopieLocalePar AS \"CopieLocalePar\" "
             . "FROM Documents WHERE EntiteType=:t AND EntiteId=:id ORDER BY DateAjout DESC",
             ['t'=>$type,'id'=>$id]
         );
@@ -2929,7 +3062,10 @@ private function mapGestionMateriel(array $c): array {
             . "SharePointUrl AS \"SharePointUrl\","
             . "SharePointDriveItemId AS \"SharePointDriveItemId\","
             . "SharePointDriveId AS \"SharePointDriveId\","
-            . "SharePointSiteId AS \"SharePointSiteId\" "
+            . "SharePointSiteId AS \"SharePointSiteId\","
+            . "SharePointLastSync AS \"SharePointLastSync\","
+            . "CopieLocaleMime AS \"CopieLocaleMime\","
+            . "CopieLocaleDate AS \"CopieLocaleDate\" "
             . "FROM Documents WHERE Id=:id",
             ['id'=>$id]
         );
@@ -2943,7 +3079,35 @@ private function mapGestionMateriel(array $c): array {
         $this->execute("DELETE FROM Documents WHERE Id=:id", ['id'=>$id]);
     }
     public function getDocumentData(int $id): ?array {
-        return $this->fetchOne("SELECT NomFichier,TypeMime,Donnees FROM Documents WHERE Id=:id", ['id'=>$id]);
+        return $this->fetchOne(
+            "SELECT NomFichier,TypeMime,Donnees,"
+            . "SharePointUrl AS \"SharePointUrl\","
+            . "CopieLocaleMime AS \"CopieLocaleMime\" "
+            . "FROM Documents WHERE Id=:id", ['id'=>$id]);
+    }
+
+    /**
+     * Copie locale d'un document SharePoint : le contenu est rangé dans
+     * Donnees, comme un document déposé, pour que les comptes sans connexion
+     * Microsoft (comptes locaux) puissent le consulter. Le lien SharePoint
+     * est conservé : la copie est un instantané, à rafraîchir au besoin.
+     * Sans effet sur un document qui n'est pas un lien SharePoint.
+     */
+    public function setCopieLocaleSharePoint(int $id, string $donneesB64, string $mime, string $login): void {
+        $this->execute(
+            "UPDATE Documents SET Donnees=:data, CopieLocaleMime=:mime, CopieLocaleDate=:date, CopieLocalePar=:login "
+            . "WHERE Id=:id AND COALESCE(SharePointUrl,'') <> ''",
+            ['data'=>$donneesB64, 'mime'=>$mime, 'date'=>date('Y-m-d H:i:s'), 'login'=>$login, 'id'=>$id]
+        );
+    }
+
+    /** Retire la copie locale d'un document SharePoint (le lien reste). */
+    public function retirerCopieLocaleSharePoint(int $id): void {
+        $this->execute(
+            "UPDATE Documents SET Donnees='', CopieLocaleMime=NULL, CopieLocaleDate=NULL, CopieLocalePar=NULL "
+            . "WHERE Id=:id AND COALESCE(SharePointUrl,'') <> ''",
+            ['id'=>$id]
+        );
     }
     public function countDocuments(string $type, int $id, string $categorie): int {
         $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM Documents WHERE EntiteType=:t AND EntiteId=:id AND Categorie=:cat");
@@ -4123,7 +4287,7 @@ public function getArchivesBordereauData(int $id): ?array {
     private function _ensureMobiliteTable(): void {
         if ($this->_mobiliteTableChecked) return;
         $this->_mobiliteTableChecked = true;
-        $isPg = (DB_DRIVER === 'pgsql');
+        $isPg = ($this->driver === 'pgsql');
         // Vérifier si la colonne DistanceKm existe (indicateur de schéma complet)
         try {
             $this->pdo->query("SELECT DistanceKm FROM MobiliteCarbone LIMIT 1");

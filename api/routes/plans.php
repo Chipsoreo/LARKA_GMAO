@@ -242,6 +242,9 @@ if ($action === 'plans_file') {
 // ── Supprimer un fichier orphelin du dossier plans ────────────────────────────
 if ($action === 'plans_delete_file') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body = get_body();
     $fname = basename($body['name'] ?? '');
     if ($fname === '' || str_contains($fname, '..')) json_error('Nom invalide');
@@ -261,6 +264,9 @@ if ($action === 'plans_delete_file') {
 // ── Rattacher un fichier orphelin à un étage ──────────────────────────────────
 if ($action === 'plans_attach_file') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    // CSRF : action qui modifie des données → POST (JSON) obligatoire. En GET,
+    // un simple lien suffisait à la déclencher (le cookie Lax l'accompagne).
+    if ($method !== 'POST') json_error('Méthode non supportée : cette action modifie des données (POST requis).', 405);
     $body = get_body();
     $fname   = basename($body['name'] ?? '');
     $etageId = (int)($body['etage_id'] ?? 0);

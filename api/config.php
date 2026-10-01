@@ -41,6 +41,13 @@ unset($_lv);
 // ── Lecture du config.json ─────────────────────────────────────────────────
 $_cfgFile = __DIR__ . '/../config.json';
 if (!file_exists($_cfgFile)) {
+    // En ligne de commande (épreuves, scripts) : message sur la sortie
+    // d'erreur et code NON NUL. Le « exit; » ci-dessous rendait 0 : une
+    // épreuve lancée sans configuration affichait l'erreur… et passait.
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, "Larka : config.json introuvable — lancez « ./start.sh setup » ou copiez config.example.json en config.json.\n");
+        exit(3);
+    }
     // Essayer config.example.json en fallback
     $_cfgExample = __DIR__ . '/../config.example.json';
     if (file_exists($_cfgExample)) {
@@ -209,6 +216,70 @@ if (!is_array($_trustedProxies)) {
 }
 $_remoteIp = $_SERVER['REMOTE_ADDR'] ?? '';
 $_isFromTrustedProxy = in_array($_remoteIp, $_trustedProxies, true);
+define('LARKA_TRUSTED_PROXIES', array_values(array_filter($_trustedProxies, 'is_string')));
+
+if (!function_exists('client_ip')) {
+    /**
+     * IP réelle du client.
+     *
+     * ⚠️ FIX SÉCURITÉ : derrière un reverse proxy local (Caddy, tunnel
+     * Cloudflare, nginx en frontal de « php -S »), REMOTE_ADDR vaut 127.0.0.1
+     * pour TOUT LE MONDE. Conséquences : les limites de débit (connexion,
+     * mot de passe oublié, global) étaient partagées par tous les clients —
+     * un seul visiteur pouvait bloquer la connexion de tous — et le garde
+     * « setup initial depuis le serveur uniquement » laissait passer
+     * n'importe qui. À l'inverse, le journal croyait X-Forwarded-For quelle
+     * que soit la provenance, ce qui permettait d'y inscrire une fausse IP.
+     *
+     * Règle : X-Forwarded-For n'est lu que si la connexion vient d'un proxy
+     * de confiance (securite.trusted_proxies), en partant de la DROITE et en
+     * sautant les proxies de confiance — la première adresse restante est
+     * celle du client (les entrées plus à gauche sont fournies par le client
+     * lui-même et ne prouvent rien).
+     */
+    function client_ip(): string {
+        $remote = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+        if ($remote === '') return PHP_SAPI === 'cli' ? 'cli' : 'unknown';
+        $proxies = defined('LARKA_TRUSTED_PROXIES') ? LARKA_TRUSTED_PROXIES : ['127.0.0.1', '::1'];
+        if (!in_array($remote, $proxies, true)) return $remote;
+
+        $xff = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+        if ($xff !== '') {
+            $chaine = array_reverse(array_map('trim', explode(',', $xff)));
+            foreach ($chaine as $ip) {
+                if (!filter_var($ip, FILTER_VALIDATE_IP)) break;   // entrée illisible : on s'arrête
+                if (!in_array($ip, $proxies, true)) return $ip;
+            }
+        }
+        $real = trim((string)($_SERVER['HTTP_X_REAL_IP'] ?? ''));
+        if ($real !== '' && filter_var($real, FILTER_VALIDATE_IP)) return $real;
+        return $remote;
+    }
+}
+
+if (!function_exists('requete_locale')) {
+    /**
+     * Vrai si la requête provient du serveur lui-même (boucle locale), sans
+     * passer par un proxy qui masquerait l'origine réelle.
+     */
+    function requete_locale(): bool {
+        $ip = client_ip();
+        if (str_starts_with(strtolower($ip), '::ffff:')) $ip = substr($ip, 7);   // IPv4 vue en IPv6
+        $boucle = $ip === '::1' || str_starts_with($ip, '127.');
+        if (!$boucle) return false;
+        // Requête relayée par un proxy qui n'a pas transmis X-Forwarded-For :
+        // l'origine réelle est inconnue, on ne la présume pas locale.
+        // (X-Forwarded-Proto n'en fait pas partie : la configuration nginx
+        //  « derrière un proxy » d'install.sh l'ajoute à TOUTES les requêtes,
+        //  y compris celles faites depuis le serveur lui-même.)
+        $relayee = false;
+        foreach (['HTTP_X_FORWARDED_HOST', 'HTTP_FORWARDED',
+                  'HTTP_CF_CONNECTING_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR'] as $h) {
+            if (!empty($_SERVER[$h])) { $relayee = true; break; }
+        }
+        return !$relayee || !empty($_SERVER['HTTP_X_FORWARDED_FOR']);
+    }
+}
 
 $_behindHttpsProxy = $_isFromTrustedProxy && (
     (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
@@ -226,7 +297,13 @@ ini_set('session.cookie_path',     SESSION_COOKIE_PATH);
 ini_set('session.use_strict_mode',  '1'); // Refuse les ID de session invalides
 ini_set('session.use_only_cookies', '1'); // Pas de session ID dans l'URL
 ini_set('session.use_trans_sid',    '0'); // Pas de réécriture d'URL transparente
-ini_set('session.cookie_name', 'GMAO_SID'); // Nom de cookie non-standard (masque la techno)
+// ⚠️ FIX : « session.cookie_name » n'existe pas — la directive est
+// « session.name ». Le cookie s'appelait donc toujours PHPSESSID. (Au premier
+// déploiement de ce correctif, les sessions ouvertes sous l'ancien nom sont
+// simplement redemandées.)
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    ini_set('session.name', 'GMAO_SID'); // Nom de cookie non-standard (masque la techno)
+}
 // Auto-detect secure flag derrière proxy HTTPS
 if ($_behindHttpsProxy && !SESSION_COOKIE_SECURE) {
     ini_set('session.cookie_secure', '1');
@@ -247,15 +324,45 @@ if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
 $_tenantDb = null;
 $_currentTenantKey = null;
 try {
+    // ⚠️ FIX SÉCURITÉ : une session rattachée à un tenant qui n'existe plus
+    // (supprimé — y compris le DERNIER, qui repasse l'installation en
+    // mono-tenant), qui n'a plus de base, ou qui a été désactivé, retombait
+    // silencieusement sur la base de config.json — où l'Id utilisateur gardé
+    // en session désigne une tout autre personne. On ferme alors la session
+    // utilisateur. (Un tenant désactivé reste ouvert à la bascule explicite
+    // du super administrateur, mais pas un tenant supprimé.)
+    $_fermerSessionTenant = function (string $cle, string $raison): void {
+        error_log('[Larka][SESSION] tenant "' . $cle . '" ' . $raison . ' — session utilisateur fermée.');
+        unset($_SESSION['user'], $_SESSION['tenant_key'], $_SESSION['forced_tenant']);
+    };
+
     // Priorité 1 : super admin qui force un tenant
     if (!empty($_SESSION['forced_tenant'])) {
-        $_currentTenantKey = $_SESSION['forced_tenant'];
-        $_tenantDb = TenantResolver::getDbConfigForTenant($_currentTenantKey);
+        $_cle = (string)$_SESSION['forced_tenant'];
+        $_tenantDb = TenantResolver::isMultiTenant() ? TenantResolver::getDbConfigForTenant($_cle) : null;
+        if ($_tenantDb) {
+            $_currentTenantKey = $_cle;
+        } else {
+            $_fermerSessionTenant($_cle, 'introuvable');
+            $_tenantDb = TenantResolver::getDbConfig();
+            $resolved = TenantResolver::resolve();
+            $_currentTenantKey = $resolved['key'] ?? 'default';
+        }
     }
     // Priorité 2 : tenant résolu et stocké en session (après login par email)
     elseif (!empty($_SESSION['tenant_key'])) {
-        $_currentTenantKey = $_SESSION['tenant_key'];
-        $_tenantDb = TenantResolver::getDbConfigForTenant($_currentTenantKey);
+        $_cle = (string)$_SESSION['tenant_key'];
+        $_tSession = TenantResolver::isMultiTenant() ? TenantResolver::getTenant($_cle) : null;
+        $_tenantDb = $_tSession['base_de_donnees'] ?? null;
+        if (!$_tSession || empty($_tSession['actif']) || !$_tenantDb) {
+            $_fermerSessionTenant($_cle, !$_tSession ? 'introuvable' : (!$_tenantDb ? 'sans base' : 'désactivé'));
+            $_tenantDb = TenantResolver::getDbConfig();
+            $resolved = TenantResolver::resolve();
+            $_currentTenantKey = $resolved['key'] ?? 'default';
+        } else {
+            $_currentTenantKey = $_cle;
+        }
+        unset($_tSession);
     }
     // Priorité 3 : résolution par Host header (fallback)
     else {
@@ -266,6 +373,13 @@ try {
 } catch (\Throwable $e) {
     $_tenantDb = null;
     $_currentTenantKey = 'default';
+    // Registre des tenants injoignable : la requête retombe sur la base de
+    // config.json. Une session rattachée à un tenant n'y a pas sa place — l'Id
+    // qu'elle porte y désignerait quelqu'un d'autre. On la ferme.
+    if (!empty($_SESSION['tenant_key']) || !empty($_SESSION['forced_tenant'])) {
+        error_log('[Larka][SESSION] registre des tenants injoignable — session utilisateur fermée.');
+        unset($_SESSION['user']);
+    }
 }
 
 // ── Base de données ────────────────────────────────────────────────────────
@@ -445,6 +559,9 @@ define('VAPID_PRIVATE_PEM', $_vapidPem);
 
 // Configuration des notifications push
 define('PUSH_ACTIF',                    (bool)(cfg('push', 'actif') ?? true));
+// Services push supplémentaires acceptés (suffixes d'hôte) — voir WebPush::endpointAutorise.
+$_pushEndpoints = cfg('push', 'endpoints_autorises');
+define('PUSH_ENDPOINTS_AUTORISES', is_array($_pushEndpoints) ? array_values(array_filter($_pushEndpoints, 'is_string')) : []);
 define('PUSH_NOTIF_DEMANDE_TITRE',      cfg('push', 'notif_demande_titre')  ?? '📝 Nouvelle demande d\'intervention');
 define('PUSH_NOTIF_DEMANDE_CORPS',      cfg('push', 'notif_demande_corps')  ?? '{demandeur} a soumis une demande d\'intervention.');
 // Icône : « /icon.png » (logo Larka). L'ancien nom « /apple-touch-icon.png »,

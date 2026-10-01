@@ -21,6 +21,8 @@
  *   sharepoint_search  → recherche de fichiers dans un drive
  *   sharepoint_link    → créer un raccourci vers un fichier SP dans la table Documents
  *   sharepoint_mydrives → les drives personnels de l'utilisateur (OneDrive)
+ *   sharepoint_copie_locale → copie du fichier dans Larka (POST) / retrait (DELETE),
+ *                         pour les comptes sans connexion Microsoft
  */
 
 // ── Helper : redirection sûre (anti open-redirect, F7) ───────────────────────
@@ -170,6 +172,9 @@ function ensureMsToken(): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// Droits sur les raccourcis (table Documents) : api/DocumentsAcl.php.
+require_once __DIR__ . '/../DocumentsAcl.php';
 
 // ── Statut : est-ce que SharePoint est utilisable pour cet utilisateur ? ──────
 if ($action === 'sharepoint_status') {
@@ -519,6 +524,92 @@ function spItemRef(array $doc, string $token): array {
 //    Insensible aux renommages et aux déplacements du fichier sur SharePoint.
 //    - 200 → { url, name } (URL live) ; le raccourci est auto-réparé au passage.
 //    - 404 → le fichier n'existe plus (supprimé ou hors de portée du compte).
+// ── Copie locale d'un document lié ───────────────────────────────────────────
+// Rapatrie le contenu d'un fichier SharePoint pour le ranger dans Larka, afin
+// que les comptes sans connexion Microsoft (comptes locaux) puissent le
+// consulter. Mêmes garde-fous qu'un dépôt : taille maximale et types de
+// documents.mime_autorises ; un fichier Office est converti en PDF par Graph
+// (lisible dans le navigateur, sans Office).
+// @return array{bin:string, mime:string}   @throws RuntimeException
+if (!function_exists('sp_contenu_pour_copie')) {
+function sp_contenu_pour_copie(array $doc, string $token): array {
+    $ref = spItemRef($doc, $token);
+    if (empty($ref['driveId']) || empty($ref['itemId'])) {
+        throw new RuntimeException('Le lien SharePoint est incomplet.');
+    }
+    $meta = graphTry("drives/{$ref['driveId']}/items/{$ref['itemId']}", $token);
+    if ($meta['status'] === 404 || isset($meta['data']['deleted'])) {
+        throw new RuntimeException('Ce fichier n\'existe plus sur SharePoint.');
+    }
+    if ($meta['status'] < 200 || $meta['status'] >= 300) {
+        throw new RuntimeException('SharePoint est injoignable (code ' . (int)$meta['status'] . ').');
+    }
+    $nom  = (string)($meta['data']['name'] ?? '');
+    $mime = strtolower((string)($meta['data']['file']['mimeType'] ?? ''));
+    $ext  = strtolower(pathinfo($nom, PATHINFO_EXTENSION));
+    $max  = (int)(DOC_TAILLE_MAX_MO * 1024 * 1024);
+
+    // Formats que Graph sait convertir en PDF (content?format=pdf).
+    $convertibles = ['csv', 'doc', 'docx', 'odp', 'ods', 'odt', 'pot', 'potm', 'potx', 'pps', 'ppsx',
+                     'ppsxm', 'ppt', 'pptm', 'pptx', 'rtf', 'xls', 'xlsx'];
+    if (in_array($ext, $convertibles, true)) {
+        $url     = 'https://graph.microsoft.com/v1.0/drives/' . rawurlencode($ref['driveId'])
+                 . '/items/' . rawurlencode($ref['itemId']) . '/content?format=pdf';
+        $entetes = ['Authorization: Bearer ' . $token];
+        $mimeCopie = 'application/pdf';
+    } else {
+        $autorises = array_map('strtolower', array_merge(['application/pdf'], (array)DOC_MIME_AUTORISES));
+        if ($mime === '' || str_contains($mime, 'svg') || !in_array($mime, $autorises, true)) {
+            throw new RuntimeException('Type de fichier non pris en charge pour la copie locale'
+                . ($mime !== '' ? ' (' . $mime . ')' : '') . '.');
+        }
+        if (isset($meta['data']['size']) && (int)$meta['data']['size'] > $max) {
+            throw new RuntimeException('Fichier trop volumineux pour la copie locale (max ' . DOC_TAILLE_MAX_MO . ' Mo).');
+        }
+        $url = (string)($meta['data']['@microsoft.graph.downloadUrl'] ?? '');
+        if ($url === '') throw new RuntimeException('Impossible d\'obtenir le contenu du fichier.');
+        $entetes   = [];   // downloadUrl est pré-authentifiée
+        $mimeCopie = $mime;
+    }
+
+    $bin = ''; $tropGros = false;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_FOLLOWLOCATION  => true,
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_MAXREDIRS       => 5,
+        CURLOPT_TIMEOUT         => 120,
+        CURLOPT_CONNECTTIMEOUT  => 10,
+        CURLOPT_SSL_VERIFYPEER  => true,
+        CURLOPT_SSL_VERIFYHOST  => 2,
+        CURLOPT_HTTPHEADER      => $entetes,
+        CURLOPT_WRITEFUNCTION   => function ($c, $morceau) use (&$bin, &$tropGros, $max) {
+            if (strlen($bin) + strlen($morceau) > $max) { $tropGros = true; return 0; }  // interrompt
+            $bin .= $morceau;
+            return strlen($morceau);
+        },
+    ]);
+    curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err  = curl_error($ch);
+    if ($tropGros) throw new RuntimeException('Fichier trop volumineux pour la copie locale (max ' . DOC_TAILLE_MAX_MO . ' Mo).');
+    if ($err !== '' || $code < 200 || $code >= 300 || $bin === '') {
+        throw new RuntimeException('Le contenu n\'a pas pu être récupéré depuis SharePoint'
+            . ($code ? ' (code ' . $code . ')' : '') . '.');
+    }
+    // Le contenu doit correspondre au type annoncé (même contrôle qu'un dépôt).
+    if (function_exists('_doc_sniff_mime')) {
+        $detecte = _doc_sniff_mime($bin);
+        $aVerifier = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+        if (in_array($mimeCopie, $aVerifier, true) && $detecte !== $mimeCopie) {
+            throw new RuntimeException('Le contenu reçu ne correspond pas au type annoncé (' . $mimeCopie . ').');
+        }
+    }
+    return ['bin' => $bin, 'mime' => $mimeCopie];
+}
+}
+
 if ($action === 'sharepoint_resolve' && $method === 'GET') {
     require_auth();
     if (!SHAREPOINT_ENABLED) json_error('SharePoint non disponible.', 403);
@@ -526,6 +617,9 @@ if ($action === 'sharepoint_resolve' && $method === 'GET') {
     $docId = (int)($_GET['id'] ?? 0);
     if (!$docId) json_error('Identifiant de document requis.', 400);
 
+    // Même règle que les documents stockés (api/DocumentsAcl.php) : 404 si la
+    // fiche qui porte ce raccourci n'est pas lisible par l'appelant.
+    doc_exiger_lecture_document($db, require_auth(), $docId);
     $doc = $db->getSharePointDoc($docId);
     if (!$doc) json_error('Document introuvable.', 404);
 
@@ -581,6 +675,9 @@ if ($action === 'sharepoint_download' && $method === 'GET') {
     $docId = (int)($_GET['id'] ?? 0);
     if (!$docId) json_error('Identifiant de document requis.', 400);
 
+    // Même règle que les documents stockés (api/DocumentsAcl.php) : 404 si la
+    // fiche qui porte ce raccourci n'est pas lisible par l'appelant.
+    doc_exiger_lecture_document($db, require_auth(), $docId);
     $doc = $db->getSharePointDoc($docId);
     if (!$doc) json_error('Document introuvable.', 404);
     error_log('[Larka][AUDIT] sharepoint_download id=' . (int)$docId . ' user=' . ($__u['Login'] ?? '?') . ' role=' . ($__u['Role'] ?? '?')); // F6
@@ -640,6 +737,9 @@ if ($action === 'sharepoint_content' && $method === 'GET') {
     $docId = (int)($_GET['id'] ?? 0);
     if (!$docId) json_error('Identifiant de document requis.', 400);
 
+    // Même règle que les documents stockés (api/DocumentsAcl.php) : 404 si la
+    // fiche qui porte ce raccourci n'est pas lisible par l'appelant.
+    doc_exiger_lecture_document($db, require_auth(), $docId);
     $doc = $db->getSharePointDoc($docId);
     if (!$doc) json_error('Document introuvable.', 404);
 
@@ -701,6 +801,9 @@ if ($action === 'sharepoint_check' && $method === 'GET') {
     $docId = (int)($_GET['id'] ?? 0);
     if (!$docId) json_error('Identifiant de document requis.', 400);
 
+    // Même règle que les documents stockés (api/DocumentsAcl.php) : 404 si la
+    // fiche qui porte ce raccourci n'est pas lisible par l'appelant.
+    doc_exiger_lecture_document($db, require_auth(), $docId);
     $doc = $db->getSharePointDoc($docId);
     if (!$doc) json_error('Document introuvable.', 404);
 
@@ -711,10 +814,19 @@ if ($action === 'sharepoint_check' && $method === 'GET') {
         'url'        => $doc['SharePointUrl']      ?? '',
         'derniereMaj'=> $doc['SharePointLastSync'] ?? null,
         'lectureSeule' => ($db->getConfig('sharepoint_lecture_seule') === '1'),
+        'copieLocale'  => $doc['CopieLocaleDate'] ?? null,
+        'copieMime'    => $doc['CopieLocaleMime'] ?? null,
     ];
 
     if (!SHAREPOINT_ENABLED) {
         json_ok($horsLigne + ['disponible' => false, 'raison' => 'SharePoint n\'est pas activé sur cette instance.']);
+    }
+    // ⚠️ FIX : sans jeton Microsoft (compte local), ensureMsToken() répondait
+    // 401 — et le client, prenant ce 401 pour une session expirée,
+    // DÉCONNECTAIT l'utilisateur qui cliquait sur un document SharePoint.
+    if (empty($_SESSION['ms_access_token'])) {
+        json_ok($horsLigne + ['disponible' => false,
+            'raison' => 'Votre compte n\'est pas connecté à Microsoft : SharePoint n\'est pas accessible depuis cette session.']);
     }
 
     try {
@@ -744,6 +856,8 @@ if ($action === 'sharepoint_check' && $method === 'GET') {
             'url'          => $horsLigne['url'],
             'derniereMaj'  => date('Y-m-d H:i:s'),
             'lectureSeule' => $horsLigne['lectureSeule'],
+            'copieLocale'  => $horsLigne['copieLocale'],
+            'copieMime'    => $horsLigne['copieMime'],
         ]);
     } catch (\Throwable $e) {
         // ensureMsToken() peut couper la réponse via json_error (401) ; sinon on
@@ -771,7 +885,71 @@ if ($action === 'sharepoint_link' && $method === 'POST') {
 
     if (!$entType || !$entId) json_error('entiteType et entiteId requis.', 400);
     if (!$url)                json_error('URL SharePoint requise.', 400);
+    // Créer un raccourci = déposer un document sur la fiche : mêmes droits.
+    doc_exiger_entite($db, $user, (string)$entType, $entId, true);
+    // Lien vers SharePoint uniquement en https (jamais « javascript: »…).
+    if (!preg_match('#^https://#i', (string)$url)) json_error('URL SharePoint invalide.', 400);
+    // Nom affiché chez tous ceux qui ouvrent la fiche : même nettoyage qu'un dépôt.
+    $nom = basename(preg_replace('/[\r\n\x00-\x1f\x7f"<>\/\\\\]/', '_', (string)$nom)) ?: 'Fichier SharePoint';
+    if (strlen($nom) > 200) $nom = substr($nom, 0, 200);
+
+    // Copie locale demandée : vérifiée AVANT de créer le lien, pour ne pas
+    // laisser un lien à moitié traité si elle est impossible d'emblée.
+    $copie = !empty($b['copieLocale']);
+    if ($copie) {
+        if ($db->getConfig('sharepoint_lecture_seule') === '1') {
+            json_error('Copie locale impossible : les documents SharePoint sont en consultation seule.', 403);
+        }
+        if (empty($_SESSION['ms_access_token'])) {
+            json_error('Connexion Microsoft requise pour copier un document SharePoint.', 409);
+        }
+        $token = ensureMsToken();
+    }
 
     $docId = $db->addSharePointLink($entType, $entId, $nom, $mime, $categorie, $url, $itemId, $driveId, $siteId, $taille, $user['Login']);
-    json_ok(['id' => $docId]);
+    if (!$copie) json_ok(['id' => $docId]);
+
+    // Le lien est créé quoi qu'il arrive ; un échec de copie est signalé sans
+    // l'annuler (on peut relancer la copie depuis la fiche).
+    try {
+        $c = sp_contenu_pour_copie($db->getSharePointDoc($docId) ?? [], $token);
+        $db->setCopieLocaleSharePoint($docId, base64_encode($c['bin']), $c['mime'], $user['Login']);
+        json_ok(['id' => $docId, 'copieLocale' => true]);
+    } catch (\RuntimeException $e) {
+        json_ok(['id' => $docId, 'copieLocale' => false, 'avertissement' => $e->getMessage()]);
+    }
+}
+
+// ── Copie locale d'un document SharePoint déjà lié ───────────────────────────
+//    POST   : crée ou rafraîchit la copie (instantané du fichier SharePoint) ;
+//    DELETE : la retire (le lien reste).
+//    Mêmes droits que la modification des documents de la fiche.
+if ($action === 'sharepoint_copie_locale' && in_array($method, ['POST', 'DELETE'], true)) {
+    $user = require_auth();
+    $docId = (int)($_GET['id'] ?? 0);
+    if ($docId <= 0) json_error('Identifiant de document requis.', 400);
+    doc_exiger_ecriture_document($db, $user, $docId);
+    $doc = $db->getSharePointDoc($docId);
+    if (!$doc || empty($doc['SharePointUrl'])) json_error('Ce document n\'est pas un lien SharePoint.', 404);
+
+    if ($method === 'DELETE') {
+        $db->retirerCopieLocaleSharePoint($docId);
+        json_ok(['copieLocale' => false]);
+    }
+
+    if (!SHAREPOINT_ENABLED) json_error('SharePoint non disponible.', 403);
+    if ($db->getConfig('sharepoint_lecture_seule') === '1') {
+        json_error('Copie locale impossible : les documents SharePoint sont en consultation seule.', 403);
+    }
+    if (empty($_SESSION['ms_access_token'])) {
+        json_error('Connexion Microsoft requise pour copier un document SharePoint.', 409);
+    }
+    $token = ensureMsToken();
+    try {
+        $c = sp_contenu_pour_copie($doc, $token);
+    } catch (\RuntimeException $e) {
+        json_error($e->getMessage(), 422);
+    }
+    $db->setCopieLocaleSharePoint($docId, base64_encode($c['bin']), $c['mime'], $user['Login']);
+    json_ok(['copieLocale' => true, 'mime' => $c['mime'], 'date' => date('Y-m-d H:i:s')]);
 }

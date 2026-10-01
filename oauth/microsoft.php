@@ -137,6 +137,10 @@ function cleanOldTokens(): void {
 }
 
 function closeOk(array $user): void {
+    // Nouvel identifiant de session à la connexion (fixation de session), et
+    // fin d'une éventuelle bascule super admin sur un autre tenant.
+    if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+    unset($_SESSION['forced_tenant']);
     $_SESSION['user'] = $user;
     session_write_close();
 
@@ -272,8 +276,90 @@ curl_setopt_array($ch, [
     CURLOPT_TIMEOUT        => 10,
 ]);
 $profile = json_decode(curl_exec($ch), true);
+if (!is_array($profile)) $profile = [];
 
-$email  = $profile['mail'] ?? $profile['userPrincipalName'] ?? '';
+/* ── Adresse VÉRIFIÉE du compte ──────────────────────────────────────────────
+ * ⚠️ FIX SÉCURITÉ (« nOAuth ») : l'adresse retenue était `mail`, sinon
+ * `userPrincipalName`. Or l'application accepte par défaut les comptes de
+ * N'IMPORTE QUELLE organisation Microsoft (tenant « common »), et `mail` est
+ * un attribut que l'administrateur d'une organisation — la sienne, créée en
+ * cinq minutes — peut renseigner librement, sans aucune preuve de propriété
+ * de l'adresse. Il suffisait d'y inscrire l'adresse d'un agent (ou d'un super
+ * administrateur) pour se connecter sous son identité.
+ *
+ * Désormais :
+ *   • compte personnel (Outlook.com, Hotmail…) : seul l'identifiant de
+ *     connexion compte — Microsoft en a vérifié la propriété ;
+ *   • compte professionnel : `mail` n'est retenu que si son domaine fait
+ *     partie des domaines VÉRIFIÉS de l'organisation du compte (Graph
+ *     /organization, accessible avec User.Read) ; sinon le UPN, dont le
+ *     domaine est lui-même nécessairement vérifié ; à défaut, refus.
+ */
+function ms_claims_id_token(string $jwt): array {
+    $p = explode('.', $jwt);
+    if (count($p) < 2) return [];
+    $b = strtr($p[1], '-_', '+/');
+    $b .= str_repeat('=', (4 - strlen($b) % 4) % 4);
+    $c = json_decode((string)base64_decode($b), true);
+    return is_array($c) ? $c : [];
+}
+function ms_email_verifie(array $token, array $profile, string $accessToken): string {
+    $mail = trim((string)($profile['mail'] ?? ''));
+    $upn  = trim((string)($profile['userPrincipalName'] ?? ''));
+    $dom  = static fn(string $e): string => strtolower((string)substr((string)strrchr($e, '@'), 1));
+    // Comptes invités (« …#EXT#@… ») : identité d'une autre organisation.
+    if (stripos($upn, '#ext#') !== false) $upn = '';
+
+    // Les jetons sont reçus directement de login.microsoftonline.com (TLS) :
+    // lire les revendications de l'id_token suffit, sans revérifier la signature.
+    $claims = ms_claims_id_token((string)($token['id_token'] ?? ''));
+    $tid = strtolower((string)($claims['tid'] ?? ''));
+
+    // Application restreinte à UNE organisation (tenant_id = GUID ou domaine,
+    // ni « common », ni « organizations », ni « consumers ») : seuls les
+    // comptes de son propre annuaire peuvent se connecter, et c'est elle qui
+    // en tient l'attribut `mail` — y compris pour ses invités (#EXT#), dont
+    // le UPN n'est pas une adresse. Le risque visé plus haut (un annuaire
+    // étranger qui déclare l'adresse de son choix) n'existe pas : on garde le
+    // comportement d'origine.
+    $tenantConf = strtolower(trim((string)(defined('MICROSOFT_TENANT_ID') ? MICROSOFT_TENANT_ID : 'common')));
+    if (!in_array($tenantConf, ['', 'common', 'organizations', 'consumers'], true)) {
+        $estGuid = (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $tenantConf);
+        if ($estGuid && $tid !== '' && $tid !== $tenantConf) return '';
+        $upnBrut = trim((string)($profile['userPrincipalName'] ?? ''));
+        return $mail !== '' ? $mail : (stripos($upnBrut, '#ext#') === false ? $upnBrut : '');
+    }
+    if ($tid === '9188040d-6c67-4c5b-b112-36a304b66dad') {     // comptes personnels Microsoft
+        return str_contains($upn, '@') ? $upn : '';
+    }
+
+    $ch = curl_init('https://graph.microsoft.com/v1.0/organization?$select=verifiedDomains');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+    $rep  = json_decode((string)curl_exec($ch), true);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $verifies = [];
+    if ($code === 200 && is_array($rep['value'] ?? null)) {
+        foreach ($rep['value'] as $org) {
+            foreach (($org['verifiedDomains'] ?? []) as $d) {
+                if (!empty($d['name'])) $verifies[] = strtolower((string)$d['name']);
+            }
+        }
+    }
+    if (!$verifies) {
+        error_log('[OAuth MS] domaines vérifiés introuvables (HTTP ' . $code . ') — connexion refusée.');
+        return '';
+    }
+    if ($mail !== '' && in_array($dom($mail), $verifies, true)) return $mail;
+    if ($upn  !== '' && in_array($dom($upn),  $verifies, true)) return $upn;
+    return '';
+}
+
+$email  = ms_email_verifie($token, $profile, $accessToken);
 $prenom = $profile['givenName']  ?? '';
 $nom    = $profile['surname']    ?? '';
 $msId   = $profile['id']         ?? '';
@@ -284,7 +370,7 @@ $poste  = $profile['jobTitle']   ?? '';
 $officeLocation = $profile['officeLocation'] ?? '';
 $companyName    = $profile['companyName']    ?? '';
 
-if (!$email) closeError('Email introuvable dans le profil Microsoft.');
+if (!$email) closeError('Adresse email introuvable ou non vérifiée pour ce compte Microsoft.');
 
 /* ── Photo de profil Microsoft Graph (96×96) ────────────────────────────── */
 $photoUrl = '';
@@ -402,25 +488,23 @@ if ($isSuperAdminOAuth) {
 }
 
 /* ── Résolution multi-tenant par domaine email ─────────────────────────── */
+// ⚠️ FIX SÉCURITÉ : même logique que la connexion locale (tenants désactivés
+// exclus, y compris le joker) ; plus de repli silencieux sur la base par
+// défaut quand la configuration du tenant est illisible ; et tenant_key n'est
+// écrit en session qu'une fois le compte accepté.
 require_once __DIR__ . '/../api/TenantResolver.php';
 $_tenantDbCfg = null;
+$tenantKey = null;
 if (TenantResolver::isMultiTenant()) {
-    $tenantKey = TenantResolver::resolveByEmailDomain($email);
-    if (!$tenantKey) {
-        foreach (TenantResolver::getAllTenants() as $k => $t) {
-            if (in_array('*', $t['domaines_email'] ?? [])) { $tenantKey = $k; break; }
-        }
-    }
-    if ($tenantKey) {
-        $_tenantDbCfg = TenantResolver::getDbConfigForTenant($tenantKey);
-        $_SESSION['tenant_key'] = $tenantKey;
-    } else {
-        $domain = strtolower(substr(strrchr($email, '@'), 1));
-        closeError("Aucune organisation trouvée pour le domaine @{$domain}.");
-    }
+    $res = TenantResolver::tenantPourConnexion($email, false);
+    if ($res['erreur']) closeError($res['erreur']);
+    $tenantKey = $res['cle'];
+    $_tenantDbCfg = TenantResolver::getDbConfigForTenant($tenantKey);
+    if (!$_tenantDbCfg) closeError('Configuration de l\'organisation indisponible. Contactez l\'administrateur.');
 }
 
 /* ── Vérification domaine ────────────────────────────────────────────────── */
+// (domaines de la Configuration ET acces.domaine_email_autorise de config.json)
 $db = $_tenantDbCfg ? new Database($_tenantDbCfg) : new Database();
 if (!$db->isEmailDomainAllowed($email)) {
     $domain = strtolower(substr(strrchr($email, '@'), 1));
@@ -431,4 +515,5 @@ if (!$db->isEmailDomainAllowed($email)) {
 $user = $db->findOrCreateMicrosoftUser($email, $prenom, $nom, $msId, $telMobile, $telPro, $service, $poste, $photoUrl, $officeLocation, $companyName, $managerName);
 if (!$user) closeError('Compte désactivé ou erreur lors de la création.');
 
+if ($tenantKey) $_SESSION['tenant_key'] = $tenantKey;
 closeOk($user);

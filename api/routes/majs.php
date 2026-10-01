@@ -26,10 +26,12 @@ if (in_array($action, ['maj_etat', 'maj_verifier', 'maj_installer', 'maj_histori
     $qui = null;
     if (!empty($_SESSION['superadmin']['authenticated'])) {
         $qui = 'superadmin:' . ($_SESSION['superadmin']['login'] ?? '?');
-    } elseif (!empty($_SESSION['user'])) {
+    } elseif (($_majUser = utilisateur_session()) !== null) {
+        // Rôle relu en base (utilisateur_session) : un gestionnaire rétrogradé
+        // ou désactivé perd ce droit immédiatement.
         $multi = class_exists('TenantResolver', false) && TenantResolver::isMultiTenant();
-        if (!$multi && in_array($_SESSION['user']['Role'] ?? '', ['Admin', 'Gestionnaire'], true)) {
-            $qui = (string)($_SESSION['user']['Login'] ?? '?');
+        if (!$multi && in_array($_majUser['Role'] ?? '', ['Admin', 'Gestionnaire'], true)) {
+            $qui = (string)($_majUser['Login'] ?? '?');
         }
     }
     $maj = new LarkaMiseAJour();

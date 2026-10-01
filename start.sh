@@ -1443,11 +1443,22 @@ cmd_epreuves() {
     # « layout » rejoint les rapides : la mise en page est la primitive la plus
     # proche du rendu, donc celle par laquelle on tenterait d'y faire entrer du
     # style ou du comportement. Elle ne demande aucune base et coûte un instant.
-    for nom in invariants expressions conditions layout reference; do
+    # « acces-coeur » aussi : elle garde les contrôles d'accès des routes du cœur
+    # (documents, rôles, CSRF, routeur, audit). Autonome — copie jetable,
+    # SQLite, serveur intégré sur un port libre — elle ne demande aucune base.
+    for nom in invariants expressions conditions layout reference acces-coeur; do
         local f="outils/epreuves/test-${nom}.php"
         [[ -f "$f" ]] || continue
-        if php "$f" >/dev/null 2>&1; then
-            printf "   \033[32m✓\033[0m %s\n" "$nom"
+        local sortie
+        if sortie=$(php "$f" 2>&1); then
+            # Une épreuve qui ne peut pas tourner (extension absente…) sort
+            # avec 0 et « ⏭️ » : ce n'est pas un succès, on le dit.
+            if grep -q '⏭️' <<<"$sortie"; then
+                printf "   \033[33m–\033[0m %s (sautée : %s)\n" "$nom" \
+                    "$(grep -m1 '⏭️' <<<"$sortie" | sed 's/^[[:space:]]*⏭️[[:space:]]*//')"
+            else
+                printf "   \033[32m✓\033[0m %s\n" "$nom"
+            fi
         else
             printf "   \033[31m✗\033[0m %s\n" "$nom"
             echec=1

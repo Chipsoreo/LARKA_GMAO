@@ -96,7 +96,8 @@ function _ensureFacteurMobiliteSchema(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    $driver = DB_DRIVER;
+    // Dialecte de la connexion reçue (« mysql » pour MariaDB), pas DB_DRIVER.
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     $AI = ($driver === 'pgsql') ? 'SERIAL PRIMARY KEY'
         : (($driver === 'mariadb' || $driver === 'mysql') ? 'INT AUTO_INCREMENT PRIMARY KEY'
         : 'INTEGER PRIMARY KEY AUTOINCREMENT');
