@@ -313,9 +313,10 @@ install_dependencies() {
             as_root apt-get install -y -qq "${pkgs[@]}" || die 61 "Échec de l'installation des paquets (apt)."
             ;;
         dnf)
+            # php-sodium : signature des mises à jour (intégré à PHP sous Debian/Ubuntu)
             local pkgs=(postgresql postgresql-server
                         php-cli php-pgsql php-mbstring php-xml php-curl
-                        php-gd php-zip php-intl php-bcmath)
+                        php-gd php-zip php-intl php-bcmath php-sodium)
             info "Installation : ${pkgs[*]}"
             as_root dnf install -y "${pkgs[@]}" || die 61 "Échec de l'installation des paquets (dnf)."
             # La base doit être initialisée explicitement sur Fedora/RHEL
@@ -324,13 +325,13 @@ install_dependencies() {
             fi
             ;;
         pacman)
-            local pkgs=(postgresql php php-pgsql php-gd)
+            local pkgs=(postgresql php php-pgsql php-gd php-sodium)
             warn "Support pacman expérimental — vérifiez les extensions PHP (php.ini)."
             as_root pacman -Sy --noconfirm "${pkgs[@]}" || die 61 "Échec de l'installation des paquets (pacman)."
             ;;
         zypper)
             local pkgs=(postgresql-server php-cli php-pgsql php-mbstring
-                        php-curl php-gd php-zip php-intl php-bcmath)
+                        php-curl php-gd php-zip php-intl php-bcmath php-sodium)
             as_root zypper --non-interactive install "${pkgs[@]}" || die 61 "Échec de l'installation des paquets (zypper)."
             ;;
         brew)
@@ -1240,6 +1241,12 @@ cmd_doctor() {
         else warn "PHP $(php_version) trop ancien (8.1+ requis)  [GMAO-E12]"; fi
         local miss; miss="$(check_php || true)"
         [[ -n "$miss" ]] && warn "Extensions manquantes :${miss}  [GMAO-E11]" || ok "Extensions PHP OK (${REQUIRED_EXT[*]})"
+        # sodium : pas indispensable au fonctionnement (donc hors REQUIRED_EXT,
+        # qui bloque le démarrage), mais sans elle la signature des mises à jour
+        # ne peut pas être vérifiée et aucune ne s'installe par l'interface.
+        php -r 'exit(function_exists("sodium_crypto_sign_verify_detached") ? 0 : 1);' 2>/dev/null \
+            && ok "Extension sodium présente (signature des mises à jour)" \
+            || warn "Extension PHP sodium absente : mises à jour par l'interface impossibles (php-sodium)"
     else warn "PHP absent  [GMAO-E10]"; fi
 
     if command -v psql >/dev/null 2>&1; then ok "Client PostgreSQL présent"
@@ -1446,7 +1453,10 @@ cmd_epreuves() {
     # « acces-coeur » aussi : elle garde les contrôles d'accès des routes du cœur
     # (documents, rôles, CSRF, routeur, audit). Autonome — copie jetable,
     # SQLite, serveur intégré sur un port libre — elle ne demande aucune base.
-    for nom in invariants expressions conditions layout reference acces-coeur; do
+    # « mise-a-jour » enfin : seules les versions signées par l'éditeur doivent
+    # s'installer, et aucun retour arrière ne doit défaire cette règle.
+    # Installation jetable, aucun réseau, quelques dizaines de millisecondes.
+    for nom in invariants expressions conditions layout reference acces-coeur mise-a-jour; do
         local f="outils/epreuves/test-${nom}.php"
         [[ -f "$f" ]] || continue
         local sortie

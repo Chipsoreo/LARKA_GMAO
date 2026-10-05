@@ -167,6 +167,53 @@ register_shutdown_function(function () {
         'dureeMs'  => $duree,
         'lente'    => ($duree !== null && $duree > 2000) ?: null,
     ]);
+
+    // ── Trace de sécurité des actions sensibles ─────────────────────────────
+    //
+    // ⚠️ LES ACTIONS LES PLUS DANGEREUSES NE LAISSAIENT AUCUNE TRACE DE SÉCURITÉ.
+    // Seule la bascule de tenant appelait SecurityLog. Supprimer un tenant (et
+    // sa base), purger une base, importer un dump, ajouter un super admin,
+    // installer une mise à jour, modifier config.json, changer un rôle… ne
+    // passaient que par le journal EN BASE — celui-là même qu'une purge, un
+    // import ou une suppression de tenant peut faire disparaître.
+    //
+    // Toute écriture sur ces actions est désormais doublée dans
+    // data/security/audit.log (JSONL), qu'aucune route n'efface. Succès ET
+    // échecs : une série de refus sur ces routes est un signal en soi.
+    // Couverture automatique, comme l'audit des écritures dans Database.
+    $act = (string)LARKA_ACTION_COURANTE;
+    $met = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if ($met !== 'GET' && $met !== 'OPTIONS' && class_exists('SecurityLog')) {
+        $sensibles = [
+            'utilisateurs', 'config_serveur', 'configuration', 'db_migrate',
+            'maj_installer', 'maj_restaurer', 'plans_upload_limits',
+            'ext_installer', 'ext_desinstaller', 'ext_activer', 'ext_roles',
+            'ext_televerser', 'ext_importer', 'ext_installer_paquet',
+            'push_generate_vapid', 'push_send', 'thematique_supprimer',
+            'smtp_test', 'db_resync_sequences',
+        ];
+        // superadmin_login a ses propres évènements, plus précis (voir route).
+        $estSensible = in_array($act, $sensibles, true)
+            || (str_starts_with($act, 'superadmin_') && $act !== 'superadmin_login');
+        if ($estSensible) {
+            $u  = $_SESSION['user'] ?? [];
+            $sa = $_SESSION['superadmin'] ?? [];
+            SecurityLog::audit('sensitive_action', [
+                'action'    => $act,
+                'method'    => $met,
+                'http_code' => $code,
+                'success'   => $code < 400,
+                'login'     => !empty($sa['authenticated'])
+                                 ? 'superadmin:' . ($sa['login'] ?? '?')
+                                 : (string)($u['Login'] ?? ''),
+                'role'      => !empty($sa['authenticated']) ? 'SuperAdmin' : (string)($u['Role'] ?? ''),
+                'tenant'    => (string)($_SESSION['tenant_key'] ?? $_SESSION['forced_tenant'] ?? 'default'),
+                // L'identifiant de la cible (?id=) aide à reconstituer qui a
+                // touché quoi, sans copier aucune donnée métier.
+                'target_user' => isset($_GET['id']) ? (string)(int)$_GET['id'] : null,
+            ]);
+        }
+    }
 });
 
 if (ob_get_level()) ob_clean();
@@ -238,17 +285,32 @@ if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'], true)) {
     $_currentAction = $_GET['action'] ?? $_POST['action'] ?? '';
     $_isMultipartWhitelisted = in_array($_currentAction, $MULTIPART_ALLOWED_ACTIONS, true);
 
-    if ($ct && !str_contains(strtolower($ct), 'application/json')) {
-        // ⚠️ FIX SÉCURITÉ (CSRF) : liste blanche stricte. Tout Content-Type
-        // non-JSON est refusé sur une requête mutante, SAUF le multipart des
-        // actions d'upload explicitement whitelistées. L'ancienne liste noire
-        // laissait passer 'text/plain' — un type "simple" CORS envoyable en
-        // cross-site SANS preflight, alors que get_body() lit le JSON quel que
-        // soit le Content-Type. C'était donc un contournement CSRF direct.
-        // (Requêtes sans body → pas de Content-Type → non concernées.)
+    // ⚠️ LA « LISTE BLANCHE STRICTE » ÉTAIT UNE RECHERCHE DE SOUS-CHAÎNE.
+    // Le test était str_contains($ct, 'application/json') : il acceptait
+    // « text/plain; charset=application/json », dont le type RÉEL (« essence »
+    // au sens Fetch) est text/plain — un type « simple » CORS, envoyable
+    // cross-site SANS pré-vérification. Comme get_body() lit le JSON quel que
+    // soit le type annoncé, la protection anti-CSRF tombait d'un paramètre.
+    // On compare désormais le type MIME extrait (avant le premier « ; »),
+    // à l'égalité stricte. Idem pour le multipart des téléversements.
+    $_ctEssence = strtolower(trim(explode(';', (string)$ct, 2)[0]));
+    if ($ct !== '' && $_ctEssence !== 'application/json') {
+        // Tout Content-Type non-JSON est refusé sur une requête mutante, SAUF
+        // le multipart des actions d'upload explicitement listées.
+        // (Requêtes sans body → pas de Content-Type → traitées plus bas.)
         $isWhitelistedMultipart = $_isMultipartWhitelisted
-            && str_contains(strtolower($ct), 'multipart/form-data');
+            && $_ctEssence === 'multipart/form-data';
         if (!$isWhitelistedMultipart) {
+            if (class_exists('SecurityLog')) {
+                // Signal utile : soit un client mal écrit, soit une tentative
+                // de requête intersite. Le type reçu est tronqué (pas de PII).
+                SecurityLog::audit('access_denied', [
+                    'action'    => (string)$_currentAction,
+                    'method'    => $_SERVER['REQUEST_METHOD'] ?? '',
+                    'reason'    => 'content_type_refuse:' . substr($_ctEssence, 0, 60),
+                    'http_code' => 403,
+                ]);
+            }
             http_response_code(403);
             echo json_encode(['success' => false, 'error' => 'Content-Type non autorisé.']);
             exit;
@@ -402,10 +464,41 @@ function require_auth(): array {
     }
     json_error('Non authentifié.', 401);
 }
+/**
+ * Refus d'accès centralisé : journalise PUIS répond 403.
+ *
+ * ⚠️ LES REFUS N'ÉTAIENT JAMAIS TRACÉS.
+ * SecurityLog::accessDenied() existait mais aucune garde ne l'appelait : un
+ * compte qui sondait les routes une à une (énumération de droits, tentative
+ * d'accès à des données d'un autre rôle) ne laissait AUCUNE trace exploitable.
+ * Toutes les gardes passent désormais par ici, de sorte qu'un refus apparaît à
+ * la fois dans data/security/audit.log (source de vérité, survit à une panne
+ * de base) et dans le journal applicatif (écran Journal, canal « securite »).
+ *
+ * $raison : motif court et non sensible (jamais de donnée métier).
+ */
+function refuser_acces(array $user, string $raison, string $message = 'Permission insuffisante.'): void {
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('access_denied', [
+            'action'    => defined('LARKA_ACTION_COURANTE') ? LARKA_ACTION_COURANTE : '',
+            'method'    => $_SERVER['REQUEST_METHOD'] ?? '',
+            'login'     => (string)($user['Login'] ?? ''),
+            'user_id'   => (int)($user['Id'] ?? 0),
+            'role'      => (string)($user['Role'] ?? ''),
+            'tenant'    => (string)($_SESSION['tenant_key'] ?? $_SESSION['forced_tenant'] ?? 'default'),
+            'reason'    => $raison,
+            'http_code' => 403,
+        ]);
+    }
+    json_error($message, 403);
+}
+
 function require_role(array $user, array $roles): void {
     // Gestionnaire = rôle administrateur (Admin conservé pour rétrocompatibilité)
     if ($user['Role'] === 'Gestionnaire' || $user['Role'] === 'Admin') return;
-    if (!in_array($user['Role'], $roles)) json_error('Permission insuffisante.', 403);
+    if (!in_array($user['Role'], $roles)) {
+        refuser_acces($user, 'role_insuffisant:requis=' . implode('|', $roles));
+    }
 }
 
 /**
@@ -454,7 +547,8 @@ function require_lecture(array $user, array $roles, $module, $db = null): void {
         $accordes = demandeur_modules_lecture($db, $user);
         if (array_intersect($requis, $accordes)) return;
     }
-    json_error('Permission insuffisante.', 403);
+    $mod = is_array($module) ? implode('|', $module) : (string)$module;
+    refuser_acces($user, 'lecture_refusee:module=' . $mod);
 }
 
 // ── Paramètres de la requête ──────────────────────────────────────────────────
@@ -581,7 +675,14 @@ if (in_array($action, $dbOptionalActions, true)) {
         require_once __DIR__ . '/routes/majs.php';     // Mises à jour de l'application
         json_error("Action inconnue : $action", 404);
     } catch (\Throwable $e) {
-        json_error('Erreur serveur : ' . $e->getMessage(), 500);
+        // ⚠️ Le message d'exception partait tel quel au client, même hors
+        // debug_errors (ex. « Impossible de se connecter à la base super
+        // admin : SQLSTATE… » avec hôte et utilisateur). Détail en journal,
+        // référence de corrélation au client — comme le reste de l'API.
+        Journal::erreur('api', 'Erreur sur une route sans base : ' . $action, ['exception' => $e]);
+        json_error((defined('DEBUG_ERRORS') && DEBUG_ERRORS)
+            ? ('Erreur serveur : ' . $e->getMessage())
+            : ('Erreur serveur interne. Référence : ' . Journal::requestId()), 500);
     }
 }
 

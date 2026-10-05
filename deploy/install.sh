@@ -349,8 +349,16 @@ EXCLUSIONS=(
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ -f "${SCRIPT_DIR}/index.html" ]]; then
     if command -v rsync >/dev/null 2>&1; then
+        # ⚠️ Motifs ANCRÉS à la racine (« /outils »), comme le « ./outils » de tar
+        # ci-dessous. Non ancré, « outils » excluait aussi api/outils/ — donc
+        # api/outils/mise-a-jour.php, l'outil de mise à jour en ligne de commande
+        # (seule voie quand l'interface ne peut pas écrire, ou pour restaurer une
+        # ancienne sauvegarde) — sur toute installation faite avec rsync.
         RSYNC_ARGS=()
-        for e in "${EXCLUSIONS[@]}"; do RSYNC_ARGS+=(--exclude="$e"); done
+        for e in "${EXCLUSIONS[@]}"; do
+            [[ "$e" == \** ]] && RSYNC_ARGS+=(--exclude="$e") \
+                              || RSYNC_ARGS+=(--exclude="/$e")
+        done
         rsync -a "${RSYNC_ARGS[@]}" "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
     else
         # Repli sans rsync (tar est toujours présent) : MÊMES exclusions,
@@ -400,6 +408,10 @@ else
 fi
 
 # ── Générer config.json (sans secret) ──────────────────────────────────────
+# Pas de « securite_http.csp » : la CSP par défaut du code (api/config.php,
+# router.php) est la plus stricte et suit l'application. Celle qu'écrivait ce
+# script ajoutait 'unsafe-eval', sans base-uri ni form-action — et devenait
+# la CSP de la page sous gmao.service (router.php la reprend de config.json).
 if [[ ! -f "${INSTALL_DIR}/config.json" ]]; then
     info "Génération de config.json (sans secret)..."
     cat > "${INSTALL_DIR}/config.json" <<EOCFG
@@ -445,7 +457,6 @@ if [[ ! -f "${INSTALL_DIR}/config.json" ]]; then
         "allow_credentials": true
     },
     "securite_http": {
-        "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com; object-src 'none'; frame-ancestors 'self'",
         "hsts": true,
         "x_frame_options": "DENY",
         "x_content_type_options": "nosniff",
@@ -579,10 +590,21 @@ nginx_corps() {
     local https_param="$1" hsts="${2:-}"
     local secu='add_header X-Frame-Options "SAMEORIGIN" always;\n        add_header X-Content-Type-Options "nosniff" always;\n        add_header Referrer-Policy "no-referrer" always;'
     [[ -n "$hsts" ]] && secu="${secu}\\n        ${hsts}"
+    # ⚠️ LA PAGE DE L'APPLICATION N'AVAIT AUCUNE CSP.
+    # La politique n'était posée que par api/index.php, donc sur les réponses
+    # JSON — où elle ne protège rien. index.html, le seul document qui exécute
+    # du script, en était dépourvu : la moindre injection HTML devenait une
+    # exécution complète, sans restriction des connexions sortantes.
+    # « @CSP@ » est posé sur les seuls blocs qui servent la page (pas sur le
+    # service worker ni les fichiers statiques). Même valeur que le défaut de
+    # api/config.php ; 'unsafe-inline' reste nécessaire tant que l'interface
+    # utilise des gestionnaires onclick (migration vers des nonces à prévoir).
+    local csp="add_header Content-Security-Policy \"default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'\" always;"
     sed -e "s|@INSTALL_DIR@|${INSTALL_DIR}|g" \
         -e "s|@PHP_VERSION@|${PHP_VERSION}|g" \
         -e "s|@BODY_MAX@|${BODY_MAX:-32M}|g" \
         -e "s|@FASTCGI_HTTPS@|${https_param}|g" \
+        -e "s|@CSP@|${csp}|g" \
         -e "s|@SECU@|${secu}|g" <<'EOCORPS'
     root @INSTALL_DIR@;
     index index.html;
@@ -646,10 +668,12 @@ nginx_corps() {
     location = /index.html {
         add_header Cache-Control "no-cache, must-revalidate" always;
         @SECU@
+        @CSP@
     }
     location ~* \.html$ {
         add_header Cache-Control "no-cache, must-revalidate" always;
         @SECU@
+        @CSP@
     }
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|webmanifest)$ {
         expires 7d;
@@ -670,6 +694,7 @@ nginx_corps() {
     location / {
         add_header Cache-Control "no-cache, must-revalidate" always;
         @SECU@
+        @CSP@
         try_files $uri $uri/ /index.html;
     }
 

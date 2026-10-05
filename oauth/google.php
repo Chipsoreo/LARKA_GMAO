@@ -13,6 +13,8 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../api/config.php';
 require_once __DIR__ . '/../api/Database.php';
+// Traces de sécurité des connexions OAuth (cf. oauth/microsoft.php).
+require_once __DIR__ . '/../api/SecurityLog.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 
@@ -118,6 +120,12 @@ function cleanOldTokens(): void {
 }
 
 function closeOk(array $user): void {
+    SecurityLog::audit('login_success', [
+        'login'          => (string)($user['Login'] ?? ''),
+        'role'           => (string)($user['Role'] ?? ''),
+        'tenant'         => (string)($_SESSION['tenant_key'] ?? 'default'),
+        'oauth_provider' => 'google',
+    ]);
     // Nouvel identifiant de session à la connexion (fixation de session), et
     // fin d'une éventuelle bascule super admin sur un autre tenant.
     if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
@@ -147,7 +155,15 @@ function closeOk(array $user): void {
     exit;
 }
 
-function closeError(string $msg): void {
+function closeError(string $msg, bool $journaliser = true): void {
+    // $journaliser = false : simple refus de service (fournisseur désactivé),
+    // ce n'est pas un échec de connexion — inutile d'en remplir le journal.
+    if ($journaliser) {
+        SecurityLog::audit('login_failure', [
+            'reason'         => mb_substr(preg_replace('/[\r\n]+/', ' ', $msg), 0, 160),
+            'oauth_provider' => 'google',
+        ]);
+    }
     $payload = ['type' => 'GOOGLE_LOGIN_ERROR', 'error' => $msg];
     echo popupHtml(json_encode($payload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT));
     exit;
@@ -155,7 +171,7 @@ function closeError(string $msg): void {
 
 /* ── Vérification Google activé ──────────────────────────────────────────── */
 if (!GOOGLE_ENABLED || !GOOGLE_CLIENT_ID) {
-    closeError('Connexion Google non activée.');
+    closeError('Connexion Google non activée.', false);
 }
 
 /* ── Étape 1 : redirection vers Google ──────────────────────────────────── */

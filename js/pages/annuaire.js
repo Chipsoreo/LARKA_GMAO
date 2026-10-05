@@ -152,6 +152,7 @@ async function _anOnEtage(id) {
 }
 
 async function _anInitMap() {
+  _an.rendu = (_an.rendu || 0) + 1;   // génération de carte : périme les rendus PDF en cours
   const mc = document.getElementById('anMap');
   if (!mc) return;
   _an.selected = null;
@@ -170,8 +171,8 @@ async function _anInitMap() {
     // Les plans sont souvent des PDF : L.imageOverlay ne sait pas les afficher.
     // On réplique le rendu admin (pdf.js + withCredentials pour l'auth) ; sinon image directe.
     if (String(et.FondImage).toLowerCase().endsWith('.pdf')) {
-      _anDrawGrid(w, h);              // repère visuel en attendant le rendu du PDF
-      _anRenderPdfFond(url, bounds);
+      // Grille : repère visuel en attendant le rendu du PDF, qui la remplace.
+      _anRenderPdfFond(url, bounds, _anDrawGrid(w, h), et.FondImage);
     } else {
       const ov = L.imageOverlay(url, bounds, { errorOverlayUrl: '' }).addTo(_an.map);
       ov.on('error', () => { _anDrawGrid(w, h); toast && toast('Image de fond introuvable', 'error'); });
@@ -207,25 +208,24 @@ function _anDrawGrid(w, h) {
   const g = L.layerGroup().addTo(_an.map), step = 50;
   for (let x = 0; x <= w; x += step) L.polyline([[0, x], [h, x]], { color: '#e5e7eb', weight: .5, interactive: false }).addTo(g);
   for (let y = 0; y <= h; y += step) L.polyline([[y, 0], [y, w]], { color: '#e5e7eb', weight: .5, interactive: false }).addTo(g);
+  return g;
 }
 
-// Rendu d'un fond PDF via pdf.js (identique à l'éditeur de plans admin).
-// withCredentials:true est indispensable : l'endpoint plans_fond_image exige une session.
-async function _anRenderPdfFond(url, bounds) {
-  const mapAtCall = _an.map; // garde-fou si l'utilisateur change d'étage pendant le rendu
+// Rendu d'un fond PDF : même fonction (et même cache) que l'éditeur de plans
+// (js/pages/pdf-fond.js — pdf.js embarqué, cf. CVE-2024-4367). Elle envoie la
+// session (withCredentials) : l'endpoint plans_fond_image l'exige.
+// Garde-fou : carte reconstruite pendant le rendu (autre étage, aucun étage)
+// → l'image est abandonnée. Elle passe derrière les tracés, à la place de la
+// grille d'attente.
+async function _anRenderPdfFond(url, bounds, grilleAttente, fichier) {
+  const rendu = _an.rendu;
   try {
-    if (!window.pdfjsLib) {
-      await new Promise((r, j) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload = r; s.onerror = () => j(new Error('PDF.js')); document.head.appendChild(s); });
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    }
-    const pdf = await window.pdfjsLib.getDocument({ url, withCredentials: true }).promise;
-    const page = await pdf.getPage(1);
-    const v0 = page.getViewport({ scale: 1 }), scale = Math.min(2400, Math.max(1200, v0.width * 2)) / v0.width, vp = page.getViewport({ scale });
-    const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
-    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-    if (_an.map && _an.map === mapAtCall) L.imageOverlay(cv.toDataURL('image/png'), bounds).addTo(_an.map);
+    const img = await rendrePdfFondEnImage(url, url + '#' + (fichier || ''));
+    if (rendu !== _an.rendu || !_an.map) return;
+    if (grilleAttente) _an.map.removeLayer(grilleAttente);
+    L.imageOverlay(img, bounds).addTo(_an.map).bringToBack();
   } catch (e) {
-    toast && toast('PDF: ' + (e.message || 'rendu impossible'), 'error');
+    if (rendu === _an.rendu) toast && toast('PDF: ' + (e.message || 'rendu impossible'), 'error');
   }
 }
 

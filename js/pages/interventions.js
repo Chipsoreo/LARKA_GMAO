@@ -340,7 +340,7 @@ async function editInterv(id) {
 
   const opts = (liste, val, inclEmpty=false) =>
     (inclEmpty?'<option value="">—</option>':'') +
-    liste.map(x=>`<option ${val===x.Valeur?'selected':''}>${x.Valeur}</option>`).join('');
+    liste.map(x=>`<option ${val===x.Valeur?'selected':''}>${escHtml(x.Valeur)}</option>`).join('');
 
   // Sélecteur unifié Bien / Équipement
   const currentEquipIds = (inv.EquipementsIds||'').split(',').map(x=>parseInt(x)).filter(Boolean);

@@ -8,6 +8,9 @@
 // prior written permission is prohibited. See the LICENSE file for details.
 require_once __DIR__ . '/../api/config.php';
 require_once __DIR__ . '/../api/Database.php';
+// Traces de sécurité : les connexions OAuth (réussies ou non) n'étaient pas
+// journalisées, alors que la connexion locale l'est (SecurityLog JSONL).
+require_once __DIR__ . '/../api/SecurityLog.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 // Log des erreurs OAuth dans un fichier dédié
@@ -137,6 +140,12 @@ function cleanOldTokens(): void {
 }
 
 function closeOk(array $user): void {
+    SecurityLog::audit('login_success', [
+        'login'          => (string)($user['Login'] ?? ''),
+        'role'           => (string)($user['Role'] ?? ''),
+        'tenant'         => (string)($_SESSION['tenant_key'] ?? 'default'),
+        'oauth_provider' => 'microsoft',
+    ]);
     // Nouvel identifiant de session à la connexion (fixation de session), et
     // fin d'une éventuelle bascule super admin sur un autre tenant.
     if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
@@ -169,6 +178,11 @@ function closeOk(array $user): void {
 }
 
 function closeError(string $msg): void {
+    // Motif tronqué : il peut venir du fournisseur (error_description).
+    SecurityLog::audit('login_failure', [
+        'reason'         => mb_substr(preg_replace('/[\r\n]+/', ' ', $msg), 0, 160),
+        'oauth_provider' => 'microsoft',
+    ]);
     $payload = ['type' => 'MICROSOFT_LOGIN_ERROR', 'error' => $msg];
     echo popupHtml(json_encode($payload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT));
     exit;
@@ -459,6 +473,9 @@ if ($isSuperAdminOAuth) {
         if (strtolower(trim((string)$allowed)) === $emailLc) { $authorized = true; break; }
     }
     if (!$authorized) {
+        SecurityLog::audit('sa_login_failure', [
+            'login' => $email, 'oauth_provider' => 'microsoft', 'reason' => 'email_non_autorise',
+        ]);
         closeError("Cet email n'est pas autorisé comme super administrateur.");
     }
 
@@ -471,6 +488,7 @@ if ($isSuperAdminOAuth) {
         'provider'      => 'microsoft',
         'ts'            => time(),
     ];
+    SecurityLog::audit('sa_login_success', ['login' => $email, 'oauth_provider' => 'microsoft']);
 
     // Jeton à usage unique (repli robuste, calqué sur oauth_result_*.json).
     // Il contient l'email VÉRIFIÉ côté serveur ; jamais fourni par le client.

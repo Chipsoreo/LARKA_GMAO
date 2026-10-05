@@ -13,9 +13,35 @@
  * Permet de migrer les données entre SQLite ↔ PostgreSQL ↔ MariaDB.
  */
 
+/**
+ * Qui peut migrer la base.
+ *
+ * ⚠️ UN ADMINISTRATEUR DE TENANT RÉÉCRIVAIT LA CONFIGURATION DU SERVEUR.
+ * « config_serveur » refuse les admins de tenant en multi-tenant — mais
+ * « db_migrate » réécrivait lui aussi config.json (section base_de_donnees,
+ * commune à tout le serveur) et « db_migrate_test » ouvrait une connexion vers
+ * n'importe quel hôte. Même règle que config_serveur et les mises à jour :
+ *   • Super Administrateur : toujours ;
+ *   • Admin / Gestionnaire : en mono-tenant seulement.
+ */
+if (!function_exists('_mig_exiger_droits')) {
+    function _mig_exiger_droits(): array {
+        if (!empty($_SESSION['superadmin']['authenticated'])) {
+            return ['Login' => 'superadmin:' . ($_SESSION['superadmin']['login'] ?? '?'), 'Role' => 'SuperAdmin', 'Id' => 0];
+        }
+        $user = require_auth();
+        require_role($user, ['Admin','Gestionnaire']);
+        if (class_exists('TenantResolver', false) && TenantResolver::isMultiTenant()) {
+            refuser_acces($user, 'db_migrate_reserve_superadmin',
+                'En mode multi-tenant, la migration de base est réservée au Super Administrateur.');
+        }
+        return $user;
+    }
+}
+
 // ── Test de connexion seul ─────────────────────────────────────────────────
 if ($action === 'db_migrate_test') {
-    $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    $user = _mig_exiger_droits();
     if ($method !== 'POST') json_error('Méthode non supportée.', 405);
     $dest = get_body()['destination'] ?? null;
     if (!$dest) json_error('Paramètre destination manquant.', 400);
@@ -30,12 +56,12 @@ if ($action === 'db_migrate_test') {
 
 // ── Migration complète ────────────────────────────────────────────────────
 if ($action === 'db_migrate') {
-    $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    $user = _mig_exiger_droits();
     if ($method !== 'POST') json_error('Méthode non supportée.', 405);
 
     $body       = get_body();
     $dest       = $body['destination']   ?? null;
-    $backupPath = $body['backup_path']   ?? null; // chemin choisi par l'admin
+    $backupPath = $body['backup_path']   ?? null; // nom de fichier souhaité (confiné, voir _mig_backup)
     if (!$dest || empty($dest['driver'])) json_error('Paramètre destination manquant.', 400);
 
     // ── Ordre de migration ───────────────────────────────────────────────
@@ -259,14 +285,44 @@ if ($action === 'db_migrate') {
         $cfg['base_de_donnees']['port']    = (int)($dest['port'] ?? ($isPgDest ? 5432 : 3306));
         $cfg['base_de_donnees']['dbname']  = $dest['dbname']  ?? 'gmao';
         $cfg['base_de_donnees']['user']    = $dest['user']    ?? '';
+        // ⚠️ LE MOT DE PASSE ÉTAIT ÉCRIT EN CLAIR DANS config.json.
+        // Deux défauts : (1) contraire à la règle « les secrets vivent dans
+        // .env » ; (2) bug fonctionnel — .env PRIME sur config.json : si
+        // GMAO_DB_PASSWORD y était déjà défini, le nouveau mot de passe était
+        // ignoré et l'application, redémarrée sur le nouvel hôte, n'arrivait
+        // plus à se connecter. Il est désormais rangé dans .env.
         if (!empty($dest['password']) && !str_contains($dest['password'], '••••')) {
-            $cfg['base_de_donnees']['password'] = $dest['password'];
+            require_once __DIR__ . '/../env.php';
+            require_once __DIR__ . '/../EnvFile.php';
+            $envNom = EnvFile::envNameFor('base_de_donnees', 'password') ?? 'GMAO_DB_PASSWORD';
+            if (EnvFile::isManagedByOsEnv($envNom)) {
+                json_error("$envNom est défini par l'environnement système : mettez-le à jour côté serveur, puis relancez la migration.", 409);
+            }
+            try {
+                EnvFile::set([$envNom => (string)$dest['password']]);
+            } catch (\Throwable $e) {
+                Journal::erreur('migration', 'Écriture du mot de passe dans .env impossible', ['exception' => $e]);
+                json_error('Impossible d\'enregistrer le mot de passe dans .env (droits du fichier ?). config.json n\'a pas été modifié.', 500);
+            }
+            // Le secret vit maintenant dans .env : aucune copie dans config.json.
+            // (Sans nouveau mot de passe, on ne touche à rien : un mot de passe
+            // hérité, encore rangé dans config.json, reste utilisable.)
+            unset($cfg['base_de_donnees']['password']);
         }
         if ($isPgDest) {
             $cfg['base_de_donnees']['sslmode'] = $dest['sslmode'] ?? 'prefer';
         }
     }
     file_put_contents($cfgFile, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    @chmod($cfgFile, 0600);
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('config_change', [
+            'login'  => (string)($user['Login'] ?? ''),
+            'role'   => (string)($user['Role'] ?? ''),
+            'action' => 'db_migrate',
+            'reason' => 'base_de_donnees -> ' . $destDriver,
+        ]);
+    }
 
     $report[] = ['table'=>'⚙️ config.json','rows'=>0,'status'=>'ok',
         'detail'=>"driver mis à jour → $destDriver — redémarrez le serveur"];
@@ -331,19 +387,26 @@ function _mig_backup(?string $customPath, array &$report): ?string {
     $driver = DB_DRIVER;
     // SQLite → copie du fichier .db
     if ($driver === 'sqlite' && file_exists(DB_PATH)) {
-        if ($customPath) {
-            // Chemin choisi par l'admin — résoudre si relatif
-            if (!str_starts_with($customPath, '/') && !preg_match('/^[A-Za-z]:/', $customPath))
-                $customPath = __DIR__ . '/../../' . $customPath;
-            $dir = dirname($customPath);
-        } else {
-            $dir        = __DIR__ . '/../../data/backups';
-            $customPath = $dir . '/pre_migration_' . date('Ymd_His') . '.db';
+        // ⚠️ LE CHEMIN VENAIT DU CLIENT, SANS AUCUNE BORNE.
+        // copy(DB_PATH, <chemin reçu>) pouvait écrire n'importe où sur le disque
+        // accessible au serveur — y compris PAR-DESSUS config.json, .env ou le
+        // code de l'application. Seul le NOM est désormais retenu, réduit à un
+        // jeu de caractères sûr, et la copie atterrit toujours dans data/backups.
+        $dir  = __DIR__ . '/../../data/backups';
+        $nom  = $customPath ? basename(str_replace('\\', '/', (string)$customPath)) : '';
+        $nom  = preg_replace('/[^A-Za-z0-9._-]/', '_', $nom);
+        if ($nom === '' || $nom[0] === '.' || !str_ends_with(strtolower($nom), '.db')) {
+            $nom = 'pre_migration_' . date('Ymd_His') . '.db';
         }
-        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        $customPath = $dir . '/' . $nom;
+        if (!is_dir($dir)) mkdir($dir, 0750, true);
+        if (file_exists($customPath)) {
+            json_error('Une sauvegarde porte déjà ce nom : choisissez-en un autre.', 409);
+        }
         if (!copy(DB_PATH, $customPath)) {
-            json_error("Impossible de créer la sauvegarde dans : $customPath — vérifiez les permissions.", 500);
+            json_error("Impossible de créer la sauvegarde dans data/backups/$nom — vérifiez les permissions.", 500);
         }
+        @chmod($customPath, 0640);
         $report[] = ['table'=>'📦 Sauvegarde','rows'=>0,'status'=>'ok',
             'detail'=>'SQLite → ' . basename($customPath)];
         return $customPath;

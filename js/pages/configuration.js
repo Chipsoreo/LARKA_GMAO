@@ -642,7 +642,10 @@ async function _loadServeurConfig() {
     }
     _currentDbDriver = (cfg.base_de_donnees || {}).driver || 'sqlite';
     const slot = document.getElementById('cfg-srv-slot');
-    if (slot) slot.outerHTML = _renderTabServeur(cfg);
+    // ⚠️ Le rendu remplaçait #cfg-srv-slot sans le recréer : « ↩ Annuler »
+    // (qui rappelle cette fonction) ne trouvait plus où écrire et ne
+    // rétablissait rien. Le conteneur porte désormais toujours cet identifiant.
+    if (slot) { slot.outerHTML = '<div id="cfg-srv-slot">' + _renderTabServeur(cfg) + '</div>'; _srvOrganiser(); }
     // Encadré « Version et mises à jour » : état, vérification et installation affichés sur place.
     const majEl = document.getElementById('cfgMajPanneau');
     if (majEl) {
@@ -661,7 +664,7 @@ async function _loadServeurConfig() {
       setPageActionBar(`
         <div class="srv-save-bar">
           <span id="srv-save-status" style="font-size:12.5px;color:var(--gray-text)">
-            Les modifications ne sont pas encore enregistrées.
+            Aucune modification en attente.
           </span>
           <div style="display:flex;gap:10px">
             <button class="btn" onclick="_loadServeurConfig()">↩ Annuler</button>
@@ -685,6 +688,252 @@ async function _loadServeurConfig() {
     const slot = document.getElementById('cfg-srv-slot');
     if (slot) slot.innerHTML = `<div style="color:var(--red);padding:20px">❌ ${_escCfg(e.message)}</div>`;
   }
+}
+
+// ── Sommaire, recherche et suivi des modifications de l'onglet Serveur ─────
+// L'onglet empilait 23 rubriques sur ~10 000 px, dans un ordre de hasard
+// (les connexions Microsoft/Google séparées du relais OAuth par la
+// facturation carbone…), sans repère ni recherche. La barre du bas annonçait
+// « Les modifications ne sont pas encore enregistrées » avant même la première
+// frappe. Les rubriques sont désormais regroupées par thème, avec un sommaire
+// fixe (état activé/désactivé des modules, recherche, rubrique courante), et
+// seules les vraies modifications sont signalées — par champ, par rubrique et
+// dans la barre d'enregistrement.
+// Purement côté page : les rubriques sont déplacées, pas réécrites ; leurs
+// identifiants (liens profonds depuis Chorus, Légifrance…) et la lecture des
+// champs par _sauvegarderServeur() sont inchangés.
+const _SRV_GROUPES = [
+  { id: 'general',   icone: '🌐', titre: 'Général',                   motifs: [/^Serveur$/, /^Version et mises à jour/, /^Paramètres demandes/, /^Documents/, /^Limites d/] },
+  { id: 'donnees',   icone: '🗄️', titre: 'Base de données',           motifs: [/^Base de données/, /^Maintenance base/] },
+  { id: 'securite',  icone: '🔐', titre: 'Sécurité',                  motifs: [/^Sécurité$/, /^Session/, /^CORS/, /^En-têtes/, /^Logs/] },
+  { id: 'connexion', icone: '🔑', titre: 'Connexion des utilisateurs', motifs: [/^Connexion Microsoft/, /^Connexion Google/, /^Relay OAuth/] },
+  { id: 'messages',  icone: '📧', titre: 'E-mails et notifications',   motifs: [/^Serveur SMTP/, /^Feedback/, /^Notifications Push/] },
+  { id: 'services',  icone: '🧭', titre: 'Services externes',          motifs: [/^Assistant IA/, /^Légifrance/, /^Facteurs carbone/, /^Chorus/] },
+  { id: 'modules',   icone: '🧩', titre: 'Modules',                    motifs: [/^Modules complémentaires/] },
+];
+let _srvEtat = null;
+
+function _srvTitreSection(sec) {
+  const t = sec.querySelector(':scope > .srv-section-title');
+  return t ? t.textContent.replace(/^[^\p{L}]+/u, '').trim() : '';
+}
+function _srvSansAccents(x) { return String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+
+function _srvOrganiser() {
+  const conteneur = document.getElementById('srv-sections');
+  if (!conteneur || conteneur.dataset.organise) return;
+  conteneur.dataset.organise = '1';
+
+  // Rubriques visibles, rangées par groupe (ordre du groupe, puis ordre d'origine).
+  const sections = [...conteneur.querySelectorAll(':scope > .srv-section')].filter(s => s.style.display !== 'none' && _srvTitreSection(s));
+  const autres = { id: 'autres', icone: '⚙️', titre: 'Autres réglages', motifs: [] };
+  const groupes = [..._SRV_GROUPES, autres].map(g => ({ ...g, sections: [] }));
+  sections.forEach((sec, i) => {
+    const titre = _srvTitreSection(sec);
+    const g = groupes.find(x => x.motifs.some(m => m.test(titre))) || groupes[groupes.length - 1];
+    if (!sec.id) sec.id = 'srv-rub-' + i;
+    g.sections.push(sec);
+  });
+
+  const corps = document.createElement('div');
+  corps.className = 'srv-corps';
+  const nav = document.createElement('nav');
+  nav.className = 'srv-nav';
+  nav.setAttribute('aria-label', 'Sommaire de la configuration serveur');
+  nav.innerHTML = '<div class="srv-nav-recherche"><input type="text" id="srv-recherche" autocomplete="off" placeholder="Rechercher un réglage…" aria-label="Rechercher un réglage">'
+    + '<button type="button" id="srv-recherche-effacer" title="Effacer" aria-label="Effacer la recherche">✕</button></div>';
+  const liens = new Map();   // section → lien du sommaire
+  groupes.filter(g => g.sections.length).forEach(g => {
+    const h = document.createElement('h3');
+    h.className = 'srv-groupe-titre'; h.id = 'srv-groupe-' + g.id; h.dataset.groupe = g.id;
+    h.innerHTML = `<span>${g.icone}</span><span>${_escCfg(g.titre)}</span>`;
+    corps.appendChild(h);
+    const gt = document.createElement('div');
+    gt.className = 'srv-nav-groupe'; gt.dataset.groupe = g.id;
+    gt.innerHTML = `<span>${_escCfg(g.titre)}</span><span class="srv-modif"></span>`;
+    nav.appendChild(gt);
+    g.sections.forEach(sec => {
+      sec.dataset.groupe = g.id;
+      corps.appendChild(sec);
+      const a = document.createElement('button');
+      a.type = 'button'; a.className = 'srv-nav-lien'; a.dataset.cible = sec.id;
+      // Sommaire : titre court (sans la parenthèse), titre complet en infobulle.
+      a.innerHTML = `<span class="srv-nav-txt">${_escCfg(_srvTitreSection(sec).replace(/\s*\(.*\)\s*$/, ''))}</span><span class="srv-nav-etat" hidden></span><span class="srv-modif"></span>`;
+      a.title = _srvTitreSection(sec);
+      a.addEventListener('click', () => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      nav.appendChild(a);
+      liens.set(sec, a);
+    });
+  });
+  const vide = document.createElement('div');
+  vide.className = 'srv-nav-vide'; vide.textContent = 'Aucun réglage ne correspond.';
+  nav.appendChild(vide);
+  // Petits écrans : la liste est remplacée par un menu « Aller à… ».
+  const saut = document.createElement('select');
+  saut.className = 'srv-nav-saut'; saut.setAttribute('aria-label', 'Aller à une rubrique');
+  saut.innerHTML = '<option value="">Aller à une rubrique…</option>' + groupes.filter(g => g.sections.length).map(g =>
+    `<optgroup label="${_escCfg(g.titre)}">${g.sections.map(sec => `<option value="${_escCfg(sec.id)}">${_escCfg(_srvTitreSection(sec))}</option>`).join('')}</optgroup>`).join('');
+  saut.addEventListener('change', () => { const c = document.getElementById(saut.value); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); saut.value = ''; });
+  nav.appendChild(saut);
+  // Les rubriques masquées (anciennes) restent dans la page : leurs champs sont lus à l'enregistrement.
+  [...conteneur.children].forEach(el => corps.appendChild(el));
+  const layout = document.createElement('div');
+  layout.className = 'srv-layout';
+  layout.append(nav, corps);
+  conteneur.appendChild(layout);
+
+  _srvEtat = { conteneur, liens, origine: new WeakMap(), modifies: new Set(),
+               ids: _srvChampsEnregistres(), driver: (typeof _activeDriver === 'function') ? _activeDriver() : null };
+  liens.forEach((a, sec) => _srvMajEtatModule(sec));
+
+  // État des modules + libellé des interrupteurs. (Le <script> du gabarit qui
+  // devait mettre à jour « ✅ Activé / ⬜ Désactivé » ne s'exécutait jamais :
+  // un script inséré par innerHTML/outerHTML n'est pas exécuté.)
+  conteneur.addEventListener('change', (e) => {
+    const cb = e.target;
+    if (cb.matches && cb.matches('.srv-toggle input[type=checkbox]')) {
+      const lbl = document.getElementById(cb.id + '_lbl');
+      if (lbl) lbl.textContent = cb.checked ? '✅ Activé' : '⬜ Désactivé';
+      const sec = cb.closest('.srv-section'); if (sec) _srvMajEtatModule(sec);
+    }
+  });
+
+  // Suivi des modifications : la valeur d'origine d'un champ est relevée au
+  // moment où l'utilisateur s'y rend (les rubriques chargées après coup —
+  // millésimes carbone, limites d'upload — ne faussent donc rien).
+  conteneur.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (_srvSuivi(el) && !_srvEtat.origine.has(el)) _srvEtat.origine.set(el, _srvValeur(el));
+  });
+  const surSaisie = (e) => {
+    const el = e.target;
+    if (!_srvSuivi(el)) return;
+    if (!_srvEtat.origine.has(el)) return;   // valeur posée par le code, pas par l'utilisateur
+    if (_srvValeur(el) === _srvEtat.origine.get(el)) _srvEtat.modifies.delete(el); else _srvEtat.modifies.add(el);
+    _srvMajModifs();
+  };
+  conteneur.addEventListener('input', surSaisie);
+  conteneur.addEventListener('change', surSaisie);
+  // Changement de moteur de base (onglets SQLite / PostgreSQL / MariaDB) : pas un champ.
+  conteneur.addEventListener('click', (e) => {
+    if (!e.target.closest || !e.target.closest('.db-tab')) return;
+    setTimeout(() => {
+      const sec = document.getElementById('srv-db-unified');
+      if (sec) sec.dataset.driverModifie = (typeof _activeDriver === 'function' && _activeDriver() !== _srvEtat.driver) ? '1' : '';
+      _srvMajModifs();
+    }, 0);
+  });
+
+  // Recherche (sans accents) dans les titres, libellés et aides.
+  const champ = nav.querySelector('#srv-recherche'), effacer = nav.querySelector('#srv-recherche-effacer');
+  const filtrer = () => {
+    const q = _srvSansAccents(champ.value.trim());
+    effacer.style.display = q ? 'block' : 'none';
+    let n = 0;
+    liens.forEach((a, sec) => {
+      const ok = !q || _srvSansAccents(sec.textContent).includes(q);
+      sec.style.display = ok ? '' : 'none'; a.style.display = ok ? '' : 'none';
+      if (ok) n++;
+    });
+    corps.querySelectorAll('.srv-groupe-titre').forEach(h => {
+      const visible = [...liens.keys()].some(sec => sec.dataset.groupe === h.dataset.groupe && sec.style.display !== 'none');
+      h.style.display = visible ? '' : 'none';
+      const gt = nav.querySelector(`.srv-nav-groupe[data-groupe="${h.dataset.groupe}"]`);
+      if (gt) gt.style.display = visible ? '' : 'none';
+    });
+    vide.style.display = n ? 'none' : 'block';
+    if (q) layout.scrollIntoView({ block: 'start' });   // les résultats commencent en haut
+  };
+  champ.addEventListener('input', filtrer);
+  champ.addEventListener('keydown', (e) => { if (e.key === 'Escape') { champ.value = ''; filtrer(); } });
+  effacer.addEventListener('click', () => { champ.value = ''; filtrer(); champ.focus(); });
+
+  // Rubrique courante surlignée dans le sommaire.
+  const racine = conteneur.closest('.content') || null;
+  if ('IntersectionObserver' in window) {
+    const visibles = new Set();
+    const obs = new IntersectionObserver((entrees) => {
+      entrees.forEach(en => en.isIntersecting ? visibles.add(en.target) : visibles.delete(en.target));
+      const premiere = [...liens.keys()].find(sec => visibles.has(sec));
+      liens.forEach((a, sec) => a.classList.toggle('actif', sec === premiere));
+    }, { root: racine, rootMargin: '0px 0px -65% 0px' });
+    liens.forEach((a, sec) => obs.observe(sec));
+  }
+  _srvMajModifs();
+}
+
+// Identifiants des champs que _sauvegarderServeur() écrit dans config.json :
+// seuls ceux-là comptent comme « modification non enregistrée » (les limites
+// d'upload et la migration de base ont leurs propres boutons).
+function _srvChampsEnregistres() {
+  const ids = new Set();
+  try {
+    const src = String(_sauvegarderServeur);
+    for (const m of src.matchAll(/'([A-Za-z][\w-]*)'/g)) ids.add(m[1]);
+  } catch (_) { /* au pire : aucun suivi */ }
+  return ids;
+}
+function _srvSuivi(el) {
+  return !!(_srvEtat && el && el.id && _srvEtat.ids.has(el.id) && el.matches && el.matches('input, select, textarea'));
+}
+function _srvValeur(el) { return el.type === 'checkbox' || el.type === 'radio' ? (el.checked ? '1' : '0') : el.value; }
+
+// Pastille « activé / désactivé » : seulement pour les rubriques qui ont un
+// interrupteur général (identifiant en « _actif » : SMTP, Push, OAuth, logs…),
+// pas pour un simple réglage oui/non comme « Cookie Secure ».
+function _srvMajEtatModule(sec) {
+  const a = _srvEtat && _srvEtat.liens.get(sec);
+  if (!a) return;
+  const cb = sec.querySelector('.srv-toggle input[type=checkbox][id$="_actif"]');
+  const etat = a.querySelector('.srv-nav-etat');
+  if (!cb) { etat.hidden = true; return; }
+  etat.hidden = false;
+  etat.className = 'srv-nav-etat ' + (cb.checked ? 'on' : 'off');
+  etat.textContent = cb.checked ? 'activé' : 'désactivé';
+}
+
+function _srvMajModifs() {
+  if (!_srvEtat) return;
+  const parSection = new Map();
+  _srvEtat.modifies.forEach(el => {
+    if (!el.isConnected) { _srvEtat.modifies.delete(el); return; }
+    const sec = el.closest('.srv-section');
+    if (sec) parSection.set(sec, (parSection.get(sec) || 0) + 1);
+  });
+  const db = document.getElementById('srv-db-unified');
+  if (db && db.dataset.driverModifie) parSection.set(db, (parSection.get(db) || 0) + 1);
+  _srvEtat.conteneur.querySelectorAll('.srv-field').forEach(f => {
+    f.classList.toggle('srv-modifie', [...f.querySelectorAll('input, select, textarea')].some(el => _srvEtat.modifies.has(el)));
+  });
+  const groupes = new Set();
+  _srvEtat.liens.forEach((a, sec) => {
+    const n = parSection.get(sec) || 0;
+    sec.classList.toggle('srv-modifiee', n > 0);
+    a.querySelector('.srv-modif').classList.toggle('oui', n > 0);
+    if (n > 0) groupes.add(sec.dataset.groupe);
+  });
+  document.querySelectorAll('.srv-nav-groupe').forEach(g => g.querySelector('.srv-modif').classList.toggle('oui', groupes.has(g.dataset.groupe)));
+  const total = [...parSection.values()].reduce((x, y) => x + y, 0);
+  const st = document.getElementById('srv-save-status');
+  if (st) {
+    if (total) {
+      const noms = [...parSection.keys()].map(_srvTitreSection).filter(Boolean);
+      st.innerHTML = `<span style="color:var(--chip-warn-fg);font-weight:600">● ${total} modification${total > 1 ? 's' : ''} non enregistrée${total > 1 ? 's' : ''}</span>`
+        + ` <span style="color:var(--gray-text)">— ${_escCfg(noms.slice(0, 3).join(', '))}${noms.length > 3 ? '…' : ''}</span>`;
+    } else if (!st.querySelector('div') && !/✅/.test(st.textContent)) {
+      st.textContent = 'Aucune modification en attente.';
+    }
+  }
+}
+
+// Après un enregistrement réussi : les valeurs actuelles deviennent la référence.
+function _srvNoterEnregistre() {
+  if (!_srvEtat) return;
+  _srvEtat.modifies.forEach(el => _srvEtat.origine.set(el, _srvValeur(el)));
+  _srvEtat.modifies.clear();
+  _srvEtat.driver = (typeof _activeDriver === 'function') ? _activeDriver() : _srvEtat.driver;
+  const db = document.getElementById('srv-db-unified'); if (db) db.dataset.driverModifie = '';
+  _srvMajModifs();
 }
 
 // ── Limites d'upload (SuperAdmin) ────────────────────────────────────────────
@@ -946,8 +1195,50 @@ function _renderTabServeur(cfg) {
     .srv-envbadge-ok   { background:var(--chip-ok-bg); color:var(--chip-ok-fg); border:1px solid var(--chip-ok-bd); }
     .srv-envbadge-lock { background:var(--chip-info-bg); color:var(--chip-info-fg); border:1px solid var(--chip-info-bd); }
     .srv-envbadge-todo { background:var(--chip-warn-bg); color:var(--chip-warn-fg); border:1px solid var(--chip-warn-bd); }
+    /* ── Sommaire (cf. _srvOrganiser) ── */
+    .srv-layout { display:grid; grid-template-columns:250px minmax(0,1fr); gap:20px; align-items:start; }
+    .srv-nav { position:sticky; top:0; max-height:calc(100vh - 170px); overflow:auto; background:var(--white,#fff);
+               border:1px solid var(--gray-border); border-radius:12px; padding:12px 10px; }
+    .srv-nav-recherche { position:relative; margin:0 2px 10px; }
+    .srv-nav-recherche input { width:100%; box-sizing:border-box; font-size:12.5px; padding:8px 28px 8px 10px; border-radius:8px;
+               border:1.5px solid var(--gray-border); background:var(--gray-bg); color:var(--text); }
+    .srv-nav-recherche input:focus { outline:none; border-color:var(--blue); background:var(--white,#fff); }
+    .srv-nav-recherche button { position:absolute; right:6px; top:50%; transform:translateY(-50%); border:none; background:none;
+               color:var(--gray-text); cursor:pointer; font-size:14px; padding:2px 4px; display:none; }
+    .srv-nav-groupe { font-size:10.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--gray-text);
+               padding:10px 8px 4px; display:flex; align-items:center; gap:6px; }
+    .srv-nav-lien { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:none; background:none; cursor:pointer;
+               font-size:12.5px; color:var(--text); padding:6px 8px; border-radius:7px; line-height:1.3; }
+    .srv-nav-lien:hover { background:var(--gray-bg); }
+    .srv-nav-lien.actif { background:var(--blue); color:#fff; }
+    .srv-nav-lien .srv-nav-txt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .srv-nav-etat { font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:10px; white-space:nowrap; }
+    .srv-nav-etat.on  { background:var(--chip-ok-bg); color:var(--chip-ok-fg); border:1px solid var(--chip-ok-bd); }
+    .srv-nav-etat.off { background:var(--gray-bg); color:var(--gray-text); border:1px solid var(--gray-border); }
+    .srv-nav-lien.actif .srv-nav-etat { background:rgba(255,255,255,.2); color:#fff; border-color:transparent; }
+    .srv-modif { width:7px; height:7px; border-radius:50%; background:var(--orange,#f5a623); flex-shrink:0; display:none; }
+    .srv-modif.oui { display:inline-block; }
+    .srv-nav-vide { font-size:12px; color:var(--gray-text); padding:8px; display:none; }
+    .srv-groupe-titre { color:var(--on-content,#eaf2ff); font-size:15px; font-weight:700; margin:22px 2px 12px;
+               display:flex; align-items:center; gap:8px; scroll-margin-top:12px; }
+    .srv-groupe-titre:first-child { margin-top:0; }
+    .srv-section { scroll-margin-top:12px; }
+    .srv-section.srv-modifiee { border-color:var(--orange,#f5a623); box-shadow:0 0 0 1px var(--orange,#f5a623); }
+    .srv-field.srv-modifie .srv-label::after { content:'modifié'; margin-left:8px; font-size:10px; font-weight:600; padding:1px 7px;
+               border-radius:10px; background:var(--chip-warn-bg); color:var(--chip-warn-fg); border:1px solid var(--chip-warn-bd); }
+    .srv-field { min-width:0; }
+    .srv-field select.form-control { max-width:100%; text-overflow:ellipsis; }
+    .srv-nav-saut { display:none; width:100%; box-sizing:border-box; font-size:13px; padding:8px 10px; border-radius:8px;
+               border:1.5px solid var(--gray-border); background:var(--white,#fff); color:var(--text); }
+    @media(max-width:1100px){
+      .srv-layout { grid-template-columns:minmax(0,1fr); gap:14px; }
+      .srv-nav { position:static; max-height:none; display:flex; flex-direction:column; gap:8px; padding:10px; }
+      .srv-nav-recherche { margin:0; }
+      .srv-nav .srv-nav-groupe, .srv-nav .srv-nav-lien, .srv-nav .srv-nav-vide { display:none !important; }
+      .srv-nav-saut { display:block; }
+    }
   </style>
-  <div style="display:flex;flex-direction:column;gap:0">
+  <div id="srv-sections" style="display:flex;flex-direction:column;gap:0">
 
     <!-- ── Serveur ───────────────────────────────────── -->
     <div class="srv-section">
@@ -2245,9 +2536,11 @@ async function _sauvegarderServeur() {
           ${warnHtml}
         </div>`;
       toast('Config sauvegardée — voir les avertissements.', 'warning');
+      _srvNoterEnregistre();
     } else {
       if (status) status.innerHTML = `<span style="color:var(--chip-ok-fg)">✅ config.json enregistré — redémarrez le serveur pour appliquer.</span>`;
       toast('Configuration serveur sauvegardée.', 'success');
+      _srvNoterEnregistre();
     }
   } catch(e) {
     // Afficher le message d'erreur complet avec sauts de ligne (diagnostic DB)

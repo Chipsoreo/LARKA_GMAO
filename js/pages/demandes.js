@@ -775,7 +775,7 @@ async function traiterDemande(id) {
         catObligatoire = cats.some(x => x.Obligatoire == 1);
         catSaisieLibre = cats.some(x => x.SaisieLibre == 1);
       }
-      categoriesOpts += cats.map(c => `<option ${c.Valeur===(d.Categorie||'')?'selected':''}>${c.Valeur}</option>`).join('');
+      categoriesOpts += cats.map(c => `<option ${c.Valeur===(d.Categorie||'')?'selected':''}>${_escDem(c.Valeur)}</option>`).join('');
     } catch(_) {}
 
     const batiments = await ListesApi.getByCategorie('Batiment').catch(()=>[]);

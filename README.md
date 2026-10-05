@@ -706,12 +706,25 @@ nouveautés et coche une confirmation avant d'installer. Aussi : *Configuration 
 Avant d'écrire, les fichiers remplacés (et la base SQLite) sont sauvegardés dans `data/maj/sauvegardes/` ; une erreur en
 cours d'installation restaure automatiquement la version précédente, et l'historique permet de revenir en arrière.
 
-**Intégrité** : HTTPS uniquement, empreinte SHA-256 obligatoire, et signature Ed25519 exigée dès qu'une
-`cle_publique` est configurée (recommandé).
+**Intégrité** : HTTPS uniquement, empreinte SHA-256 obligatoire, et **signature Ed25519 toujours exigée**,
+vérifiée avec la clé publique de l'éditeur livrée dans le code (`api/CleEditeur.php`). Une version non signée,
+signée par une autre clé, ou modifiée après signature est refusée avant toute écriture. La clé n'est plus lue
+dans `config.json` (`mises_a_jour.cle_publique` est ignorée) : ce fichier se modifie depuis l'interface, et un
+compte capable de le modifier ne doit pas pouvoir désigner qui a le droit d'envoyer du code au serveur. Pour la
+même raison, un retour arrière ne remet jamais l'outil de mise à jour ni la clé (`api/MiseAJour.php`,
+`api/CleEditeur.php`…), et une sauvegarde antérieure à la signature obligatoire ne se restaure qu'en ligne de
+commande sur le serveur. L'extension PHP **sodium** est requise. Changer de clé passe par une version de
+transition, signée avec l'ancienne : voir l'en-tête de `outils/publier-version.php`.
+
+> ⚠️ Un serveur vérifie avec la clé de la version qu'il a installée. Ne déployez donc sur un serveur que des
+> archives produites par `outils/publier-version.php` (clé inscrite) : un code dont `api/CleEditeur.php` est vide
+> refuse toute mise à jour par l'interface, et ne se met plus à jour que par réinstallation manuelle.
 
 ```bash
-# Éditeur — une fois : paire de clés (la publique va dans mises_a_jour.cle_publique)
+# Éditeur — une fois : paire de clés (la publique est écrite dans api/CleEditeur.php)
 php outils/publier-version.php --generer-cles
+# … ou, avec une clé privée existante : inscrire seulement la clé publique
+php outils/publier-version.php --ecrire-cle-publique --cle ~/.larka-publication.key
 # Éditeur — à chaque version : version.json, ?v=, zip, .sha256, .sig, latest.json
 php outils/publier-version.php --version 2.0.3 --canal Beta --notes notes.md
 gh release create v2.0.3 dist/LARKA_GMAO-2.0.3.zip dist/LARKA_GMAO-2.0.3.zip.sha256 dist/LARKA_GMAO-2.0.3.zip.sig --notes-file notes.md --prerelease
@@ -792,7 +805,8 @@ larka/
 ├── js/                     Frontend : cœur + 33 pages + filtres (lazy-loadés)
 │   ├── declaratif.js       Rendu des écrans décrits par un module
 │   ├── extensions.js       Chargement des modules côté client
-│   └── vendor/             ZXing (QR) · Leaflet (cartes)
+│   └── vendor/             Leaflet (cartes) · pdf.js (plans PDF) · SheetJS (import Excel)
+│                           — servis par Larka, aucun CDN tiers (ZXing : js/zxing-browser.min.js)
 ├── css/                    10 feuilles de style + polices WOFF2 embarquées
 ├── oauth/                  Callbacks OAuth (microsoft.php, google.php)
 ├── extensions/             Modules livrés : modules/ · themes/ · langues/ · config/
@@ -844,17 +858,19 @@ git push
 notes de version ci-dessus.
 
 ```bash
-# paquet + empreinte (+ signature si une clé a été générée), puis release en « pré-version » (bêta)
+# paquet + empreinte + signature (OBLIGATOIRE : les serveurs refusent toute version
+# non signée), puis release en « pré-version » (bêta). Une seule fois, avant la
+# première publication : php outils/publier-version.php --generer-cles
 # (--reconstruire : 2.0.0 est déjà la version inscrite dans version.json ; inutile pour les suivantes)
 php outils/publier-version.php --version 2.0.0 --canal Beta --notes notes.md --reconstruire
 git commit -am "Publication 2.0.0" && git push      # l'outil rafraîchit le ?v= d'index.html
 gh release create v2.0.0 dist/LARKA_GMAO-2.0.0.zip dist/LARKA_GMAO-2.0.0.zip.sha256 \
-    --title "Larka V.Beta 2.0.0" --notes-file notes.md --prerelease
-# (ajouter dist/LARKA_GMAO-2.0.0.zip.sig si le paquet est signé ; gh crée l'étiquette v2.0.0)
+    dist/LARKA_GMAO-2.0.0.zip.sig --title "Larka V.Beta 2.0.0" --notes-file notes.md --prerelease
+# (gh crée l'étiquette v2.0.0 ; sans le .sig, la version est refusée par tous les serveurs)
 ```
 
-Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.0.0`, joindre le `.zip`
-et le `.sha256` (et le `.sig`), cocher *Set as a pre-release*.
+Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.0.0`, joindre le `.zip`,
+le `.sha256` **et le `.sig`**, cocher *Set as a pre-release*.
 
 ---
 

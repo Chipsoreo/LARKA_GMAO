@@ -89,7 +89,8 @@ async function editContrat(id) {
     getRequiredFields('contrats'),
   ]);
   const rf = _rf || [];
-  const opts = (liste, val) => liste.map(x => `<option ${val === x.Valeur ? 'selected' : ''}>${x.Valeur}</option>`).join('');
+  // Valeurs de liste échappées (alimentées aussi par imports et modules).
+  const opts = (liste, val) => liste.map(x => `<option ${val === x.Valeur ? 'selected' : ''}>${escHtml(x.Valeur)}</option>`).join('');
 
   openModal(isNew ? 'Nouveau contrat' : `Modifier ${escHtml(ct.Numero||'')}`, `
     <div class="form-grid">

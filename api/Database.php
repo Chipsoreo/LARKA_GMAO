@@ -111,6 +111,7 @@ class Database {
             if (!str_starts_with($path, '/')) $path = __DIR__ . '/../' . $path;
             $dir = dirname($path);
             if (!is_dir($dir)) mkdir($dir, 0755, true);
+            $this->_sqlitePath = $path;
             $this->pdo = new PDO('sqlite:' . $path);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
@@ -334,6 +335,9 @@ class Database {
     /** @var string Identifiant unique de la base physique (pour la sentinelle de schéma) */
     private string $_dbIdent = '';
 
+    /** @var string Chemin résolu du fichier SQLite ('' pour les autres pilotes) */
+    private string $_sqlitePath = '';
+
     /**
      * Crée les indexes critiques pour les performances. Idempotent (IF NOT EXISTS).
      * Cible les colonnes utilisées par les requêtes les plus fréquentes :
@@ -472,7 +476,33 @@ class Database {
         if ($content === false) return false;
         // Format : "VERSION|TIMESTAMP"
         $parts = explode('|', trim($content), 2);
-        return ($parts[0] ?? '') === (string)self::SCHEMA_VERSION;
+        if (($parts[0] ?? '') !== (string)self::SCHEMA_VERSION) return false;
+
+        // ⚠️ UNE BASE SQLITE RECRÉÉE GARDAIT SA SENTINELLE « À JOUR ».
+        // La sentinelle est indexée sur le CHEMIN. Quand le fichier était
+        // supprimé (suppression ou purge d'un tenant SQLite, « force_drop »,
+        // suppression à la main) puis recréé vide par PDO, la sentinelle disait
+        // encore « schéma appliqué » : initTables() était court-circuité, AUCUNE
+        // table n'était recréée, et toute requête échouait (« no such table:
+        // Utilisateurs ») jusqu'à l'effacement manuel du drapeau. Reproduit.
+        //
+        // On vérifie donc que la table pivot existe réellement. Pour SQLite,
+        // c'est une lecture de sqlite_master, en mémoire et sans aller-retour
+        // réseau : coût négligeable face aux ~30 requêtes que la sentinelle
+        // évite. (Un contrôle par inode a été écarté : ext4 réattribue le même
+        // numéro au fichier recréé — vérifié.) Les bases déjà touchées se
+        // réparent d'elles-mêmes à la première requête.
+        if ($this->_sqlitePath !== '') {
+            try {
+                $ok = $this->pdo->query(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND LOWER(name)='utilisateurs'"
+                )->fetchColumn();
+                if (!$ok) return false;
+            } catch (\Throwable $e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

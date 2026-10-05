@@ -234,7 +234,8 @@ async function editStock(id) {
   ]);
   const rf = _rf || [];
 
-  const opts = (liste, val, extra='') => extra + liste.map(x=>`<option ${val===x.Valeur?'selected':''}>${x.Valeur}</option>`).join('');
+  // Valeurs de liste échappées (alimentées aussi par imports et modules).
+  const opts = (liste, val, extra='') => extra + liste.map(x=>`<option ${val===x.Valeur?'selected':''}>${escHtml(x.Valeur)}</option>`).join('');
   const optsContrats = `<option value="">— Aucun —</option>` +
     contrats.map(c=>`<option value="${c.Id}" ${s.ContratId===c.Id?'selected':''}>${escHtml(c.Numero||'')} — ${escHtml(c.Societe||'')}</option>`).join('');
 

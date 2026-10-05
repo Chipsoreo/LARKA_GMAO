@@ -12,7 +12,7 @@ echec=0
 sautees=()
 avertissements=()
 
-for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant acces-coeur; do
+for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant acces-coeur mise-a-jour; do
   f="outils/epreuves/test-$e.php"
   [[ -f "$f" ]] || continue
   echo

@@ -276,6 +276,44 @@ try {
     [$c] = $api('adm', 'POST', 'interv_lignes&interv_id=1', ['stockId' => $stockId, 'quantite' => -1, 'prixUnitaire' => 3]);
     verifier('quantité négative : refusée', $c === 400, "HTTP $c", $ok, $ko);
 
+    // ── #14 lectures détournées · Content-Type · routeur · journal · CSP ──────
+    // Défauts de la 2.0.2, reproduits puis corrigés : chacun de ces contrôles
+    // échoue sur le code d'avant correctif.
+    echo "\n  #14 Lectures détournées · Content-Type · routeur · journal · CSP\n";
+    foreach (['interventions_prevues', 'interventions_archivees', 'facture_interventions&facture_id=1',
+              'interv_autonumero', 'facture_autonumero'] as $a) {
+        [$c] = $api('dem1', 'GET', $a);
+        verifier("demandeur : $a", $c === 403, "HTTP $c", $ok, $ko);
+    }
+    [$c] = $api('adm', 'GET', 'interventions_archivees');
+    verifier('gestionnaire : interventions archivées (permises)', $c === 200, "HTTP $c", $ok, $ko);
+    [$c] = $http('adm', 'POST', '/api/index.php?action=notes_info', '{"message":"e"}',
+                 ['Content-Type: text/plain; charset=application/json']);
+    verifier('text/plain déguisé en JSON : refusé', $c === 403, "HTTP $c", $ok, $ko);
+    [$c] = $http('adm', 'POST', '/api/index.php?action=notes_info', '{"message":"e"}',
+                 ['Content-Type: application/json; charset=utf-8']);
+    verifier('application/json; charset=utf-8 : accepté', $c === 200, "HTTP $c", $ok, $ko);
+    foreach (['/api/Version.php/x', '/api/config.php/a/b'] as $p) {
+        [$c] = $http('anonyme', 'GET', $p);
+        verifier("PHP interne suffixé : $p", $c === 404, "HTTP $c", $ok, $ko);
+    }
+    [$c] = $api('adm', 'POST', 'journal_purge', ['jours' => 0]);
+    verifier('gestionnaire : purge totale du journal refusée', $c === 400, "HTTP $c", $ok, $ko);
+    $trace = (string)@file_get_contents($dir . '/data/security/audit.log');
+    verifier('refus tracé dans audit.log, route comprise',
+             str_contains($trace, '"event":"access_denied"') && str_contains($trace, '"action":"interventions_prevues"'),
+             substr_count($trace, '"event":"access_denied"') . ' refus', $ok, $ko);
+    $ch = curl_init($base . '/');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HEADER => true, CURLOPT_TIMEOUT => 20]);
+    $entetes = (string)curl_exec($ch);
+    verifier('page de l\'application servie avec une CSP',
+             (bool)preg_match('/^Content-Security-Policy:.*default-src/mi', $entetes), '', $ok, $ko);
+    $ui = (string)@file_get_contents($dir . '/js/ui.js');
+    $deb = strpos($ui, 'function listFieldHtml(');
+    $lf = $deb === false ? '' : substr($ui, $deb, ((int)strpos($ui, "\n}\n", $deb) ?: $deb + 3000) - $deb);
+    $brut = (bool)preg_match('/\$\{\s*(x\.Valeur|selected\s*\|\|[^}]*|selected)\s*\}/', $lf);
+    verifier('listFieldHtml échappe ses valeurs', $lf !== '' && !$brut, $brut ? 'valeur insérée brute' : 'escHtml', $ok, $ko);
+
     // ── Chorus Pro, push, setup ───────────────────────────────────────────────
     echo "\n  Chorus Pro · notifications push · configuration initiale\n";
     [$c] = $api('dem1', 'POST', 'chorus_call', ['path' => '/cpro/factures/v1', 'payload' => []]);
@@ -334,6 +372,23 @@ try {
     verifier('tenant désactivé : session fermée', $c === 401, "HTTP $c", $ok, $ko);
     [$c] = $api('a1b', 'POST', 'login', ['login' => 'a1', 'password' => 'Epreuve-a1-1']);
     verifier('tenant désactivé : connexion refusée', $c === 403, "HTTP $c", $ok, $ko);
+
+    // ── #14 (suite) : frontières du multi-tenant et du super admin ───────────
+    echo "\n  #14 Admin de tenant · super admin secondaire · bases partagées\n";
+    $api('b1', 'POST', 'login', ['login' => 'b1', 'password' => 'Epreuve-b1-1']);
+    [$c] = $api('b1', 'POST', 'db_migrate_test', ['destination' => ['driver' => 'sqlite', 'path' => 'data/x.db']]);
+    verifier('admin de tenant : migration de la base du serveur refusée', $c === 403, "HTTP $c", $ok, $ko);
+    [$c] = $api('b1', 'POST', 'journal_purge', ['jours' => 60]);
+    verifier('admin de tenant : purge du journal refusée', $c === 403, "HTTP $c", $ok, $ko);
+    $api('sa', 'POST', 'superadmin_account_add', ['login' => 'sa2', 'password' => 'Epreuve-SA2-12', 'email' => 'sa2@epreuve.test']);
+    $api('sa2', 'POST', 'superadmin_login', ['login' => 'sa2', 'password' => 'Epreuve-SA2-12']);
+    [$c] = $api('sa2', 'POST', 'superadmin_emails_save', ['emails' => ['intrus@exemple.test']]);
+    verifier('super admin secondaire : ajout d\'une adresse super admin refusé', $c === 403, "HTTP $c", $ok, $ko);
+    foreach (['config.json' => 400, 'data/superadmin.db' => 409, 'data/tenant_beta.db' => 409] as $chemin => $attendu) {
+        [$c] = $api('sa', 'POST', 'superadmin_tenant_save', ['key' => 'gamma', 'nom' => 'gamma',
+             'db_driver' => 'sqlite', 'db_path' => $chemin]);
+        verifier("tenant sur « $chemin » : refusé", $c === $attendu, "HTTP $c", $ok, $ko);
+    }
 } catch (\Throwable $e) {
     $ko[] = 'déroulé : ' . $e->getMessage();
     echo "  ❌  " . $e->getMessage() . "\n";

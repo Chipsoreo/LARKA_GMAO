@@ -12,6 +12,9 @@
  *   php api/outils/mise-a-jour.php --installer --oui      (sans question)
  *   php api/outils/mise-a-jour.php --historique
  *   php api/outils/mise-a-jour.php --restaurer <id>
+ *      (seule voie pour une sauvegarde antérieure à la signature obligatoire ;
+ *       les fichiers de la chaîne de confiance des mises à jour ne sont jamais
+ *       restaurés, cf. LarkaMiseAJour::JAMAIS_RESTAURES)
  *
  * À lancer avec l'utilisateur propriétaire des fichiers (www-data en prod) :
  *   sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --verifier
@@ -44,7 +47,9 @@ try {
     if (in_array('--verifier', $args, true)) { $affiche($maj->verifier()); exit(0); }
     if (in_array('--historique', $args, true)) { echo json_encode($maj->historique(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), "\n"; exit(0); }
     if (($i = array_search('--restaurer', $args, true)) !== false) {
-        $r = $maj->restaurer((string)($args[$i + 1] ?? ''), 'cli');
+        // Ligne de commande : les sauvegardes antérieures à la signature
+        // obligatoire restent restaurables ici (pas depuis l'interface).
+        $r = $maj->restaurer((string)($args[$i + 1] ?? ''), 'cli', true);
         echo "Restauré : {$r['fichiers']} fichier(s) — version {$r['version']['libelle']}\n"; exit(0);
     }
     if (in_array('--installer', $args, true)) {

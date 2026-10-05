@@ -471,6 +471,7 @@ async function _planSelectEtage(id) { _p.etage = _p.etages.find(e=>e.Id==id)||nu
 
 // ══════════════════ CARTE LEAFLET ══════════════════
 function _pInitMap() {
+  _p.rendu = (_p.rendu || 0) + 1;   // génération de carte : périme les rendus PDF en cours
   const mc = document.getElementById('planMapContainer');
   if (!_p.etage) { if (mc) mc.innerHTML = '<div class="plan-empty-map"><div style="font-size:42px;margin-bottom:8px;opacity:.4">🗺️</div>Sélectionnez un bâtiment et un étage</div>'; return; }
   const et = _p.etage, w = et.FondLargeur||1000, h = et.FondHauteur||700;
@@ -481,7 +482,7 @@ function _pInitMap() {
   _p.map.fitBounds(bounds);
   if (et.FondImage) {
     const url = API_BASE + '?action=plans_fond_image&etage_id=' + et.Id;
-    if (String(et.FondImage).toLowerCase().endsWith('.pdf')) { _pDrawGrid(w,h); _pRenderPdfFond(url,bounds); }
+    if (String(et.FondImage).toLowerCase().endsWith('.pdf')) { _pRenderPdfFond(url,bounds,_pDrawGrid(w,h),et.FondImage); }
     else { const ov = L.imageOverlay(url, bounds, {errorOverlayUrl:''}).addTo(_p.map); ov.on('error', ()=>{ toast('Image introuvable','error'); _pDrawGrid(w,h); }); }
   } else { _pDrawGrid(w,h); }
   _getFilteredElements().forEach(el => _pAddEl(el));
@@ -557,17 +558,24 @@ function _pInitMap() {
   if(_tmSel){const _f=(parseFloat(_p.etage.TailleMarqueurs)>0)?parseFloat(_p.etage.TailleMarqueurs):1;_tmSel.value=String(_f);}
 }
 
-async function _pRenderPdfFond(url, bounds) {
+// Rendu par js/pages/pdf-fond.js (pdf.js embarqué, cf. CVE-2024-4367), mis en
+// cache par fichier : filtres, calques, recherche reconstruisent la carte à
+// chaque frappe, et chaque reconstruction re-téléchargeait et re-rendait le PDF.
+// Garde-fou : si la carte a été reconstruite pendant le rendu (autre étage,
+// filtre, aucun étage), l'image ne se pose pas sur la nouvelle.
+// ⚠️ L'IMAGE ARRIVAIT PAR-DESSUS LES ZONES ET LES LIGNES : ajoutée après elles
+// et opaque, elle les masquait (pas les marqueurs). Elle passe désormais
+// derrière, à la place de la grille d'attente, comme un fond PNG.
+async function _pRenderPdfFond(url, bounds, grilleAttente, fichier) {
+  const rendu = _p.rendu;
   try {
-    if (!window.pdfjsLib) { await new Promise((r,j)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';s.onload=r;s.onerror=()=>j(new Error('PDF.js'));document.head.appendChild(s);}); window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
-    const pdf = await window.pdfjsLib.getDocument({url,withCredentials:true}).promise, page = await pdf.getPage(1);
-    const v0 = page.getViewport({scale:1}), scale = Math.min(2400,Math.max(1200,v0.width*2))/v0.width, vp = page.getViewport({scale});
-    const cv = document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
-    await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
-    L.imageOverlay(cv.toDataURL('image/png'), bounds).addTo(_p.map);
-  } catch(e) { toast('PDF: '+e.message,'error'); _pDrawGrid(_p.etage.FondLargeur||1000,_p.etage.FondHauteur||700); }
+    const img = await rendrePdfFondEnImage(url, url + '#' + (fichier || ''));
+    if (rendu !== _p.rendu || !_p.map) return;
+    if (grilleAttente) _p.map.removeLayer(grilleAttente);
+    L.imageOverlay(img, bounds).addTo(_p.map).bringToBack();
+  } catch(e) { if (rendu === _p.rendu) toast('PDF: '+e.message,'error'); }   // la grille d'attente reste
 }
-function _pDrawGrid(w,h) { const g=L.layerGroup().addTo(_p.map),step=50; for(let x=0;x<=w;x+=step)L.polyline([[0,x],[h,x]],{color:'#e5e7eb',weight:.5,interactive:false}).addTo(g); for(let y=0;y<=h;y+=step)L.polyline([[y,0],[y,w]],{color:'#e5e7eb',weight:.5,interactive:false}).addTo(g); }
+function _pDrawGrid(w,h) { const g=L.layerGroup().addTo(_p.map),step=50; for(let x=0;x<=w;x+=step)L.polyline([[0,x],[h,x]],{color:'#e5e7eb',weight:.5,interactive:false}).addTo(g); for(let y=0;y<=h;y+=step)L.polyline([[y,0],[y,w]],{color:'#e5e7eb',weight:.5,interactive:false}).addTo(g); return g; }
 function _pUpdateScaleBar() { const bar=document.getElementById('planScaleBar'); if(!bar||!_p.map||!_p.etage)return; const ech=parseFloat(_p.etage.Echelle)||0.05,zoom=_p.map.getZoom(),scale=Math.pow(2,zoom),pxSize=100,meters=(pxSize/scale)*ech,label=meters>=1?Math.round(meters)+' m':Math.round(meters*100)+' cm'; bar.innerHTML=`<div class="plan-scale-line" style="width:${pxSize}px"></div><span>${label}</span>`; }
 
 // ══════════════════ MÈTRE DE RÉFÉRENCE (persistant, effaçable, masquable) ══════════════════

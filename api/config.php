@@ -429,11 +429,13 @@ define('CORS_CREDENTIALS',  (bool)(cfg('cors', 'allow_credentials') ?? false));
 // encore 'none'/'DENY' (sinon l'aperçu PDF reste bloqué par le navigateur).
 // ⚠️ FIX SÉCURITÉ (F2) : retrait de https://unpkg.com (non utilisé au runtime)
 // pour réduire la surface d'attaque de type supply-chain. cdnjs.cloudflare.com
-// est conservé car réellement utilisé (xlsx, pdf.js). Ajout de base-uri 'self'
-// (anti-injection de <base>) et form-action 'self'. NB : 'unsafe-inline' est
-// conservé sur script-src car l'app repose sur de nombreux gestionnaires inline ;
-// son retrait nécessite une migration vers des nonces (voir rapport).
-$__csp = cfg('securite_http', 'csp') ?? "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com blob:; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; worker-src 'self' blob:; connect-src 'self' https://cdnjs.cloudflare.com; object-src 'none'; frame-ancestors 'self'";
+// est retiré à son tour : ses deux seuls usages, pdf.js et SheetJS, sont
+// désormais servis par Larka (js/vendor/), et pdf.js mis à jour (CVE-2024-4367).
+// Ajout de base-uri 'self' (anti-injection de <base>) et form-action 'self'.
+// NB : 'unsafe-inline' est conservé sur script-src car l'app repose sur de
+// nombreux gestionnaires inline ; son retrait nécessite une migration vers des
+// nonces (voir rapport).
+$__csp = cfg('securite_http', 'csp') ?? "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'";
 $__csp = preg_replace("/frame-ancestors\\s+'none'/i", "frame-ancestors 'self'", $__csp);
 if (stripos($__csp, 'frame-ancestors') === false) { $__csp = rtrim($__csp, '; ') . "; frame-ancestors 'self'"; }
 define('SEC_CSP', $__csp);

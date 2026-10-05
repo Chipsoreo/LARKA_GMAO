@@ -27,7 +27,7 @@
     "allowed_origin": "https://gmao.example.com"
   },
   "securite_http": {
-    "_": "Seul réglage vraiment utile en prod (défaut du code : false). N'ajoutez PAS \"csp\" : le défaut est durci ET autorise cdnjs — une CSP recopiée à la main casse l'export Excel et l'aperçu PDF. x_frame_options=\"DENY\" est de toute façon ramené à SAMEORIGIN par le code.",
+    "_": "Seul réglage vraiment utile en prod (défaut du code : false). N'ajoutez PAS \"csp\" : le défaut est durci et suit l'application — une CSP recopiée à la main finit par casser l'import Excel ou les plans PDF (ils créent des workers de même origine : worker-src 'self', ou à défaut script-src 'self'). Plus aucun CDN n'est nécessaire : pdf.js et SheetJS sont servis par Larka. Sous nginx, la CSP de la page est celle de deploy/nginx.conf ; celle-ci ne s'applique qu'aux réponses de l'API et au serveur PHP intégré. x_frame_options=\"DENY\" est de toute façon ramené à SAMEORIGIN par le code.",
     "hsts": true
   },
   "logs": {
@@ -93,7 +93,7 @@
   },
   "_4_non_listees": "Existent aussi, laissées à leur défaut : acces.domaine_email_autorise (restreint les comptes OAuth à un domaine), cors (inutile en mono-domaine, le défaut suit allowed_origin), session (cookie_secure auto-détecté, samesite Strict), documents (4 par catégorie, 25 Mo, pdf/png/jpeg/webp), urgences (photo_max_mo 15, video_max_mo 150 — plafonds des médias des procédures d'urgence ; pensez aussi a upload_max_filesize/post_max_size), oauth_relay (installation sans domaine public). Détail : api/config.php.",
   "mises_a_jour": {
-    "_": "Détection automatique des nouvelles versions (installation TOUJOURS validée par l'administrateur ; data/, config.json et .env jamais touchés). source : github (défaut, dépôt « depot ») | manifeste (url_manifeste HTTPS vers un latest.json). canal : beta | stable. frequence_heures (12). cle_publique : clé Ed25519 de l'éditeur (outils/publier-version.php --generer-cles) — si renseignée, toute version non signée est refusée. Dépôt privé : jeton -> .env : GMAO_MAJ_GITHUB_TOKEN.",
+    "_": "Détection automatique des nouvelles versions (installation TOUJOURS validée par l'administrateur ; data/, config.json et .env jamais touchés). source : github (défaut, dépôt « depot ») | manifeste (url_manifeste HTTPS vers un latest.json). canal : beta | stable. frequence_heures (12). La signature Ed25519 de l'éditeur est TOUJOURS exigée, avec la clé livrée dans le code (api/CleEditeur.php) : « cle_publique » n'est plus lue ici. Dépôt privé : jeton -> .env : GMAO_MAJ_GITHUB_TOKEN.",
     "actif": true,
     "depot": "Chipsoreo/LARKA_GMAO"
   },

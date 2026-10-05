@@ -256,6 +256,14 @@ if ($action === 'forgot_password' && $method === 'POST') {
     // Générer un code à 6 chiffres
     $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $db->setResetToken($login, $code);
+    // Trace côté serveur uniquement (la réponse au client reste générique) :
+    // une demande de code est le premier pas d'une récupération de compte.
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('password_reset_requested', [
+            'login'  => $login,
+            'tenant' => (string)($res['cle'] ?? 'default'),
+        ]);
+    }
 
     // Envoyer le mail
     $subject = 'Larka — Code de réinitialisation';
@@ -305,7 +313,21 @@ if ($action === 'reset_password' && $method === 'POST') {
     }
 
     $ok = $db->resetPassword($login, $code, $newPwd);
-    if (!$ok) json_error('Code invalide ou expiré. Veuillez redemander un code.');
+    if (!$ok) {
+        // Un code faux en série = tentative de deviner le code à 6 chiffres.
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('password_reset_failure', [
+                'login' => $login, 'tenant' => (string)($res['cle'] ?? 'default'),
+                'reason' => 'code_invalide_ou_expire',
+            ]);
+        }
+        json_error('Code invalide ou expiré. Veuillez redemander un code.');
+    }
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('password_reset_success', [
+            'login' => $login, 'tenant' => (string)($res['cle'] ?? 'default'),
+        ]);
+    }
     json_ok('Mot de passe réinitialisé avec succès.');
 }
 
@@ -324,7 +346,21 @@ if ($action === 'change_password' && $method === 'POST') {
     if ($newPwd === $oldPwd) json_error('Le nouveau mot de passe doit être différent de l\'ancien.');
 
     $ok = $db->changePassword((int)$user['Id'], $oldPwd, $newPwd);
-    if (!$ok) json_error('Ancien mot de passe incorrect.');
+    if (!$ok) {
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('password_change_failure', [
+                'login' => (string)($user['Login'] ?? ''), 'user_id' => (int)$user['Id'],
+                'reason' => 'ancien_mot_de_passe_incorrect',
+            ]);
+        }
+        json_error('Ancien mot de passe incorrect.');
+    }
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('password_changed', [
+            'login' => (string)($user['Login'] ?? ''), 'user_id' => (int)$user['Id'],
+            'tenant' => (string)($_SESSION['tenant_key'] ?? 'default'),
+        ]);
+    }
     // ⚠️ FIX BUG : la base remettait MustChangePassword à 0 mais la SESSION
     // gardait 1 — l'agent restait bloqué sur « Vous devez changer votre mot de
     // passe » jusqu'à se déconnecter. (utilisateur_session() relit aussi la
@@ -414,7 +450,9 @@ if ($action === 'update_profile' && $method === 'POST') {
         $sql = "UPDATE Utilisateurs SET " . implode(', ', $updates) . " WHERE Id = :id";
         $db->execute($sql, $params);
     } catch (\Throwable $e) {
-        json_error('Erreur lors de la mise à jour : ' . $e->getMessage());
+        // Le message PDO (noms de colonnes, contraintes…) reste côté serveur.
+        Journal::erreur('auth', 'Mise à jour du profil impossible', ['exception' => $e]);
+        json_error('Erreur lors de la mise à jour du profil (référence : ' . Journal::requestId() . ').');
     }
 
     // Rafraîchir la session avec les nouvelles valeurs

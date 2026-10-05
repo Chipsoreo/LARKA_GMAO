@@ -28,9 +28,15 @@
  * SÉCURITÉ (le code téléchargé va s'exécuter sur le serveur)
  *   - HTTPS uniquement, redirections HTTPS uniquement, taille bornée.
  *   - Empreinte SHA-256 OBLIGATOIRE (publiée avec la version) et vérifiée.
- *   - Signature Ed25519 : si une clé publique est configurée
- *     (mises_a_jour.cle_publique), une version non signée ou mal signée est
- *     REFUSÉE. Recommandé en production. Outil : outils/publier-version.php.
+ *   - Signature Ed25519 OBLIGATOIRE, vérifiée avec la clé publique de
+ *     l'éditeur livrée DANS LE CODE (api/CleEditeur.php). Version non signée,
+ *     mal signée, ou installation sans clé : REFUSÉE.
+ *     ⚠️ La clé était lue dans config.json et la vérification sautait quand
+ *     elle était vide (le défaut). L'empreinte venant de la même source que
+ *     l'archive, rien n'en garantissait l'origine : un dépôt GitHub compromis
+ *     suffisait. Et config.json se modifie depuis l'interface — qui tenait ce
+ *     compte pouvait désigner sa propre clé et sa propre source.
+ *     Outil de l'éditeur : outils/publier-version.php.
  *   - Archive contrôlée (pas de chemin « .. » ni absolu), version plus récente
  *     exigée, verrou contre deux installations simultanées.
  *
@@ -47,7 +53,7 @@
  *   url_manifeste    "https://…/latest.json"    (source manifeste)
  *   canal            "beta" (versions préliminaires incluses) | "stable"
  *   frequence_heures 12
- *   cle_publique     clé Ed25519 en base64 (outils/publier-version.php --generer-cles)
+ *   (cle_publique n'est PLUS lue ici : voir api/CleEditeur.php.)
  *   Jeton GitHub (dépôt privé) : .env → GMAO_MAJ_GITHUB_TOKEN
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -60,6 +66,17 @@ class LarkaMiseAJour
     private const PROTEGES = ['data', 'config.json', '.env', '.git', '.github'];
     /** Écrits seulement s'ils n'existent pas encore (réglages de modules). */
     private const AJOUT_SEUL = ['extensions/config/'];
+    /**
+     * Chaîne de confiance des mises à jour : JAMAIS remise par une restauration.
+     * Une sauvegarde contient les fichiers de la version précédente ; restaurer
+     * l'ancien MiseAJour.php rétablissait la signature facultative et la clé lue
+     * dans config.json — de quoi annuler, depuis l'interface, la signature
+     * obligatoire. Ils ne changent que par une mise à jour signée.
+     */
+    private const JAMAIS_RESTAURES = ['api/MiseAJour.php', 'api/CleEditeur.php', 'api/routes/majs.php',
+                                      'api/outils/mise-a-jour.php'];
+    /** Dernière version publiée SANS signature obligatoire (base de ce correctif). */
+    private const DERNIERE_SANS_SIGNATURE = '2.0.2';
     /** Dossiers de développement : mis à jour seulement s'ils sont déjà présents
      *  (deploy/install.sh ne les copie pas en production). */
     private const SI_PRESENTS = ['outils', 'Documentations', 'deploy', 'tests'];
@@ -69,8 +86,9 @@ class LarkaMiseAJour
     /** Fin du support de sécurité de chaque branche de PHP (php.net/supported-versions). */
     private const PHP_FIN_SUPPORT = ['8.1' => '2025-12-31', '8.2' => '2026-12-31', '8.3' => '2027-12-31',
                                      '8.4' => '2028-12-31', '8.5' => '2029-12-31'];
-    /** Extensions dont la mise à jour a besoin (sodium seulement si une signature est exigée). */
-    private const EXTENSIONS = ['curl' => 'curl_init', 'zip' => 'ZipArchive', 'openssl' => 'openssl_verify'];
+    /** Extensions dont la mise à jour a besoin (sodium : la signature est toujours vérifiée). */
+    private const EXTENSIONS = ['curl' => 'curl_init', 'zip' => 'ZipArchive', 'openssl' => 'openssl_verify',
+                                'sodium' => 'sodium_crypto_sign_verify_detached'];
 
     private string $racine;
     private string $dossier;
@@ -82,6 +100,42 @@ class LarkaMiseAJour
         foreach (['', '/telechargements', '/sauvegardes'] as $d) {
             if (!is_dir($this->dossier . $d)) @mkdir($this->dossier . $d, 0750, true);
         }
+        // Première exécution de ce code sur ce serveur : la version EN PLACE
+        // est la première qui exige la signature. Notée une fois pour toutes
+        // (data/ n'est jamais touché par une mise à jour ni une restauration) ;
+        // restaurer() s'en sert pour refuser, depuis l'interface, les
+        // sauvegardes plus anciennes.
+        // (Pas tant que le numéro en place n'a pas dépassé 2.0.2 : un arbre de
+        // travail non encore publié porte encore l'ancien numéro.)
+        if (self::versionNotee($this->lireJson('signature-depuis.json')) === null) {
+            $v = (string)($this->locale()['version'] ?? '');
+            if (preg_match('/^\d+\.\d+\.\d+$/', $v) && version_compare($v, self::DERNIERE_SANS_SIGNATURE, '>')) {
+                $this->ecrireJson('signature-depuis.json', ['version' => $v, 'le' => date('c')]);
+            }
+        }
+    }
+
+    private static function versionNotee(array $d): ?string
+    {
+        $v = (string)($d['version'] ?? '');
+        return preg_match('/^\d+\.\d+\.\d+$/', $v) ? $v : null;
+    }
+
+    /**
+     * Une sauvegarde se restaure depuis l'interface seulement si ses fichiers
+     * viennent d'une version qui exigeait déjà la signature (et embarque donc
+     * les correctifs qui vont avec). Décidé sur le NUMÉRO DE VERSION des
+     * fichiers sauvegardés : un drapeau posé par le code qui fait la sauvegarde
+     * mentait après une restauration en ligne de commande (outil de mise à jour
+     * récent, mais fichiers anciens). Dans le doute : non.
+     */
+    private function restaurableDepuisInterface(?array $meta): bool
+    {
+        $base = self::versionNotee($this->lireJson('signature-depuis.json'));
+        $v = self::versionNotee(is_array($meta['version'] ?? null) ? $meta['version'] : []);
+        return $base !== null && $v !== null
+            && version_compare($v, self::DERNIERE_SANS_SIGNATURE, '>')
+            && version_compare($v, $base, '>=');
     }
 
     private static function cfg(string $k, mixed $defaut = null): mixed
@@ -119,7 +173,6 @@ class LarkaMiseAJour
         foreach (self::EXTENSIONS as $ext => $symbole) {
             if (!function_exists($symbole) && !class_exists($symbole)) $manquantes[] = $ext;
         }
-        if ((string)self::cfg('cle_publique', '') !== '' && !function_exists('sodium_crypto_sign_verify_detached')) $manquantes[] = 'sodium';
         $conseil = null;
         if (!$ok) $conseil = "PHP $branche est trop ancien : il faut PHP $min ou plus récent. Mettez PHP à jour, puis relancez la vérification.";
         elseif ($manquantes) $conseil = 'Extension(s) PHP manquante(s) : ' . implode(', ', $manquantes) . '. Installez-les, puis redémarrez PHP.';
@@ -169,7 +222,12 @@ class LarkaMiseAJour
             'verifie_le'  => $e['verifie_le'] ?? null,
             'erreur'      => $e['erreur'] ?? null,
             'a_verifier'  => $this->actif() && (time() - (int)($e['ts'] ?? 0)) > $freq,
-            'signature_exigee' => (string)self::cfg('cle_publique', '') !== '',
+            // Toujours vraie désormais : plus de mise à jour sans signature.
+            'signature_exigee' => true,
+            'cle_editeur' => self::clePubliqueEditeur() !== null,
+            // Ancien réglage encore présent dans config.json : il est ignoré,
+            // l'écran peut le signaler pour éviter une fausse impression.
+            'cle_config_ignoree' => (string)self::cfg('cle_publique', '') !== '',
             'installable' => $this->installable($requis),
         ];
     }
@@ -202,11 +260,11 @@ class LarkaMiseAJour
         $json = json_decode($this->telecharger("https://api.github.com/repos/$depot/releases?per_page=15", null, 5_000_000), true);
         if (!is_array($json)) throw new RuntimeException('Réponse GitHub illisible.');
         $beta = strtolower((string)self::cfg('canal', strcasecmp($this->locale()['canal'], 'Stable') === 0 ? 'stable' : 'beta')) !== 'stable';
-        $best = null;
+        $cands = [];
         foreach ($json as $rel) {
             if (!empty($rel['draft']) || (!$beta && !empty($rel['prerelease']))) continue;
             if (!preg_match('/(\d+\.\d+\.\d+)/', (string)($rel['tag_name'] ?? '') . ' ' . ($rel['name'] ?? ''), $m)) continue;
-            $zip = null; $sha = null; $sig = null;
+            $zip = null; $sha = null; $urlSha = null; $urlSig = null;
             foreach ($rel['assets'] ?? [] as $a) {
                 $n = (string)($a['name'] ?? '');
                 if (str_ends_with($n, '.zip') && !$zip) {
@@ -215,16 +273,15 @@ class LarkaMiseAJour
                 }
             }
             if (!$zip) continue;
+            // .sha256 et .sig ne sont lus qu'au besoin (choisir()) : seulement pour
+            // les versions candidates, la plus récente d'abord.
             foreach ($rel['assets'] ?? [] as $a) {
                 $n = (string)($a['name'] ?? '');
-                if ($n === $zip['name'] . '.sha256' && !$sha) {
-                    if (preg_match('/\b([a-f0-9]{64})\b/i', $this->telecharger($a['browser_download_url'], null, 10_000), $d)) $sha = strtolower($d[1]);
-                } elseif ($n === $zip['name'] . '.sig') {
-                    $sig = trim($this->telecharger($a['browser_download_url'], null, 10_000));
-                }
+                if ($n === $zip['name'] . '.sha256') $urlSha = (string)($a['browser_download_url'] ?? '');
+                elseif ($n === $zip['name'] . '.sig') $urlSig = (string)($a['browser_download_url'] ?? '');
             }
             if (!$sha && preg_match('/sha-?256\s*[:=]\s*([a-f0-9]{64})/i', (string)($rel['body'] ?? ''), $d)) $sha = strtolower($d[1]);
-            $cand = [
+            $cands[] = [
                 'version'  => $m[1],
                 'canal'    => !empty($rel['prerelease']) ? 'Beta' : 'Stable',
                 'date'     => substr((string)($rel['published_at'] ?? ''), 0, 10),
@@ -232,25 +289,93 @@ class LarkaMiseAJour
                 'zip'      => (string)$zip['browser_download_url'],
                 'taille'   => (int)($zip['size'] ?? 0),
                 'sha256'   => $sha,
-                'signature'=> $sig ?: null,
+                'signature'=> null,
                 'page'     => (string)($rel['html_url'] ?? ''),
                 'php_min'  => self::phpMinDesNotes((string)($rel['body'] ?? '')),
+                '_url_sha' => $urlSha, '_url_sig' => $urlSig,
             ];
-            if (!$best || version_compare($cand['version'], $best['version'], '>')) $best = $cand;
         }
-        if (!$best) throw new RuntimeException('Aucune version publiée (avec archive .zip) sur ' . $depot . '.');
+        if (!$cands) throw new RuntimeException('Aucune version publiée (avec archive .zip) sur ' . $depot . '.');
+        $best = $this->choisir($cands, function (array $c): array {
+            if (!$c['sha256'] && $c['_url_sha']
+                && preg_match('/\b([a-f0-9]{64})\b/i', $this->telecharger($c['_url_sha'], null, 10_000), $d)) $c['sha256'] = strtolower($d[1]);
+            if ($c['_url_sig']) $c['signature'] = trim($this->telecharger($c['_url_sig'], null, 10_000)) ?: null;
+            return $c;
+        });
+        unset($best['_url_sha'], $best['_url_sig']);
         $best['libelle'] = LarkaVersion::libelle($best);
         return $best;
+    }
+
+    /**
+     * Version à proposer : la plus récente, plus récente que l'installée, dont
+     * la signature est celle de la clé de CE serveur ; à défaut, la plus récente
+     * (son installation sera refusée, avec la raison à l'écran).
+     * ⚠️ Seule la plus récente était regardée. Après une rotation de clé, un
+     * serveur qui n'avait pas installé la version de transition (signée avec
+     * l'ancienne clé) ne se voyait plus proposer que des versions signées avec
+     * la nouvelle — refusées, sans fin : il ne pouvait plus jamais se mettre à
+     * jour. La transition lui est désormais proposée d'abord.
+     * $completer lit au besoin l'empreinte et la signature d'un candidat.
+     */
+    private function choisir(array $cands, ?callable $completer = null): array
+    {
+        usort($cands, fn($a, $b) => version_compare($b['version'], $a['version']));
+        $faits = [];
+        // Sans clé ni sodium, rien ne peut être authentifié : inutile de lire
+        // les signatures de toutes les versions à chaque vérification.
+        if (self::clePubliqueEditeur() !== null && function_exists('sodium_crypto_sign_verify_detached')) {
+            $installee = (string)($this->locale()['version'] ?? '0.0.0');
+            foreach ($cands as $i => $c) {
+                if (!version_compare($c['version'], $installee, '>')) break;
+                if ($completer) {
+                    // Une version plus ancienne illisible (signature introuvable…)
+                    // n'empêche pas de proposer les autres.
+                    try { $cands[$i] = $c = $completer($c); $faits[$i] = true; }
+                    catch (\Throwable $e) { if ($i === 0) throw $e; continue; }
+                }
+                if (self::signatureAcceptee($c['sha256'] ?? null, $c['signature'] ?? null)) return $c;
+            }
+        }
+        if ($completer && empty($faits[0])) $cands[0] = $completer($cands[0]);
+        return $cands[0];
+    }
+
+    /** La signature annoncée est-elle celle de la clé de ce serveur ? (Sans rien télécharger d'autre.) */
+    private static function signatureAcceptee(?string $sha, mixed $sigB64): bool
+    {
+        if (!$sha || !is_string($sigB64) || !function_exists('sodium_crypto_sign_verify_detached')) return false;
+        $pk = self::clePubliqueEditeur();
+        $sig = base64_decode(trim($sigB64), true);
+        return $pk !== null && $sig !== false && strlen($sig) === SODIUM_CRYPTO_SIGN_BYTES
+            && sodium_crypto_sign_verify_detached($sig, $sha, $pk);
     }
 
     private function depuisManifeste(): array
     {
         $url = (string)self::cfg('url_manifeste', '');
         if (!str_starts_with($url, 'https://')) throw new RuntimeException('url_manifeste absente ou non HTTPS.');
-        $m = json_decode($this->telecharger($url, null, 1_000_000), true);
-        if (!is_array($m) || empty($m['version']) || empty($m['zip'])) throw new RuntimeException('Manifeste invalide (version et zip requis).');
-        if (!preg_match('/^\d+\.\d+\.\d+$/', (string)$m['version'])) throw new RuntimeException('Numéro de version invalide dans le manifeste.');
-        $d = [
+        $racineM = json_decode($this->telecharger($url, null, 1_000_000), true);
+        if (!is_array($racineM) || empty($racineM['version']) || empty($racineM['zip'])) throw new RuntimeException('Manifeste invalide (version et zip requis).');
+        // « anterieures » : versions précédentes encore publiées (outils/publier-version.php
+        // les y reporte) — dont la version de transition d'une rotation de clé.
+        $entrees = [$racineM];
+        foreach (array_slice(is_array($racineM['anterieures'] ?? null) ? $racineM['anterieures'] : [], 0, 20) as $a) {
+            if (is_array($a) && !empty($a['zip']) && preg_match('/^\d+\.\d+\.\d+$/', (string)($a['version'] ?? ''))) $entrees[] = $a;
+        }
+        $cands = [];
+        foreach ($entrees as $m) {
+            if (!preg_match('/^\d+\.\d+\.\d+$/', (string)$m['version'])) throw new RuntimeException('Numéro de version invalide dans le manifeste.');
+            $cands[] = $this->entreeManifeste($m);
+        }
+        $d = $this->choisir($cands);
+        $d['libelle'] = LarkaVersion::libelle($d);
+        return $d;
+    }
+
+    private function entreeManifeste(array $m): array
+    {
+        return [
             'version'  => (string)$m['version'],
             'canal'    => (string)($m['canal'] ?? 'Stable'),
             'date'     => (string)($m['date'] ?? ''),
@@ -262,8 +387,6 @@ class LarkaMiseAJour
             'page'     => (string)($m['page'] ?? ''),
             'php_min'  => preg_match('/^\d+\.\d+/', (string)($m['php_min'] ?? ''), $x) ? $x[0] : self::phpMinDesNotes((string)($m['notes'] ?? '')),
         ];
-        $d['libelle'] = LarkaVersion::libelle($d);
-        return $d;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -280,14 +403,28 @@ class LarkaMiseAJour
         }
         if (!class_exists('ZipArchive')) $raisons[] = "Extension PHP « zip » absente (" . self::commandePhp(['zip']) . ').';
         if (!function_exists('curl_init')) $raisons[] = "Extension PHP « curl » absente (" . self::commandePhp(['curl']) . ').';
+        if (!function_exists('sodium_crypto_sign_verify_detached')) {
+            $raisons[] = "Extension PHP « sodium » absente : la signature de l'éditeur ne peut pas être vérifiée.";
+        }
+        // La ligne de commande (php api/outils/mise-a-jour.php) contourne les
+        // droits d'écriture et un PHP web différent du PHP en ligne de commande ;
+        // elle ne peut rien contre une clé absente ou un disque plein : l'écran
+        // ne la suggère alors pas.
+        $cliUtile = true;
+        if (self::clePubliqueEditeur() === null) {
+            $raisons[] = "Clé publique de l'éditeur absente ou invalide (api/CleEditeur.php) : "
+                       . "aucune mise à jour ne peut être authentifiée. Installez une version publiée par l'éditeur.";
+            $cliUtile = false;
+        }
         foreach (['', '/api', '/js', '/css', '/index.html', '/version.json'] as $p) {
             $f = $this->racine . $p;
             if (file_exists($f) && !is_writable($f)) { $raisons[] = "Pas de droit d'écriture sur " . ($p ?: '/') . '.'; break; }
         }
         if (function_exists('disk_free_space') && ($l = @disk_free_space($this->racine)) !== false && $l < 300 * 1024 * 1024) {
             $raisons[] = 'Moins de 300 Mo libres sur le disque.';
+            $cliUtile = false;
         }
-        return ['ok' => !$raisons, 'raisons' => $raisons];
+        return ['ok' => !$raisons, 'raisons' => $raisons, 'ligne_de_commande' => $raisons && $cliUtile];
     }
 
     /**
@@ -343,7 +480,13 @@ class LarkaMiseAJour
             try {
                 foreach ($plan as $p) { $this->ecrireFichier($p['cible'], (string)$zip->getFromIndex($p['index'])); $ecrits++; }
             } catch (\Throwable $ex) {
-                $this->restaurer($idSauv, 'restauration automatique');
+                try {
+                    $this->retablir($idSauv);
+                } catch (\Throwable $ex2) {
+                    throw new RuntimeException("Échec pendant l'écriture ($ecrits fichier(s)) : " . $ex->getMessage()
+                        . " — ET le retour arrière automatique a échoué (" . $ex2->getMessage() . "). "
+                        . "Sur le serveur : php api/outils/mise-a-jour.php --restaurer $idSauv");
+                }
                 throw new RuntimeException("Échec pendant l'écriture ($ecrits fichier(s)) — version précédente restaurée. Détail : " . $ex->getMessage());
             }
             $zip->close();
@@ -369,15 +512,53 @@ class LarkaMiseAJour
         }
     }
 
+    /**
+     * Clé publique de l'éditeur (32 octets bruts), lue dans api/CleEditeur.php,
+     * ou null si elle est absente ou mal formée.
+     *
+     * Jamais lue dans config.json : voir l'en-tête de api/CleEditeur.php.
+     */
+    public static function clePubliqueEditeur(?string $fichier = null): ?string
+    {
+        $f = $fichier ?? __DIR__ . '/CleEditeur.php';
+        if (!is_file($f)) return null;
+        try {
+            $b64 = include $f;
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if (!is_string($b64) || trim($b64) === '') return null;
+        $pk = base64_decode(trim($b64), true);
+        // 32 octets = clé publique Ed25519. Longueur écrite en dur : sans
+        // l'extension sodium, la constante n'existe pas, et la clé passait pour
+        // absente — l'écran accusait la clé au lieu de l'extension manquante.
+        if ($pk === false || strlen($pk) !== 32) return null;
+        return $pk;
+    }
+
+    /**
+     * Vérifie la signature Ed25519 de l'empreinte SHA-256 de l'archive.
+     * Lève une exception — donc refuse l'installation — dans TOUS les cas
+     * où l'origine n'est pas prouvée : clé absente, signature absente,
+     * illisible ou fausse. Il n'existe plus de chemin « non exigée ».
+     */
     private function verifierSignature(array $d, string $sha): bool
     {
-        $cle = (string)self::cfg('cle_publique', '');
-        if ($cle === '') return false;   // non exigée
-        if (!function_exists('sodium_crypto_sign_verify_detached')) throw new RuntimeException('Extension sodium absente : signature impossible à vérifier.');
-        $sig = base64_decode((string)($d['signature'] ?? ''), true);
-        $pk = base64_decode($cle, true);
-        if (!$sig || !$pk || strlen($pk) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) throw new RuntimeException('Version non signée (ou clé publique invalide) : installation refusée.');
-        if (!sodium_crypto_sign_verify_detached($sig, $sha, $pk)) throw new RuntimeException('Signature invalide : cette archive ne vient pas de l\'éditeur. Installation refusée.');
+        if (!function_exists('sodium_crypto_sign_verify_detached')) {
+            throw new RuntimeException('Extension PHP « sodium » absente : signature impossible à vérifier. Installation refusée.');
+        }
+        $pk = self::clePubliqueEditeur();
+        if ($pk === null) {
+            throw new RuntimeException('Clé publique de l\'éditeur absente ou invalide (api/CleEditeur.php) : '
+                . 'l\'origine de la mise à jour ne peut pas être vérifiée. Installation refusée.');
+        }
+        $sig = base64_decode(trim((string)($d['signature'] ?? '')), true);
+        if ($sig === false || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES) {
+            throw new RuntimeException('Version non signée par l\'éditeur : installation refusée.');
+        }
+        if (!sodium_crypto_sign_verify_detached($sig, $sha, $pk)) {
+            throw new RuntimeException('Signature invalide : cette archive ne vient pas de l\'éditeur. Installation refusée.');
+        }
         return true;
     }
 
@@ -475,7 +656,12 @@ class LarkaMiseAJour
         $h = $this->lireJson('historique.json');
         $sauv = [];
         foreach (glob($this->dossier . '/sauvegardes/*.zip') ?: [] as $f) {
-            $sauv[] = ['id' => basename($f, '.zip'), 'taille_ko' => (int)(filesize($f) / 1024), 'le' => date('c', filemtime($f))];
+            // restaurable : depuis l'interface (cf. restaurer()).
+            $meta = null;
+            $z = new ZipArchive();
+            if ($z->open($f) === true) { $meta = json_decode((string)$z->getFromName('.larka-sauvegarde.json'), true); $z->close(); }
+            $sauv[] = ['id' => basename($f, '.zip'), 'taille_ko' => (int)(filesize($f) / 1024), 'le' => date('c', filemtime($f)),
+                       'restaurable' => $this->restaurableDepuisInterface(is_array($meta) ? $meta : null)];
         }
         usort($sauv, fn($a, $b) => strcmp($b['id'], $a['id']));
         return ['installations' => array_reverse($h['liste'] ?? []), 'sauvegardes' => $sauv];
@@ -484,14 +670,62 @@ class LarkaMiseAJour
     /**
      * Remet les fichiers sauvegardés avant une installation. Les fichiers AJOUTÉS
      * par la mise à jour sont laissés en place (rien n'est supprimé) ;
-     * version.json revient, donc la version affichée aussi.
+     * version.json revient, donc la version affichée aussi. Les fichiers de la
+     * chaîne de confiance (JAMAIS_RESTAURES) restent ceux en place.
      */
-    public function restaurer(string $id, string $parQui = '?'): array
+    public function restaurer(string $id, string $parQui = '?', bool $ligneDeCommande = false): array
     {
         if (!preg_match('/^[\w.-]+$/', $id)) throw new RuntimeException('Identifiant de sauvegarde invalide.');
         $f = $this->dossier . "/sauvegardes/$id.zip";
         $zip = new ZipArchive();
         if (!is_file($f) || $zip->open($f) !== true) throw new RuntimeException('Sauvegarde introuvable.');
+        // ⚠️ UNE SAUVEGARDE ANTÉRIEURE À LA SIGNATURE OBLIGATOIRE RAMÈNE LES FAILLES
+        // CORRIGÉES AVEC ELLE (le code de cette époque, pas seulement l'outil de
+        // mise à jour). Depuis l'interface, seules les sauvegardes dont les
+        // fichiers viennent d'une version qui exigeait déjà la signature sont
+        // restaurables (restaurableDepuisInterface) ; les autres restent
+        // possibles en ligne de commande sur le serveur, par quelqu'un qui en a
+        // de toute façon la maîtrise.
+        $meta = json_decode((string)$zip->getFromName('.larka-sauvegarde.json'), true);
+        if (!$ligneDeCommande && !$this->restaurableDepuisInterface(is_array($meta) ? $meta : null)) {
+            $zip->close();
+            throw new RuntimeException('Sauvegarde antérieure à la vérification obligatoire des signatures : '
+                . 'la restaurer depuis l\'interface réintroduirait des failles corrigées depuis. '
+                . "Si c'est vraiment nécessaire, sur le serveur : php api/outils/mise-a-jour.php --restaurer $id");
+        }
+        $n = $this->remettre($zip, true);
+        $zip->close();
+        if (function_exists('opcache_reset')) @opcache_reset();
+        $this->historiser(['ok' => true, 'restauration' => $id, 'fichiers' => $n, 'par' => $parQui, 'le' => date('c'),
+                           'vers' => $this->locale()['version']]);
+        return ['ok' => true, 'fichiers' => $n, 'version' => $this->locale()];
+    }
+
+    /**
+     * Retour arrière AUTOMATIQUE après une installation interrompue : remet
+     * l'instantané pris quelques secondes plus tôt, TEL QUEL — chaîne de
+     * confiance comprise, sans le filtre de l'interface. Ce n'est pas un choix
+     * de l'utilisateur mais le retour à l'état exact qui tournait.
+     * ⚠️ Il passait par restaurer() : refusé quand la version en place était
+     * sous la base notée (après un retour en ligne de commande), il laissait une
+     * installation à moitié écrite ; et, MiseAJour.php / CleEditeur.php n'étant
+     * jamais remis, une transition de clé interrompue laissait l'ancien code
+     * avec la nouvelle clé — la transition elle-même était alors refusée.
+     */
+    private function retablir(string $id): int
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($this->dossier . "/sauvegardes/$id.zip") !== true) throw new RuntimeException('Sauvegarde introuvable.');
+        try { $n = $this->remettre($zip, false); } finally { $zip->close(); }
+        if (function_exists('opcache_reset')) @opcache_reset();
+        $this->historiser(['ok' => true, 'restauration' => $id, 'fichiers' => $n, 'par' => 'restauration automatique',
+                           'le' => date('c'), 'vers' => $this->locale()['version']]);
+        return $n;
+    }
+
+    /** Réécrit les fichiers d'une sauvegarde ; $garderChaine : sauf JAMAIS_RESTAURES. */
+    private function remettre(ZipArchive $zip, bool $garderChaine): int
+    {
         $n = 0;
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $rel = (string)$zip->getNameIndex($i);
@@ -499,14 +733,11 @@ class LarkaMiseAJour
             if (preg_match('#(^|/)\.\.(/|$)#', $rel) || str_starts_with($rel, '/')) continue;
             $tete = explode('/', $rel)[0];
             if (in_array($tete, self::PROTEGES, true)) continue;
+            if ($garderChaine && in_array($rel, self::JAMAIS_RESTAURES, true)) continue;
             $this->ecrireFichier($this->racine . '/' . $rel, (string)$zip->getFromIndex($i));
             $n++;
         }
-        $zip->close();
-        if (function_exists('opcache_reset')) @opcache_reset();
-        $this->historiser(['ok' => true, 'restauration' => $id, 'fichiers' => $n, 'par' => $parQui, 'le' => date('c'),
-                           'vers' => $this->locale()['version']]);
-        return ['ok' => true, 'fichiers' => $n, 'version' => $this->locale()];
+        return $n;
     }
 
     private function historiser(array $e): void

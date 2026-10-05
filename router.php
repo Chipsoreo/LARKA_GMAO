@@ -144,11 +144,55 @@ if ($uri === 'oauth/google' || str_starts_with($uri, 'oauth/google')) {
 // webroot. Sans ce garde, un .php uploadé, ou un fichier interne (api/config.php,
 // api/Database.php, api/diagnostic.php…) appelé directement, s'exécuterait.
 // Miroir de la politique nginx (seuls index.php + oauth/*.php sont servis).
-if (str_ends_with(strtolower($uri), '.php')) {
+//
+// ⚠️ LE CONTRÔLE NE REGARDAIT QUE LA FIN DE L'URL.
+// « /api/Version.php » était refusé, mais « /api/Version.php/x » passait : le
+// chemin ne se termine plus par .php, et le serveur intégré résout alors le
+// segment « Version.php » et l'EXÉCUTE (le reste devient PATH_INFO). Vérifié :
+// 404 sans suffixe, 200 avec. Tout segment en « .php » — où qu'il soit — doit
+// désormais désigner exactement un point d'entrée listé, sans PATH_INFO
+// (l'application n'en utilise aucun : l'API passe par ?action=).
+if (preg_match('#\.php(/|$)#i', $uri)) {
     $allowedPhp = ['api/index.php', 'oauth/microsoft.php', 'oauth/google.php'];
     if (!in_array($uri, $allowedPhp, true)) {
         deny_request(404, 'Introuvable');
     }
+}
+
+/**
+ * CSP de la page de l'application.
+ *
+ * ⚠️ index.html ÉTAIT SERVI SANS AUCUNE CSP : la politique n'était posée que par
+ * api/index.php, sur les réponses JSON. Même valeur que le défaut de
+ * api/config.php ; une politique personnalisée (securite_http.csp) est reprise
+ * si elle existe, frame-ancestors restant forcé à 'self' comme côté API.
+ */
+function poser_csp_page(): void {
+    $csp = "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; "
+         . "script-src 'self' 'unsafe-inline' blob:; "
+         . "style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; "
+         . "connect-src 'self'; object-src 'none'; frame-ancestors 'self'";
+    $f = __DIR__ . '/config.json';
+    if (is_file($f)) {
+        $c = json_decode((string)@file_get_contents($f), true);
+        $perso = $c['securite_http']['csp'] ?? null;
+        if (is_string($perso) && trim($perso) !== '' && !preg_match('/[\r\n]/', $perso)) {
+            $csp = preg_replace("/frame-ancestors\\s+'none'/i", "frame-ancestors 'self'", $perso);
+            if (stripos($csp, 'frame-ancestors') === false) $csp = rtrim($csp, '; ') . "; frame-ancestors 'self'";
+        }
+    }
+    header('Content-Security-Policy: ' . $csp);
+    header('X-Frame-Options: SAMEORIGIN');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: no-referrer');
+}
+
+// index.html demandé explicitement : servi par le routeur (et non en fichier
+// statique brut) pour recevoir les mêmes en-têtes que la page d'accueil.
+if ($uri === 'index.html') {
+    poser_csp_page();
+    include __DIR__ . '/index.html';
+    exit;
 }
 
 // Ancien nom du logo (iOS le demande par convention) → icon.png
@@ -179,4 +223,5 @@ if (str_starts_with($uri, 'api/')) {
 }
 
 // SPA → index.html
+poser_csp_page();
 include __DIR__ . '/index.html';

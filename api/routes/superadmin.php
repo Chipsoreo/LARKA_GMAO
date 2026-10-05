@@ -24,6 +24,18 @@
 if (!function_exists('require_superadmin')) {
     function require_superadmin(): void {
         if (empty($_SESSION['superadmin']['authenticated'])) {
+            // Tentative d'appel d'une route super admin sans en avoir la
+            // session : tracé (un compte de tenant qui sonde ces routes est un
+            // signal d'alerte, jusqu'ici invisible).
+            if (class_exists('SecurityLog')) {
+                SecurityLog::audit('access_denied', [
+                    'action'    => defined('LARKA_ACTION_COURANTE') ? LARKA_ACTION_COURANTE : '',
+                    'login'     => (string)($_SESSION['user']['Login'] ?? ''),
+                    'role'      => (string)($_SESSION['user']['Role'] ?? ''),
+                    'reason'    => 'superadmin_requis',
+                    'http_code' => 403,
+                ]);
+            }
             json_error('Accès réservé au super administrateur.', 403);
         }
     }
@@ -52,6 +64,15 @@ if (!function_exists('require_primary_superadmin')) {
     function require_primary_superadmin(): void {
         require_superadmin();
         if (!superadmin_is_primary()) {
+            if (class_exists('SecurityLog')) {
+                SecurityLog::audit('access_denied', [
+                    'action'    => defined('LARKA_ACTION_COURANTE') ? LARKA_ACTION_COURANTE : '',
+                    'login'     => 'superadmin:' . ($_SESSION['superadmin']['login'] ?? '?'),
+                    'role'      => 'SuperAdmin',
+                    'reason'    => 'superadmin_principal_requis',
+                    'http_code' => 403,
+                ]);
+            }
             json_error('Seul le super administrateur principal peut ajouter ou supprimer des comptes Super Admin.', 403);
         }
     }
@@ -72,6 +93,12 @@ if ($action === 'superadmin_login' && $method === 'POST') {
 
     if (!TenantResolver::authenticateSuperAdmin($login, $password)) {
         rate_limit_noter('sa_login_' . $clientIp);
+        // ⚠️ LES ÉCHECS DE CONNEXION SUPER ADMIN N'ÉTAIENT PAS TRACÉS (seuls
+        // ceux des comptes de tenant l'étaient) — une attaque par force brute
+        // sur le compte le plus puissant passait inaperçue.
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('sa_login_failure', ['login' => $login, 'reason' => 'invalid_credentials']);
+        }
         json_error('Identifiant ou mot de passe super admin incorrect.', 401);
     }
 
@@ -84,6 +111,9 @@ if ($action === 'superadmin_login' && $method === 'POST') {
         'authenticated' => true,
         'ts' => time(),
     ];
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('sa_login_success', ['login' => $login, 'oauth_provider' => 'local']);
+    }
 
     json_ok([
         'login' => $login,
@@ -179,6 +209,9 @@ if ($action === 'superadmin_oauth_check' && $method === 'POST') {
         'provider'      => 'microsoft',
         'ts'            => time(),
     ];
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('sa_login_success', ['login' => $email, 'oauth_provider' => 'microsoft']);
+    }
 
     json_ok([
         'login'      => $email,
@@ -485,6 +518,24 @@ if ($action === 'superadmin_tenant_save' && $method === 'POST') {
         }
     }
 
+    // Garde-fous AVANT tout enregistrement (et donc avant un éventuel
+    // force_drop, qui détruirait la base désignée) — voir _sa_base_partagee().
+    if ($dbDriver === 'sqlite' && !_sa_chemin_sqlite_valide((string)$tenant['base_de_donnees']['path'])) {
+        json_error('Chemin SQLite refusé : un fichier .db, .sqlite ou .sqlite3, placé sous data/ '
+            . '(ou hors du dossier de l\'application) est attendu.');
+    }
+    $_conflitBase = _sa_base_partagee($key, $tenant['base_de_donnees'], false);
+    if ($_conflitBase !== null) {
+        json_error("Base refusée : $_conflitBase. Chaque tenant doit disposer de sa propre base.", 409);
+    }
+    // force_drop sur la base PRINCIPALE : jamais (le tenant peut la désigner,
+    // mais pas la détruire d'un clic).
+    if (!empty($body['force_drop'])
+        && _sa_identite_base($tenant['base_de_donnees'])
+           === _sa_identite_base(is_array(cfg('base_de_donnees')) ? cfg('base_de_donnees') : ['driver' => 'sqlite', 'path' => 'data/gmao.db'])) {
+        json_error('Suppression refusée : cette base est la base principale de l\'installation (config.json).', 409);
+    }
+
     $ok = TenantResolver::upsertTenant($key, $tenant);
     if (!$ok) json_error('Erreur lors de la sauvegarde du tenant.');
 
@@ -766,8 +817,11 @@ if ($action === 'superadmin_tenant_delete' && $method === 'POST') {
         if (isset($tenants[$key]) && isset($tenants[$key]['base_de_donnees'])) {
             $tenantCfgDb = $tenants[$key]['base_de_donnees'];
             // Nettoyer le registre des comptes locaux liés à ce tenant
-            // ÉTAPE A : essayer via la BDD du tenant (méthode normale)
-            try {
+            // ÉTAPE A : essayer via la BDD du tenant (méthode normale).
+            // Pas sur une base PARTAGÉE : ses comptes appartiennent aussi à un
+            // autre tenant (ou à l'installation), et les désinscrire du registre
+            // les empêcherait de se connecter. L'étape B suffit alors.
+            if (_sa_base_partagee($key, $tenantCfgDb) === null) try {
                 $tenantDb = new Database($tenantCfgDb);
                 $users = $tenantDb->getAllUtilisateurs();
                 foreach ($users as $u) {
@@ -800,6 +854,26 @@ if ($action === 'superadmin_tenant_delete' && $method === 'POST') {
     // PG/MariaDB : DROP de toutes les tables du schéma (on ne DROP pas la base
     // elle-même car ça nécessiterait des privilèges admin et la config serait
     // à refaire en cas de recréation ultérieure du tenant).
+    // Base partagée (principale, registre, autre tenant) ou chemin hors des
+    // bornes : on retire le tenant du registre mais on NE DÉTRUIT PAS la base.
+    $_baseProtegee = is_array($tenantCfgDb) ? _sa_base_partagee($key, $tenantCfgDb) : null;
+    if ($_baseProtegee === null && is_array($tenantCfgDb)
+        && ($tenantCfgDb['driver'] ?? 'sqlite') === 'sqlite'
+        && !_sa_chemin_sqlite_valide((string)($tenantCfgDb['path'] ?? ''))) {
+        $_baseProtegee = 'son chemin n\'est pas un fichier de base autorisé';
+    }
+    if ($_baseProtegee !== null) {
+        $dbSuppr['driver']  = $tenantCfgDb['driver'] ?? 'sqlite';
+        $dbSuppr['details'] = "Base CONSERVÉE : $_baseProtegee.";
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('sa_action', [
+                'target_action' => 'tenant_delete_base_conservee',
+                'target_tenant' => $key, 'reason' => $_baseProtegee,
+            ]);
+        }
+        $tenantCfgDb = null;   // court-circuite la destruction ci-dessous
+    }
+
     if (is_array($tenantCfgDb)) {
         $driverSup = $tenantCfgDb['driver'] ?? 'sqlite';
         $dbSuppr['driver'] = $driverSup;
@@ -807,6 +881,9 @@ if ($action === 'superadmin_tenant_delete' && $method === 'POST') {
             if ($driverSup === 'sqlite') {
                 $dbPath = _sa_resolve_path($tenantCfgDb['path'] ?? '');
                 if ($dbPath && is_file($dbPath)) {
+                    // Sentinelle de schéma invalidée : sinon un tenant recréé
+                    // sur ce chemin hériterait d'un drapeau « à jour ».
+                    try { (new \Database($tenantCfgDb))->invalidateSchemaSentinel(); } catch (\Throwable $_) {}
                     foreach ([$dbPath, $dbPath . '-wal', $dbPath . '-shm', $dbPath . '-journal'] as $f) {
                         if (is_file($f)) @unlink($f);
                     }
@@ -835,7 +912,9 @@ if ($action === 'superadmin_tenant_delete' && $method === 'POST') {
     if (!$ok) json_error('Erreur lors de la suppression du tenant (sa BDD a peut-être déjà été purgée).');
 
     json_ok([
-        'message'   => 'Tenant supprimé (comptes locaux retirés du registre, base de données détruite).',
+        'message'   => $_baseProtegee !== null
+            ? 'Tenant supprimé (comptes locaux retirés du registre). Base de données CONSERVÉE : ' . $_baseProtegee . '.'
+            : 'Tenant supprimé (comptes locaux retirés du registre, base de données détruite).',
         'bdd'       => $dbSuppr,
     ]);
 }
@@ -853,6 +932,17 @@ if ($action === 'superadmin_tenant_purge_db' && $method === 'POST') {
     }
     $tenantCfgDb = $tenants[$key]['base_de_donnees'];
     $driverSup = $tenantCfgDb['driver'] ?? 'sqlite';
+
+    // Purger une base partagée viderait celle de l'installation, du registre
+    // ou d'un autre client : refus net (voir _sa_base_partagee()).
+    $_partage = _sa_base_partagee($key, $tenantCfgDb);
+    if ($_partage === null && $driverSup === 'sqlite'
+        && !_sa_chemin_sqlite_valide((string)($tenantCfgDb['path'] ?? ''))) {
+        $_partage = 'son chemin n\'est pas un fichier de base autorisé';
+    }
+    if ($_partage !== null) {
+        json_error("Purge refusée : $_partage.", 409);
+    }
 
     $result = ['driver' => $driverSup, 'message' => '', 'erreurs' => [], 'comptesLocauxNettoyes' => 0];
 
@@ -876,6 +966,11 @@ if ($action === 'superadmin_tenant_purge_db' && $method === 'POST') {
             // SQLite : supprimer le fichier puis le recréer vide
             $dbPath = _sa_resolve_path($tenantCfgDb['path'] ?? '');
             if ($dbPath && is_file($dbPath)) {
+                // ⚠️ Sans invalidation, la sentinelle disait encore « schéma à
+                // jour » : la base recréée restait SANS TABLES (« no such
+                // table: Utilisateurs »), contrairement au message ci-dessous.
+                // (Database vérifie aussi désormais l'inode du fichier.)
+                try { (new \Database($tenantCfgDb))->invalidateSchemaSentinel(); } catch (\Throwable $_) {}
                 foreach ([$dbPath, $dbPath . '-wal', $dbPath . '-shm', $dbPath . '-journal'] as $f) {
                     if (is_file($f)) @unlink($f);
                 }
@@ -1106,8 +1201,19 @@ if ($action === 'superadmin_test_db' && $method === 'POST') {
     $forceDrop = (bool)($body['force_drop'] ?? false);
     try {
         if ($driver === 'sqlite') {
-            $path = $body['path'] ?? '';
-            if (!str_starts_with($path, '/')) $path = __DIR__ . '/../' . $path;
+            $pathBrut = (string)($body['path'] ?? '');
+            // ⚠️ RÉSOLU DEPUIS api/ AU LIEU DE LA RACINE : « __DIR__ . '/../' »
+            // vaut api/ ici (on est dans api/routes). Tester « data/x.db »
+            // créait api/data/x.db, et force_drop supprimait ce mauvais fichier.
+            // Même résolution et mêmes bornes que l'enregistrement du tenant.
+            if (!_sa_chemin_sqlite_valide($pathBrut)) {
+                json_error('Chemin SQLite refusé : un fichier .db, .sqlite ou .sqlite3, placé sous data/ '
+                    . '(ou hors du dossier de l\'application) est attendu.');
+            }
+            if ($forceDrop && _sa_base_partagee(trim((string)($body['key'] ?? '')), ['driver' => 'sqlite', 'path' => $pathBrut]) !== null) {
+                json_error('Suppression refusée : ce fichier est la base principale, le registre ou celle d\'un tenant existant.', 409);
+            }
+            $path = _sa_resolve_path($pathBrut);
             $dir = dirname($path);
             if (!is_dir($dir)) mkdir($dir, 0755, true);
 
@@ -1133,6 +1239,16 @@ if ($action === 'superadmin_test_db' && $method === 'POST') {
             $dbname = trim($body['dbname'] ?? '');
             $user = $body['user'] ?? '';
             $password = $body['password'] ?? '';
+
+            // DROP DATABASE sur la base principale, le registre ou celle d'un
+            // autre tenant : refusé (voir _sa_base_partagee()).
+            if ($forceDrop) {
+                $_cible = ['driver' => $driver, 'host' => $host, 'port' => $port, 'dbname' => $dbname];
+                $_motif = _sa_base_partagee(trim((string)($body['key'] ?? '')), $_cible);
+                if ($_motif !== null) {
+                    json_error("Suppression refusée : $_motif.", 409);
+                }
+            }
 
             // 1) Tester d'abord la connexion au SERVEUR (sans base spécifique)
             //    La base peut ne pas exister encore — elle sera créée à l'enregistrement.
@@ -1433,10 +1549,22 @@ if ($action === 'superadmin_emails' && $method === 'GET') {
 }
 
 if ($action === 'superadmin_emails_save' && $method === 'POST') {
-    require_superadmin();
+    // ⚠️ AJOUTER UNE ADRESSE ICI, C'EST CRÉER UN SUPER ADMIN.
+    // Toute adresse de cette liste ouvre la session super admin via la
+    // connexion Microsoft. La route n'exigeait que require_superadmin() : un
+    // compte SECONDAIRE, à qui superadmin_account_add est refusé, pouvait donc
+    // s'octroyer (ou octroyer à un tiers) un accès super admin par ce biais.
+    // Vérifié : refus sur account_add, succès sur emails_save. Même règle que
+    // la gestion des comptes : compte principal uniquement.
+    require_primary_superadmin();
     $body = get_body();
     $emails = $body['emails'] ?? [];
     if (!is_array($emails)) json_error('Liste d\'emails requise.');
+    // Adresses valides uniquement (une entrée vide ou mal formée ne doit pas
+    // pouvoir correspondre à un e-mail Microsoft vide ou tronqué).
+    $emails = array_values(array_filter(array_map(
+        static fn($e) => strtolower(trim((string)$e)), $emails),
+        static fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL) !== false));
     TenantResolver::setSuperAdminEmails($emails);
     json_ok(['message' => 'Emails super admin mis à jour.', 'emails' => TenantResolver::getSuperAdminEmails()]);
 }
@@ -1590,6 +1718,96 @@ function _sa_resolve_path(string $p): string {
     // Windows drive letter (C:\...) ou chemin absolu unix (/...)
     if (str_starts_with($p, '/') || preg_match('/^[A-Za-z]:[\\\\\/]/', $p)) return $p;
     return __DIR__ . '/../../' . $p;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  GARDE-FOUS : BASES PARTAGÉES
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ SUPPRIMER UN TENANT DÉTRUISAIT SA BASE, MÊME PARTAGÉE.
+// Aucune vérification n'empêchait un tenant de pointer sur la base principale
+// (config.json), sur le registre super admin, ou sur la base d'un autre
+// tenant — une faute de frappe dans le nom de base suffit. Reproduit : un
+// tenant SQLite déclaré sur « data/gmao.db », puis supprimé, a effacé la base
+// principale. En PostgreSQL, la purge (DROP de toutes les tables) aurait de
+// même vidé le registre (sa_tenants, sa_config…) ou les données d'un autre
+// client. Et le chemin SQLite n'était pas borné : « config.json » ou un
+// fichier système passaient tels quels jusqu'à unlink().
+
+/** Chemin normalisé (sans « . » ni « .. »), même si le fichier n'existe pas. */
+function _sa_chemin_normalise(string $p): string {
+    $p = str_replace('\\', '/', $p);
+    $r = realpath($p);
+    if ($r !== false) return $r;
+    $abs = str_starts_with($p, '/');
+    $out = [];
+    foreach (explode('/', $p) as $seg) {
+        if ($seg === '' || $seg === '.') continue;
+        if ($seg === '..') { array_pop($out); continue; }
+        $out[] = $seg;
+    }
+    return ($abs ? '/' : '') . implode('/', $out);
+}
+
+/** Identité d'une base physique : « sqlite:/chemin » ou « pilote://hôte:port/base ». */
+function _sa_identite_base(?array $c, string $cheminDefaut = 'data/gmao.db'): string {
+    if (!is_array($c)) return '';
+    $drv = strtolower((string)($c['driver'] ?? 'sqlite'));
+    if ($drv === 'sqlite') {
+        $p = (string)($c['path'] ?? '') ?: $cheminDefaut;
+        return 'sqlite:' . _sa_chemin_normalise(_sa_resolve_path($p));
+    }
+    if ($drv === 'mariadb') $drv = 'mysql';
+    $hote = strtolower(trim((string)($c['host'] ?? '127.0.0.1')));
+    if ($hote === 'localhost' || $hote === '::1' || $hote === '') $hote = '127.0.0.1';
+    $port = (int)($c['port'] ?? 0) ?: ($drv === 'pgsql' ? 5432 : 3306);
+    $base = strtolower(trim((string)($c['dbname'] ?? '')));
+    return $drv . '://' . $hote . ':' . $port . '/' . $base;
+}
+
+/**
+ * Un chemin SQLite de tenant doit désigner un fichier de base (.db, .sqlite,
+ * .sqlite3) et, s'il est DANS l'application, se trouver sous data/ — jamais
+ * sur config.json, .env ou le code. Hors de l'application (ex.
+ * /var/lib/larka/client.db), il reste permis.
+ */
+function _sa_chemin_sqlite_valide(string $p): bool {
+    $racine = _sa_chemin_normalise(__DIR__ . '/../..');
+    $data   = $racine . '/data';
+    $abs    = _sa_chemin_normalise(_sa_resolve_path($p));
+    if (!preg_match('/\.(db|sqlite3?)$/i', $abs)) return false;
+    if (str_starts_with($abs, $racine . '/')) return str_starts_with($abs, $data . '/');
+    return true;
+}
+
+/**
+ * Raison pour laquelle la base du tenant $cle ne doit PAS être détruite
+ * (purge, suppression), ou null si elle lui appartient en propre.
+ * $avecPrincipale = false : on tolère la base principale (enregistrement).
+ */
+function _sa_base_partagee(string $cle, array $cfgDb, bool $avecPrincipale = true): ?string {
+    $id = _sa_identite_base($cfgDb);
+    if ($id === '' || str_ends_with($id, '/')) return null;   // base non renseignée
+    // Sections absentes de config.json : mêmes défauts que l'application
+    // (TenantResolver::readSuperAdminDbConfig et api/config.php), sans quoi
+    // la protection disparaîtrait justement sur une installation par défaut.
+    $registre  = function_exists('cfg') ? cfg('superadmin_db')   : null;
+    $principal = function_exists('cfg') ? cfg('base_de_donnees') : null;
+    if (!is_array($registre))  $registre  = ['driver' => 'sqlite', 'path' => 'data/superadmin.db'];
+    if (!is_array($principal)) $principal = ['driver' => 'sqlite', 'path' => 'data/gmao.db'];
+    if (_sa_identite_base($registre, 'data/superadmin.db') === $id) {
+        return 'c\'est la base du registre super admin';
+    }
+    if ($avecPrincipale && _sa_identite_base($principal) === $id) {
+        return 'c\'est la base principale de l\'installation (config.json)';
+    }
+    foreach (TenantResolver::getAllTenants() as $autre => $t) {
+        if ((string)$autre === $cle) continue;
+        if (_sa_identite_base($t['base_de_donnees'] ?? null) === $id) {
+            return 'elle est aussi utilisée par le tenant « ' . ($t['nom'] ?? $autre) . ' »';
+        }
+    }
+    return null;
 }
 
 /**

@@ -95,8 +95,9 @@
     superadmin_branding: ['js/pages/superadmin.js'],
     inventaire_agent:  ['js/pages/inventaire-agent.js'],
     mobilite_carbone:  ['js/pages/mobilite.js'],
-    plans:             ['js/pages/plans.js'],
-    annuaire:          ['js/pages/annuaire.js'],
+    // pdf-fond.js : rendu des fonds de plan PDF (pdf.js embarqué), commun aux deux.
+    plans:             ['js/pages/pdf-fond.js', 'js/pages/plans.js'],
+    annuaire:          ['js/pages/pdf-fond.js', 'js/pages/annuaire.js'],
     urgences:          ['js/pages/urgences.js'],
     // Assistant IA : chargé à la demande par initApp(), uniquement si
     // l'assistant est activé pour le tenant (cf. init.js → assistant_status).
@@ -250,5 +251,7 @@
   }
 
   // ── Export API publique ──
-  window.PageLoader = { ensure, preload, preloadForRole, invalidate, PAGE_SCRIPTS };
+  // version : le ?v= courant, repris par les workers (biens-import.worker.js)
+  // pour échapper au cache « immutable » des .js comme les pages elles-mêmes.
+  window.PageLoader = { ensure, preload, preloadForRole, invalidate, PAGE_SCRIPTS, version: SCRIPT_VERSION };
 })();

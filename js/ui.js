@@ -154,16 +154,22 @@ function listFieldHtml(fieldId, items, selected, opts = {}) {
   const reqMark = isCatOblig ? ' <span class="req">*</span>' : '';
   const reqAttr = isCatOblig ? 'required' : '';
 
+  // ⚠️ AUCUNE DE CES VALEURS N'ÉTAIT ÉCHAPPÉE.
+  // `selected` est la valeur de la FICHE ouverte — pour une demande, le
+  // bâtiment saisi librement par le DEMANDEUR — et `x.Valeur` vient des listes,
+  // alimentées aussi par l'import de biens et par les modules. Vérifié : une
+  // valeur contenant un guillemet sortait de l'attribut value="…" dans la
+  // fenêtre de traitement ouverte par le gestionnaire. Tout passe par escHtml().
   if (isCatLibre) {
     // Saisie libre : input + datalist
-    const listId = fieldId + '_dl';
-    return `<input class="form-control" id="${fieldId}" list="${listId}" value="${selected||''}" ${reqAttr} placeholder="${opts.placeholder||'Choisir ou saisir…'}">
-      <datalist id="${listId}">${items.map(x => `<option value="${x.Valeur}">`).join('')}</datalist>`;
+    const listId = escHtml(fieldId + '_dl');
+    return `<input class="form-control" id="${escHtml(fieldId)}" list="${listId}" value="${escHtml(selected||'')}" ${reqAttr} placeholder="${escHtml(opts.placeholder||'Choisir ou saisir…')}">
+      <datalist id="${listId}">${items.map(x => `<option value="${escHtml(x.Valeur)}">`).join('')}</datalist>`;
   }
   // Select classique
-  const emptyOpt = !isCatOblig ? `<option value="">${opts.emptyOption||'—'}</option>` : '';
-  return `<select class="form-control" id="${fieldId}" ${reqAttr}>${emptyOpt}${items.map(x =>
-    `<option ${selected === x.Valeur ? 'selected' : ''}>${x.Valeur}</option>`
+  const emptyOpt = !isCatOblig ? `<option value="">${escHtml(opts.emptyOption||'—')}</option>` : '';
+  return `<select class="form-control" id="${escHtml(fieldId)}" ${reqAttr}>${emptyOpt}${items.map(x =>
+    `<option ${selected === x.Valeur ? 'selected' : ''}>${escHtml(x.Valeur)}</option>`
   ).join('')}</select>`;
 }
 

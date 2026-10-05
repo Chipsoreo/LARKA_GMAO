@@ -127,8 +127,9 @@ const LarkaMaj = (() => {
     }
     if (e && e.droits !== false && !attente) {
       const inst = e.installable || { ok: true, raisons: [] };
-      if (e.disponible && !inst.ok) etat += `<div style="color:#b91c1c;font-size:12.5px;margin-top:4px">Installation impossible depuis l'interface : ${esc((inst.raisons || []).join(' '))} — sur le serveur : <code>php api/outils/mise-a-jour.php --installer</code></div>`;
-      if (e.disponible && e.signature_exigee && e.distante && !e.distante.signature) etat += `<div style="color:#b91c1c;font-size:12.5px;margin-top:4px">Cette version n'est pas signée alors qu'une clé publique est configurée : son installation sera refusée.</div>`;
+      if (e.disponible && !inst.ok) etat += `<div style="color:#b91c1c;font-size:12.5px;margin-top:4px">Installation impossible depuis l'interface : ${esc((inst.raisons || []).join(' '))}${inst.ligne_de_commande ? ' — sur le serveur : <code>php api/outils/mise-a-jour.php --installer</code>' : ''}</div>`;
+      if (e.disponible && e.distante && !e.distante.signature) etat += `<div style="color:#b91c1c;font-size:12.5px;margin-top:4px">Cette version n'est pas signée par l'éditeur : son installation sera refusée.</div>`;
+      if (e.cle_config_ignoree) etat += `<div style="color:var(--gray-text,#64748b);font-size:12px;margin-top:4px">« mises_a_jour.cle_publique » (config.json) n'est plus utilisée : la clé de l'éditeur est livrée avec le code.</div>`;
     }
     const peut = !!(e && e.droits !== false);
     boutons = bouton('cfgMajVerifier', _occupe ? '⏳ Vérification…' : 'Vérifier maintenant', !(e && e.disponible), peut && !_occupe)
@@ -203,8 +204,10 @@ const LarkaMaj = (() => {
     }
     const d = e.distante;
     const inst = e.installable || { ok: false, raisons: [] };
-    const signe = d.signature ? (e.signature_exigee ? '✅ vérifiée à l\'installation' : 'présente (aucune clé publique configurée)')
-                              : (e.signature_exigee ? '❌ absente — l\'installation sera refusée' : 'non signée');
+    // La signature de l'éditeur est toujours exigée (api/CleEditeur.php).
+    const signe = e.cle_editeur === false ? '❌ clé de l\'éditeur absente de ce serveur — installation impossible'
+                : d.signature ? '✅ présente — vérifiée avant toute écriture'
+                : '❌ absente — l\'installation sera refusée';
     const o = fenetre(`
       <h3 style="margin:0 0 4px">Mise à jour ${esc(d.libelle)}</h3>
       <div style="font-size:12px;color:var(--gray-text,#64748b);margin-bottom:12px">Installée : ${esc(e.locale.libelle)}${d.date ? ' · publiée le ' + esc(d.date) : ''}${d.page ? ` · <a href="${esc(d.page)}" target="_blank" rel="noopener noreferrer">page de la version</a>` : ''}</div>
@@ -216,7 +219,7 @@ const LarkaMaj = (() => {
         <li><strong>Conservé tel quel :</strong> la base de données, les documents, plans et médias (<code>data/</code>), <code>config.json</code>, <code>.env</code> et les réglages des modules. Aucun fichier n'est supprimé.</li>
         <li>Une sauvegarde des fichiers remplacés (et de la base SQLite) est faite avant ; en cas d'erreur, la version actuelle est restaurée automatiquement.</li>
       </ul>
-      ${inst.ok ? '' : `<div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Installation impossible depuis l'interface : ${esc(inst.raisons.join(' '))}<br>Sur le serveur : <code>php api/outils/mise-a-jour.php --installer</code></div>`}
+      ${inst.ok ? '' : `<div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Installation impossible depuis l'interface : ${esc(inst.raisons.join(' '))}${inst.ligne_de_commande ? '<br>Sur le serveur : <code>php api/outils/mise-a-jour.php --installer</code>' : ''}</div>`}
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
         <input type="checkbox" id="larkaMajOk" style="margin-top:3px" ${inst.ok && d.sha256 ? '' : 'disabled'}>
         <span>J'ai lu les nouveautés et je lance l'installation de <strong>${esc(d.libelle)}</strong>. Les utilisateurs connectés devront recharger la page.</span>
@@ -260,8 +263,12 @@ const LarkaMaj = (() => {
     let h;
     try { h = await appel('maj_historique'); } catch (e) { alert(e.message); return; }
     const lignes = (h.installations || []).map(i => `<li>${esc((i.le || '').slice(0, 16).replace('T', ' '))} — ${i.restauration ? 'restauration ' + esc(i.restauration) : esc(i.de || '?') + ' → ' + esc(i.vers)} (${i.fichiers} fichiers, ${esc(i.par || '')})</li>`).join('') || '<li>Aucune installation.</li>';
+    // Sauvegarde d'avant la signature obligatoire : non restaurable d'ici (elle
+    // ramènerait des failles corrigées) — seulement en ligne de commande.
     const sauv = (h.sauvegardes || []).map(s => `<li style="display:flex;gap:8px;align-items:center;justify-content:space-between"><code style="font-size:11.5px">${esc(s.id)}</code>
-      <button class="btn btn-sm" data-id="${esc(s.id)}">Restaurer</button></li>`).join('') || '<li>Aucune sauvegarde.</li>';
+      ${s.restaurable === false
+        ? `<span style="font-size:11.5px;color:var(--gray-text,#64748b)" title="Version d'avant la signature obligatoire (ou impossible à dater). Sur le serveur : php api/outils/mise-a-jour.php --restaurer ${esc(s.id)}">restauration en ligne de commande uniquement</span>`
+        : `<button class="btn btn-sm" data-id="${esc(s.id)}">Restaurer</button>`}</li>`).join('') || '<li>Aucune sauvegarde.</li>';
     const o = fenetre(`<h3 style="margin:0 0 10px">Historique des mises à jour</h3>
       <ul style="font-size:13px;line-height:1.7;padding-left:18px">${lignes}</ul>
       <div style="font-weight:600;margin:12px 0 4px">Sauvegardes (retour à la version d'avant)</div>

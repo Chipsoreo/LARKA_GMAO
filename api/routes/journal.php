@@ -148,6 +148,17 @@ if ($action === 'journal_export' && $method === 'GET') {
     } catch (\Throwable $e) { $rows = []; }
 
     Journal::info('journal', 'Export CSV du journal', ['action' => 'EXPORT', 'lignes' => count($rows)]);
+    // L'export emporte IP, identifiants et détail des modifications : on en
+    // garde une trace indélébile, comme pour la purge.
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('journal_export', [
+            'login'  => (string)($user['Login'] ?? ''),
+            'role'   => (string)($user['Role'] ?? ''),
+            'tenant' => (string)($_SESSION['tenant_key'] ?? $_SESSION['forced_tenant'] ?? 'default'),
+            'count'  => count($rows),
+            'action' => 'journal_export',
+        ]);
+    }
 
     if (ob_get_level()) ob_clean();
     header('Content-Type: text/csv; charset=utf-8');
@@ -162,11 +173,42 @@ if ($action === 'journal_export' && $method === 'GET') {
 
 // ── Purge manuelle ───────────────────────────────────────────────────────────
 if ($action === 'journal_purge' && $method === 'POST') {
-    $user = require_auth();
-    require_role($user, ['Admin']);
+    /**
+     * ⚠️ L'ADMINISTRÉ POUVAIT EFFACER SA PROPRE TRACE.
+     *
+     * require_role(['Admin']) laisse passer le Gestionnaire (require_role traite
+     * les deux comme administrateurs). Reproduit : un gestionnaire de tenant
+     * purgeait tout le journal en un appel ({"jours":0}) — il ne restait que la
+     * ligne « purge ». Or ce journal sert précisément à contrôler ce que font
+     * les gestionnaires.
+     *
+     * Règle désormais (même logique que les mises à jour, routes/majs.php) :
+     *   • multi-tenant : purge réservée au Super Administrateur ;
+     *   • mono-tenant  : Admin/Gestionnaire (il n'existe pas d'autorité
+     *     au-dessus), mais jamais d'effacement des 30 derniers jours ;
+     *   • dans tous les cas, la purge est inscrite dans data/security/audit.log,
+     *     qu'aucune route ne peut effacer : même une purge légitime reste
+     *     vérifiable après coup.
+     */
+    $estSA = !empty($_SESSION['superadmin']['authenticated']);
+    $multi = class_exists('TenantResolver', false) && TenantResolver::isMultiTenant();
+    if ($estSA) {
+        $user = ['Login' => 'superadmin:' . ($_SESSION['superadmin']['login'] ?? '?'), 'Role' => 'SuperAdmin', 'Id' => 0];
+    } else {
+        $user = require_auth();
+        require_role($user, ['Admin']);
+        if ($multi) {
+            refuser_acces($user, 'journal_purge_reserve_superadmin',
+                'En multi-tenant, la purge du journal est réservée au Super Administrateur.');
+        }
+    }
 
     $b     = get_body();
     $jours = max(0, (int)($b['jours'] ?? 30));
+    // Rétention minimale hors super admin : le journal récent ne s'efface pas.
+    if (!$estSA && $jours < 30) {
+        json_error('Rétention minimale : les entrées de moins de 30 jours ne peuvent pas être purgées.', 400);
+    }
 
     try {
         if ($jours === 0) {
@@ -180,12 +222,25 @@ if ($action === 'journal_purge' && $method === 'POST') {
             $db->execute("DELETE FROM Journal WHERE DateHeure < :l", ['l' => $limite]);
         }
     } catch (\Throwable $e) {
-        json_error('Purge impossible : ' . $e->getMessage(), 500);
+        // Détail technique en journal serveur seulement, jamais au client.
+        Journal::erreur('journal', 'Purge du journal impossible', ['exception' => $e]);
+        json_error('Purge impossible. Consultez les journaux serveur (référence : ' . Journal::requestId() . ').', 500);
     }
 
     Journal::warning('journal', "Purge manuelle du journal : $n entrée(s) supprimée(s)", [
         'action' => 'PURGE', 'jours' => $jours, 'supprimees' => (int)$n,
     ]);
+    // Trace hors de la table purgée : le fichier JSONL de sécurité n'est
+    // effaçable par aucune route de l'application.
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('journal_purge', [
+            'login'  => (string)($user['Login'] ?? ''),
+            'role'   => (string)($user['Role'] ?? ''),
+            'tenant' => (string)($_SESSION['tenant_key'] ?? $_SESSION['forced_tenant'] ?? 'default'),
+            'reason' => 'jours=' . $jours . ';supprimees=' . (int)$n,
+            'action' => 'journal_purge',
+        ]);
+    }
     json_ok(['supprimees' => (int)$n]);
 }
 

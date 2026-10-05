@@ -15,7 +15,8 @@
 
 // ── Interventions ─────────────────────────────────────────────────────────────
 if ($action === 'interv_autonumero' && $method === 'GET') {
-    require_auth();
+    // Seuls ceux qui créent des interventions ont besoin du prochain numéro.
+    $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
     json_ok(['numero' => $db->generateInterventionNumero()]);
 }
 
@@ -32,8 +33,17 @@ if ($action === 'realiser_prevue' && $method === 'POST') {
     json_ok('OK');
 }
 
+// ⚠️ CES ROUTES DE LECTURE N'ÉTAIENT GARDÉES QUE PAR require_auth().
+// La route « interventions » exige require_lecture(… 'interventions' …), mais
+// « interventions_prevues », « interventions_archivees » et
+// « facture_interventions » renvoyaient les MÊMES fiches (i.* : montants,
+// prestataire, nom/téléphone/e-mail de l'agent, commentaires internes) à
+// n'importe quel compte connecté — demandeur compris. Reproduit sur une
+// instance de test : 403 sur « interventions », 200 avec toutes les données
+// sur les trois autres. Même garde que la route principale désormais.
 if ($action === 'interventions_prevues' && $method === 'GET') {
-    require_auth();
+    $user = require_auth();
+    require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'interventions', $db);
     json_ok($db->getInterventionsPrevues());
 }
 
@@ -232,7 +242,8 @@ if ($action === 'archiver_intervention' && $method === 'POST') {
 }
 
 if ($action === 'interventions_archivees' && $method === 'GET') {
-    require_auth();
+    $user = require_auth();
+    require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'interventions', $db);
     json_ok($db->getInterventionsArchivees());
 }
 
@@ -307,7 +318,7 @@ if ($action === 'interv_devis') {
 // interventions. Le rattachement se pilote depuis la fiche intervention via
 // l'action interv_factures (cf. plus bas).
 if ($action === 'facture_autonumero' && $method === 'GET') {
-    require_auth();
+    $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
     json_ok(['numero' => $db->generateFactureNumero()]);
 }
 
@@ -321,7 +332,9 @@ if ($action === 'factures') {
 
 // Interventions rattachées à une facture (vue détail / regroupement)
 if ($action === 'facture_interventions' && $method === 'GET') {
-    require_auth();
+    // Même périmètre que la route « factures » (identifiant séquentiel :
+    // sans garde, toutes les factures étaient énumérables).
+    $user = require_auth(); require_role($user, ['Admin','Gestionnaire','Visionneur']);
     $factureId = isset($_GET['facture_id']) ? (int)$_GET['facture_id'] : 0;
     json_ok($db->getInterventionsForFacture($factureId));
 }

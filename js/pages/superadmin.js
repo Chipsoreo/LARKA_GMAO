@@ -691,7 +691,9 @@ async function saTestDb() {
   resultEl.style.color = 'var(--gray-text)';
 
   const driver = document.getElementById('sa_db_driver').value;
-  const payload = { driver, force_drop: forceDrop };
+  // La clé du tenant édité permet au serveur de reconnaître SA propre base
+  // (une suppression y reste permise) et de refuser celle d'un autre tenant.
+  const payload = { driver, force_drop: forceDrop, key: (document.getElementById('sa_key')?.value || '').trim() };
   if (driver === 'sqlite') {
     payload.path = document.getElementById('sa_db_path').value.trim();
   } else {

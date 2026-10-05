@@ -275,21 +275,97 @@ function _biGetFields() {
   return merged;
 }
 
-// ══════════════ Charger SheetJS dynamiquement ══════════════
-function _biLoadSheetJS() {
-  if (window.XLSX) return Promise.resolve();
+// ══════════════ Lecture du classeur (Web Worker isolé) ══════════════
+// ⚠️ SheetJS ÉTAIT CHARGÉ DEPUIS cdnjs (0.18.5) ET EXÉCUTÉ DANS LA PAGE.
+// Cette version a deux failles à la lecture d'un fichier piégé (pollution de
+// prototype CVE-2023-30533, ReDoS CVE-2024-22363) ; or l'import sert justement
+// à ouvrir des fichiers venus d'ailleurs (inventaires de prestataires…). Un
+// prototype pollué dans la page touchait tout le code de l'application, avec
+// la session du gestionnaire ; une expression régulière sans fin gelait
+// l'onglet. La lecture se fait désormais dans un worker jetable
+// (biens-import.worker.js, qui explique le détail), avec la bibliothèque
+// servie par Larka (js/vendor/xlsx/) : plus de dépendance à un CDN tiers.
+const _BI_LECTURE_DELAI_MS = 60000;
+
+// La lecture ne bloque plus l'onglet : l'assistant reste utilisable pendant
+// qu'elle tourne. Sans ce jeton, choisir un fichier A (lent) puis B (rapide)
+// laissait A arriver en dernier et remplacer B — colonnes et correspondances
+// comprises. Toute nouvelle sélection, et toute réouverture de l'assistant,
+// invalide la lecture en cours et arrête son worker.
+let _biJetonLecture = 0;
+let _biLecture = null;   // { annuler } du worker en cours
+
+function _biArreterLecteur() {
+  const l = _biLecture; _biLecture = null;
+  if (l) l.annuler();
+}
+function _biAnnulerLecture() { _biJetonLecture++; _biArreterLecteur(); }
+
+function _biUrlLecteur() {
+  const v = (window.PageLoader && window.PageLoader.version) || '1';
+  return 'js/pages/biens-import.worker.js?v=' + encodeURIComponent(v);
+}
+
+// Lit le fichier hors de la page. Résout { SheetNames, feuilles: Map(nom → lignes) }.
+// nomFichier : son extension décide de la lecture (CSV : texte brut, cf. le worker).
+function _biLireClasseur(buf, delaiMs = _BI_LECTURE_DELAI_MS, nomFichier = '') {
+  _biArreterLecteur();   // un seul worker à la fois
   return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Impossible de charger SheetJS depuis le CDN.'));
-    document.head.appendChild(s);
+    let w;
+    try { w = new Worker(_biUrlLecteur()); }
+    catch (e) { reject(new Error('lecteur Excel indisponible (' + e.message + ')')); return; }
+    let fini = false, minuterie = null;
+    const lecture = {};
+    const terminer = () => {
+      fini = true; clearTimeout(minuterie); w.terminate();
+      if (_biLecture === lecture) _biLecture = null;
+    };
+    lecture.annuler = () => {
+      if (fini) return;
+      terminer();
+      const err = new Error('lecture annulée'); err.annulee = true; reject(err);
+    };
+    _biLecture = lecture;
+    minuterie = setTimeout(() => {
+      if (fini) return;
+      terminer();
+      reject(new Error('lecture interrompue au bout de ' + Math.round(delaiMs / 1000) + ' s : fichier trop lourd ou mal formé.'));
+    }, delaiMs);
+    w.onmessage = (e) => {
+      if (fini) return;
+      terminer();
+      try { resolve(_biValiderClasseur(e.data)); } catch (err) { reject(err); }
+    };
+    w.onerror = (e) => {
+      if (fini) return;
+      if (e && e.preventDefault) e.preventDefault();
+      terminer();
+      reject(new Error('lecture impossible (' + ((e && e.message) || 'erreur du lecteur Excel') + ')'));
+    };
+    try { w.postMessage({ buf, nom: String(nomFichier || '') }, [buf]); }
+    catch (e) { terminer(); reject(new Error('lecture impossible (' + e.message + ')')); }
   });
+}
+
+// N'accepte du worker que des noms de feuilles et des cellules en chaînes ;
+// toute autre forme est rejetée, toute cellule non textuelle devient ''.
+function _biValiderClasseur(d) {
+  if (!d || d.ok !== true) throw new Error((d && typeof d.message === 'string' && d.message) || 'lecture impossible');
+  if (!Array.isArray(d.feuilles)) throw new Error('réponse du lecteur Excel invalide');
+  const SheetNames = [], feuilles = new Map();
+  for (const f of d.feuilles) {
+    if (!Array.isArray(f) || typeof f[0] !== 'string' || !Array.isArray(f[1])) throw new Error('réponse du lecteur Excel invalide');
+    if (feuilles.has(f[0])) continue;
+    SheetNames.push(f[0]);
+    feuilles.set(f[0], f[1].map((l) => (Array.isArray(l) ? l.map((c) => (typeof c === 'string' ? c : '')) : [])));
+  }
+  return { SheetNames, feuilles };
 }
 
 // ══════════════ ENTRÉE PRINCIPALE ══════════════
 async function openImportBiens() {
   if (!canEdit()) { toast('Réservé aux Gestionnaires.', 'error'); return; }
+  _biAnnulerLecture();
   Object.assign(_BIENS_IMPORT, {
     target: 'auto',
     workbook: null, sheetNames: [], selectedSheet: null,
@@ -468,12 +544,23 @@ function _biRenderPreview() {
 async function _biFileSelected(evt) {
   const file = evt.target.files[0];
   if (!file) return;
-  const info = document.getElementById('biFileInfo');
-  info.textContent = '⏳ Lecture en cours...';
+  _biAnnulerLecture();                 // la sélection la plus récente l'emporte
+  const jeton = _biJetonLecture;
+  // L'ancien fichier est oublié tout de suite, et l'assistant revient à
+  // l'étape 2 : sinon « Suivant » restait actif sur l'ancien fichier pendant
+  // la lecture du nouveau, qui remplaçait ensuite lignes et correspondances
+  // sous les yeux de l'utilisateur (étape 3), ou bloquait l'aperçu (étape 4).
+  Object.assign(_BIENS_IMPORT, { workbook: null, sheetNames: [], selectedSheet: null,
+    rawRows: [], headerRowIdx: 0, headers: [], mapping: {}, step: 2 });
+  _biRender();
+  // #biFileInfo est recréé à chaque rendu : on le relit au moment d'écrire.
+  const afficher = (html) => { const el = document.getElementById('biFileInfo'); if (el) el.innerHTML = html; };
+  afficher('⏳ Lecture en cours...');
   try {
-    await _biLoadSheetJS();
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    if (jeton !== _biJetonLecture) return;
+    const wb = await _biLireClasseur(buf, undefined, file.name);
+    if (jeton !== _biJetonLecture) return;   // fichier remplacé ou assistant rouvert entre-temps
     _BIENS_IMPORT.workbook = wb;
     _BIENS_IMPORT.sheetNames = wb.SheetNames;
     let bestSheet = wb.SheetNames[0];
@@ -485,17 +572,19 @@ async function _biFileSelected(evt) {
                   - (s.toLowerCase().includes('instruction') || s.toLowerCase().includes('mapping') || s.toLowerCase().includes('récap') ? 80 : 0);
       if (score > bestScore) { bestScore = score; bestSheet = s; }
     });
-    info.innerHTML = '<span style="color:#16a34a">✅ '+_esc(file.name)+' chargé ('+wb.SheetNames.length+' feuille'+(wb.SheetNames.length>1?'s':'')+')</span>';
+    afficher('<span style="color:#16a34a">✅ '+_esc(file.name)+' chargé ('+wb.SheetNames.length+' feuille'+(wb.SheetNames.length>1?'s':'')+')</span>');
     _biSheetSelected(bestSheet);
   } catch(e) {
-    info.innerHTML = '<span style="color:#e74c3c">❌ Erreur : '+_esc(e.message)+'</span>';
+    if ((e && e.annulee) || jeton !== _biJetonLecture) return;   // remplacée par une lecture plus récente
+    afficher('<span style="color:#e74c3c">❌ Erreur : '+_esc(e.message)+'</span>');
   }
 }
 
 function _biSheetSelected(name) {
   _BIENS_IMPORT.selectedSheet = name;
-  const ws = _BIENS_IMPORT.workbook.Sheets[name];
-  const arr = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' });
+  // Lignes déjà converties par le lecteur isolé (mêmes options sheet_to_json
+  // qu'avant) ; copiées pour que chaque sélection reparte du fichier d'origine.
+  const arr = (_BIENS_IMPORT.workbook.feuilles.get(name) || []).map(r => r.slice());
   _BIENS_IMPORT.rawRows = arr.filter(r => r.some(c => c !== '' && c != null));
   let bestHeaderRow = 0;
   for (let i = 0; i < Math.min(5, _BIENS_IMPORT.rawRows.length); i++) {
@@ -1350,6 +1439,7 @@ function _biParseNumber(s) {
 // ══════════════ Wrapper pour démarrer l'import directement en mode Équipements ══════════════
 function openImportEquipements() {
   if (!canEdit()) { toast('Réservé aux Gestionnaires.', 'error'); return; }
+  _biAnnulerLecture();
   Object.assign(_BIENS_IMPORT, {
     target: 'equipements',
     workbook: null, sheetNames: [], selectedSheet: null,
