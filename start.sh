@@ -1456,7 +1456,7 @@ cmd_epreuves() {
     # « mise-a-jour » enfin : seules les versions signées par l'éditeur doivent
     # s'installer, et aucun retour arrière ne doit défaire cette règle.
     # Installation jetable, aucun réseau, quelques dizaines de millisecondes.
-    for nom in invariants expressions conditions layout reference acces-coeur mise-a-jour; do
+    for nom in invariants expressions conditions layout reference acces-coeur mise-a-jour csp; do
         local f="outils/epreuves/test-${nom}.php"
         [[ -f "$f" ]] || continue
         local sortie

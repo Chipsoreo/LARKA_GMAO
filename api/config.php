@@ -435,10 +435,9 @@ define('CORS_CREDENTIALS',  (bool)(cfg('cors', 'allow_credentials') ?? false));
 // NB : 'unsafe-inline' est conservé sur script-src car l'app repose sur de
 // nombreux gestionnaires inline ; son retrait nécessite une migration vers des
 // nonces (voir rapport).
-$__csp = cfg('securite_http', 'csp') ?? "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'";
-$__csp = preg_replace("/frame-ancestors\\s+'none'/i", "frame-ancestors 'self'", $__csp);
-if (stripos($__csp, 'frame-ancestors') === false) { $__csp = rtrim($__csp, '; ') . "; frame-ancestors 'self'"; }
-define('SEC_CSP', $__csp);
+// Défaut et garde-fou (CSP personnalisée qui casserait l'interface) : api/Csp.php.
+require_once __DIR__ . '/Csp.php';
+define('SEC_CSP', LarkaCsp::effective(cfg('securite_http', 'csp')));
 define('SEC_HSTS',             (bool)(cfg('securite_http', 'hsts')          ?? false));
 define('SEC_HSTS_MAX_AGE',     (int)(cfg('securite_http', 'hsts_max_age')   ?? 31536000));
 $__xf = cfg('securite_http', 'x_frame_options') ?? 'SAMEORIGIN';

@@ -1483,8 +1483,10 @@ function _renderTabServeur(cfg) {
       ${sectionTitle('🛡️','En-têtes de sécurité HTTP')}
       <div class="srv-grid-1">
         ${field('sh_csp','Content-Security-Policy', sh.csp,
-          'Limite les sources autorisées pour scripts, styles, images, etc. Aide à prévenir le XSS.',
-          "default-src 'self'; img-src 'self' data:; object-src 'none'")}
+          'Limite les sources autorisées pour scripts, styles, images, etc. Aide à prévenir le XSS. '
+          + '<strong>Laisser vide</strong> pour la CSP par défaut, stricte et tenue à jour avec l\'application. '
+          + 'Une CSP qui interdirait les scripts ou styles <code>\'unsafe-inline\'</code> est refusée : elle rendrait l\'interface inutilisable.',
+          '', { placeholder: 'Vide = CSP par défaut (recommandé)' })}
       </div>
       <div class="srv-grid" style="margin-top:14px">
         ${toggle('sh_hsts','HSTS activé', sh.hsts,
@@ -2394,7 +2396,9 @@ async function _sauvegarderServeur() {
   p('cors','allow_credentials','cors_creds',false);
 
   // Sécurité HTTP
-  p('securite_http','csp',                    'sh_csp',     "default-src 'self'");
+  // Vide → null : le serveur retire la clé et la CSP par défaut s'applique.
+  // (Le repli « default-src 'self' » cassait toute l'interface, cf. api/Csp.php.)
+  p('securite_http','csp',                    'sh_csp',     null);
   p('securite_http','hsts',                   'sh_hsts',    false);
   p('securite_http','hsts_max_age',           'sh_hsts_age',31536000);
   p('securite_http','x_frame_options',        'sh_xframe',  'DENY');

@@ -168,20 +168,16 @@ if (preg_match('#\.php(/|$)#i', $uri)) {
  * si elle existe, frame-ancestors restant forcé à 'self' comme côté API.
  */
 function poser_csp_page(): void {
-    $csp = "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; "
-         . "script-src 'self' 'unsafe-inline' blob:; "
-         . "style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; "
-         . "connect-src 'self'; object-src 'none'; frame-ancestors 'self'";
+    // Même règle que l'API (api/Csp.php) : une CSP personnalisée qui
+    // bloquerait les scripts ou styles inline de l'interface est ignorée.
+    require_once __DIR__ . '/api/Csp.php';
+    $perso = null;
     $f = __DIR__ . '/config.json';
     if (is_file($f)) {
         $c = json_decode((string)@file_get_contents($f), true);
         $perso = $c['securite_http']['csp'] ?? null;
-        if (is_string($perso) && trim($perso) !== '' && !preg_match('/[\r\n]/', $perso)) {
-            $csp = preg_replace("/frame-ancestors\\s+'none'/i", "frame-ancestors 'self'", $perso);
-            if (stripos($csp, 'frame-ancestors') === false) $csp = rtrim($csp, '; ') . "; frame-ancestors 'self'";
-        }
     }
-    header('Content-Security-Policy: ' . $csp);
+    header('Content-Security-Policy: ' . LarkaCsp::effective($perso));
     header('X-Frame-Options: SAMEORIGIN');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: no-referrer');

@@ -512,6 +512,24 @@ if ($action === 'config_serveur') {
             // Ne pas écraser les secrets masqués (uniquement pour les scalaires)
             if (!is_array($valeur) && str_contains((string)$valeur, '••••')) continue;
 
+            // CSP : champ vide = CSP par défaut du code (la clé est retirée) ; une
+            // CSP qui bloquerait l'interface n'est pas enregistrée (cf. api/Csp.php).
+            // ⚠️ L'écran envoyait « default-src 'self' » quand le champ était vide :
+            // enregistrer n'importe quel réglage cassait toute l'interface.
+            if ($section === 'securite_http' && $cle === 'csp') {
+                $csp = is_string($valeur) ? trim($valeur) : '';
+                if ($csp === '' || $csp === "default-src 'self'") {
+                    unset($current['securite_http']['csp']);
+                    continue;
+                }
+                require_once __DIR__ . '/../Csp.php';
+                if (($raison = LarkaCsp::raisonRefus($csp)) !== null || preg_match('/[\r\n]/', $csp)) {
+                    $warnings[] = "⚠️  Content-Security-Policy non enregistrée : " . ($raison ?? 'retour à la ligne interdit')
+                                . ". La CSP par défaut reste appliquée.";
+                    continue;
+                }
+            }
+
             // ── Champ SENSIBLE → routé vers le fichier .env, jamais config.json ──
             $envName = isset($item['sous_section']) ? null : EnvFile::envNameFor($section, $cle);
             if ($envName !== null) {
