@@ -228,7 +228,7 @@ if ($action === 'auth_config' && $method === 'GET') {
     json_ok([
         'microsoft' => MICROSOFT_ENABLED && MICROSOFT_CLIENT_ID !== '',
         'google'    => GOOGLE_ENABLED    && GOOGLE_CLIENT_ID    !== '',
-        // Affichée sous le formulaire de connexion (« V2.2.0 »).
+        // Affichée sous le formulaire de connexion (« V2.1.0 »).
         'version'   => LarkaVersion::libelle(),
         // Démonstration posée : identifiant et mot de passe à l'écran.
         'demo'      => auth_acces_demo(),

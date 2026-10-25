@@ -477,7 +477,7 @@ class TenantResolver {
      * Nom de base ou de rôle cité tel quel dans une instruction SQL
      * (CREATE / DROP DATABASE n'acceptent pas de paramètre lié).
      *
-     * Avant 2.2.0, le nom était « assaini » (tout caractère hors [A-Za-z0-9_]
+     * Avant 2.1.0, le nom était « assaini » (tout caractère hors [A-Za-z0-9_]
      * devenait « _ ») : la base « mairie-nord » était créée sous le nom
      * « mairie_nord », puis Larka cherchait « mairie-nord » — tenant en
      * erreur. Le nom est désormais cité exactement, guillemets doublés.

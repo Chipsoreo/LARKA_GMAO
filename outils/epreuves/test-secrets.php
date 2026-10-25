@@ -12,7 +12,7 @@
  *
  *   1. Dépôt : .env, config.json, config.key, clés et bases ignorés par git.
  *   2. Registre Super Admin : mots de passe des bases de tenants chiffrés au
- *      repos (config.key), y compris ceux d'avant 2.2.0 (migration).
+ *      repos (config.key), y compris ceux d'avant 2.1.0 (migration).
  *   3. Journaux : pas de chaîne de requête (jetons OAuth) dans le journal du
  *      serveur intégré ni dans celui de Nginx.
  *   4. Écran et terminal : l'installation n'affiche plus le mot de passe de la
@@ -79,7 +79,7 @@ TenantResolver::upsertTenant('alpha', ['nom' => 'Alpha', 'actif' => true, 'domai
 $pdo = new PDO('sqlite:data/superadmin.db');
 $brut = $pdo->query("SELECT db_password FROM sa_tenants WHERE cle='alpha'")->fetchColumn();
 $lu = TenantResolver::getTenant('alpha')['base_de_donnees']['password'];
-// Une installation d'avant 2.2.0 : mot de passe en clair, migration pas encore faite.
+// Une installation d'avant 2.1.0 : mot de passe en clair, migration pas encore faite.
 $pdo->exec("UPDATE sa_tenants SET db_password='marqueur-ancien' WHERE cle='alpha'");
 $pdo->exec("DELETE FROM sa_config WHERE cle='mdp_tenants_chiffres'");
 echo json_encode(['brut' => $brut, 'lu' => $lu]), "\n";
@@ -94,7 +94,7 @@ PHP;
         . "\$brut = (new PDO('sqlite:data/superadmin.db'))->query(\"SELECT db_password FROM sa_tenants WHERE cle='alpha'\")->fetchColumn();\n"
         . "echo json_encode(['brut' => \$brut, 'lu' => \$lu]);\n");
     $r2 = json_decode((string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg("$t/b.php") . ' ' . escapeshellarg($t) . ' 2>&1'), true);
-    verif(is_array($r2) && str_starts_with((string)$r2['brut'], 'enc:v1:') && $r2['lu'] === 'marqueur-ancien', 'mot de passe d\'avant 2.2.0 : chiffré à la première ouverture');
+    verif(is_array($r2) && str_starts_with((string)$r2['brut'], 'enc:v1:') && $r2['lu'] === 'marqueur-ancien', 'mot de passe d\'avant 2.1.0 : chiffré à la première ouverture');
     verif(is_file("$t/config.key") && (fileperms("$t/config.key") & 0077) === 0, 'config.key : hors de data/, lisible du seul serveur (600)');
     shell_exec('rm -rf ' . escapeshellarg($t));
 }

@@ -1,7 +1,7 @@
 {
-    "version": "2.2.0",
+    "version": "2.1.0",
     "canal": "Stable",
-    "date": "2026-10-24",
+    "date": "2026-10-25",
     "php_min": "8.1",
     "prerequis": {
         "_": "Exigences de CETTE version, vérifiées avant installation, démarrage et mise à jour (api/Prerequis.php).",

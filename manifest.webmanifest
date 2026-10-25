@@ -2,7 +2,7 @@
   "name": "LARKA",
   "short_name": "Larka",
   "description": "Gestion de Maintenance Assistée par Ordinateur",
-  "version": "2.2.0",
+  "version": "2.1.0",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -6,7 +6,7 @@
 Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans build, installable en PWA.
 **Extensible par des modules qui ne contiennent aucun code.**
 
-[![Version](https://img.shields.io/badge/version-2.2.0%20(stable)-0a1628.svg)](Documentations/)
+[![Version](https://img.shields.io/badge/version-2.1.0%20(stable)-0a1628.svg)](Documentations/)
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir%20le%20projet-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chipsoreo)
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
@@ -59,7 +59,7 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-**Version 2.2.0 (V2.2.0) — première version stable.** Larka s'installe sur un serveur Linux comme sur un poste
+**Version 2.1.0 (V2.1.0) — première version stable.** Larka s'installe sur un serveur Linux comme sur un poste
 Windows (d'un double-clic), avec une démonstration complète ; sauvegardes automatiques, politique de protection
 des données personnalisable par organisation, prérequis vérifiés avant toute installation ou mise à jour, aide
 intégrée propre à chaque rôle, interface en français et en anglais. Les nouveautés de chaque version sont
@@ -68,12 +68,12 @@ de Larka les affiche aussi.
 
 | Élément | Valeur | Où |
 |---|---|---|
-| Version applicative | `2.2.0` | `version.json` — source unique, lue par `api/Version.php` |
-| Libellé affiché | `V2.2.0` (une préversion : `V.Beta x.y.z`) | `LARKA_VERSION_LABEL`, bas de la page de connexion |
-| Service Worker | `2.2.0` | `SW_VERSION` (`sw.js`) |
-| Manifeste PWA | `2.2.0` | `manifest.webmanifest` |
+| Version applicative | `2.1.0` | `version.json` — source unique, lue par `api/Version.php` |
+| Libellé affiché | `V2.1.0` (une préversion : `V.Beta x.y.z`) | `LARKA_VERSION_LABEL`, bas de la page de connexion |
+| Service Worker | `2.1.0` | `SW_VERSION` (`sw.js`) |
+| Manifeste PWA | `2.1.0` | `manifest.webmanifest` |
 | Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.3`) |
-| Documentation | manuels v2.2 · DAT 2.2 | `Documentations/` ; l'écran **Aide** de l'application en reprend l'essentiel pour chaque rôle |
+| Documentation | manuels v2.1 · DAT 2.1 | `Documentations/` ; l'écran **Aide** de l'application en reprend l'essentiel pour chaque rôle |
 
 > Le paramètre `?v=` d'`index.html` n'est **pas** un numéro de version : c'est un
 > horodatage de cache navigateur, régénéré automatiquement à chaque déploiement
@@ -642,7 +642,7 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ## ⬆️ Mises à jour
 
-La version installée est dans `version.json` (affichée sur la page de connexion : « V2.2.0 »).
+La version installée est dans `version.json` (affichée sur la page de connexion : « V2.1.0 »).
 
 **Détection automatique, installation validée.** Larka vérifie la source des versions (GitHub Releases de
 `mises_a_jour.depot`, ou un manifeste `latest.json`) au plus toutes les 12 h. Quand une version plus récente existe,
@@ -682,8 +682,8 @@ php outils/publier-version.php --generer-cles
 php outils/publier-version.php --ecrire-cle-publique --cle ~/.larka-publication.key
 # Éditeur — à chaque version : version.json, ?v=, zip, .sha256, .sig, latest.json
 # (canal : celui de version.json, sauf --canal Beta pour une préversion — alors gh … --prerelease)
-php outils/publier-version.php --version 2.2.1 --notes notes.md
-gh release create v2.2.1 dist/LARKA_GMAO-2.2.1.zip dist/LARKA_GMAO-2.2.1.zip.sha256 dist/LARKA_GMAO-2.2.1.zip.sig --notes-file notes.md
+php outils/publier-version.php --version 2.1.1 --notes notes.md
+gh release create v2.1.1 dist/LARKA_GMAO-2.1.1.zip dist/LARKA_GMAO-2.1.1.zip.sha256 dist/LARKA_GMAO-2.1.1.zip.sig --notes-file notes.md
 
 # Serveur — sans interface (ou si les fichiers ne sont pas inscriptibles par PHP)
 sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --verifier
@@ -742,7 +742,7 @@ Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 larka/
 ├── index.html              Coquille SPA / PWA (porte le ?v= des assets)
 ├── manifest.webmanifest    Métadonnées PWA
-├── sw.js                   Service Worker (push) — v2.2.0
+├── sw.js                   Service Worker (push) — v2.1.0
 ├── router.php              Routeur du serveur PHP intégré (dev / autonome / Windows)
 ├── start.sh  Makefile      Lanceur unifié + raccourcis
 ├── Larka.cmd               Lanceur Windows (double-clic) — voir deploy/windows/
@@ -807,7 +807,7 @@ larka/
 
 Dépôt : <https://github.com/Chipsoreo/LARKA_GMAO>. `config.json`, `.env`, les clés (`*.key`), les bases et les
 données d'exécution sont exclus par `.gitignore` : ils ne partent jamais sur GitHub. L'archive « GitHub » d'une
-version (`LARKA_GMAO-2.2.0-github.zip`, dossier `LARKA_GMAO/`) contient exactement ce que le dépôt doit suivre,
+version (`LARKA_GMAO-2.1.0-github.zip`, dossier `LARKA_GMAO/`) contient exactement ce que le dépôt doit suivre,
 démonstration comprise (`demo/`) — mais ni PHP pour Windows, ni base, journaux ou sauvegardes.
 
 **Mettre à jour le dépôt** (il contient déjà une version) : on remplace son contenu, l'historique est conservé ;
@@ -816,30 +816,30 @@ Depuis le dossier où se trouve le zip :
 
 ```powershell
 # Windows (PowerShell) — Git pour Windows installé
-Expand-Archive LARKA_GMAO-2.2.0-github.zip -DestinationPath larka-2.2.0
+Expand-Archive LARKA_GMAO-2.1.0-github.zip -DestinationPath larka-2.1.0
 git clone https://github.com/Chipsoreo/LARKA_GMAO.git depot-larka
 cd depot-larka
 git rm -r -q .                                  # retire l'ancienne version (l'historique reste)
-Get-ChildItem -Force ..\larka-2.2.0\LARKA_GMAO | Copy-Item -Destination . -Recurse -Force
+Get-ChildItem -Force ..\larka-2.1.0\LARKA_GMAO | Copy-Item -Destination . -Recurse -Force
 git add -A
-git commit -m "Larka V2.2.0"
+git commit -m "Larka V2.1.0"
 git push
 ```
 
 ```bash
 # Linux, macOS ou Git Bash (Nobara, Fedora : sudo dnf install git unzip gh)
-unzip -q LARKA_GMAO-2.2.0-github.zip -d larka-2.2.0
+unzip -q LARKA_GMAO-2.1.0-github.zip -d larka-2.1.0
 git clone https://github.com/Chipsoreo/LARKA_GMAO.git depot-larka
 cd depot-larka
 git rm -r -q .                                  # retire l'ancienne version (l'historique reste)
-cp -a ../larka-2.2.0/LARKA_GMAO/. .
+cp -a ../larka-2.1.0/LARKA_GMAO/. .
 git add -A
-git commit -m "Larka V2.2.0"
+git commit -m "Larka V2.1.0"
 git push
 ```
 
 **Premier envoi** (dépôt GitHub vide) : dans le dossier `LARKA_GMAO` décompressé,
-`git init`, `git add .`, `git commit -m "Larka V2.2.0"`, `git branch -M main`,
+`git init`, `git add .`, `git commit -m "Larka V2.1.0"`, `git branch -M main`,
 `git remote add origin https://github.com/Chipsoreo/LARKA_GMAO.git`, puis `git push -u origin main`.
 
 Au premier `git push`, Git demande de se connecter à GitHub : fenêtre du navigateur sous Windows ; sous Linux,
@@ -855,21 +855,21 @@ caractères : préférez des listes simples aux tableaux.
 # paquet + empreinte + signature (OBLIGATOIRE : les serveurs refusent toute version
 # non signée), puis release. Une seule fois, avant la première publication :
 # php outils/publier-version.php --generer-cles
-# (--reconstruire : 2.2.0 est déjà la version inscrite dans version.json ; inutile pour les suivantes.
+# (--reconstruire : 2.1.0 est déjà la version inscrite dans version.json ; inutile pour les suivantes.
 #  Le canal est celui de version.json : Stable. Une préversion : --canal Beta, et gh … --prerelease)
-php outils/publier-version.php --version 2.2.0 --notes notes.md --reconstruire
-git commit -am "Publication 2.2.0" && git push      # l'outil rafraîchit le ?v= d'index.html
-gh release create v2.2.0 dist/LARKA_GMAO-2.2.0.zip dist/LARKA_GMAO-2.2.0.zip.sha256 \
-    dist/LARKA_GMAO-2.2.0.zip.sig --title "Larka V2.2.0" --notes-file notes.md
-# (gh crée l'étiquette v2.2.0 ; sans le .sig, la version est refusée par tous les serveurs)
+php outils/publier-version.php --version 2.1.0 --notes notes.md --reconstruire
+git commit -am "Publication 2.1.0" && git push      # l'outil rafraîchit le ?v= d'index.html
+gh release create v2.1.0 dist/LARKA_GMAO-2.1.0.zip dist/LARKA_GMAO-2.1.0.zip.sha256 \
+    dist/LARKA_GMAO-2.1.0.zip.sig --title "Larka V2.1.0" --notes-file notes.md
+# (gh crée l'étiquette v2.1.0 ; sans le .sig, la version est refusée par tous les serveurs)
 ```
 
-Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.2.0`, joindre le `.zip`,
+Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.1.0`, joindre le `.zip`,
 le `.sha256` **et le `.sig`** — et rien d'autre. Version stable : ne cochez pas *Set as a pre-release* (à cocher
 pour une préversion).
 
 La **démonstration** est dans le dépôt, dans `demo/` (un seul fichier, ≈ 14 Mo) : une copie fraîche la propose
-d'emblée. Ne la joignez pas à une release : une installation antérieure à la 2.2.0 pourrait la prendre pour
+d'emblée. Ne la joignez pas à une release : une installation plus ancienne pourrait la prendre pour
 l'archive de la mise à jour, et refuserait alors la version, faute de signature.
 
 ---

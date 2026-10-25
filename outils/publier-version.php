@@ -17,7 +17,7 @@
  *    Une clé déjà inscrite n'est JAMAIS remplacée sans --remplacer-cle (voir 4).
  *
  * 2) À chaque version :
- *      php outils/publier-version.php --version 2.2.1 [--canal Stable|Beta]
+ *      php outils/publier-version.php --version 2.1.1 [--canal Stable|Beta]
  *            (canal par défaut : celui de version.json — une version stable ne
  *             redevient pas « Beta » faute d'avoir répété --canal)
  *            [--notes notes.md] [--cle ~/.larka-publication.key] [--url-base https://…/]

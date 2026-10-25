@@ -13,8 +13,8 @@
  * mises à jour et l'outil de publication la lisent ici ; personne ne recopie
  * le numéro à la main (c'est ainsi qu'il finit par mentir).
  *
- *   { "version": "2.2.0", "canal": "Stable", "date": "2026-10-24" }
- *   → libellé affiché : « V2.2.0 »  (canal « Beta » → « V.Beta 2.2.0 »)
+ *   { "version": "2.1.0", "canal": "Stable", "date": "2026-10-25" }
+ *   → libellé affiché : « V2.1.0 »  (canal « Beta » → « V.Beta 2.1.0 »)
  */
 final class LarkaVersion
 {

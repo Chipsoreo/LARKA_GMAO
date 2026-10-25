@@ -26,7 +26,6 @@
  * Les fiches propres au serveur (démarrer, diagnostiquer, sauvegarder…)
  * dépendent du mode de fonctionnement : elles sont construites par
  * api/routes/aide.php. Le serveur ne renvoie à chacun que les fiches de son rôle.
- * MDR j'ai mis 2.2.0 alors que c'est la 2.1.0, à toi qui voit ça desolé, flemme de faire le changement
  */
 return json_decode(<<<'JSON'
 {

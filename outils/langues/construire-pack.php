@@ -8,7 +8,7 @@
  * ordre, que le catalogue lang/fr.json — donc exactement le même nombre de
  * lignes, ligne pour ligne. On traduit les valeurs, jamais les clés.
  *
- * Avant 2.2.0, la traduction anglaise vivait directement dans le pack, avec
+ * Avant 2.1.0, la traduction anglaise vivait directement dans le pack, avec
  * ses propres lignes : 4 309 entrées face à 4 160 au catalogue, 54 libellés
  * absents et 203 orphelins. Impossible de comparer les deux fichiers d'un
  * coup d'œil, et rien ne signalait l'écart.

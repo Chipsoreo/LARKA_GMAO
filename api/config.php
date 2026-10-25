@@ -30,8 +30,8 @@
 // Source de vérité unique : version.json (lu par api/Version.php), que
 // l'outil de publication et les mises à jour tiennent à jour. Ne pas confondre
 // avec le « ?v= » d'index.html, simple horodatage de cache navigateur.
-//   LARKA_VERSION        numéro sémantique (« 2.2.0 ») — contrôle larka_min des modules
-//   LARKA_VERSION_LABEL  libellé affiché (« V2.2.0 » ; « V.Beta 2.3.0 » pour une préversion)
+//   LARKA_VERSION        numéro sémantique (« 2.1.0 ») — contrôle larka_min des modules
+//   LARKA_VERSION_LABEL  libellé affiché (« V2.1.0 » ; « V.Beta 2.2.0 » pour une préversion)
 require_once __DIR__ . '/Chemins.php';   // chemins absolus Linux ET Windows
 require_once __DIR__ . '/Version.php';
 $_lv = LarkaVersion::lire();
