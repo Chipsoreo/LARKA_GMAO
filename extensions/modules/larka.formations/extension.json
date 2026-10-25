@@ -1,0 +1,364 @@
+{
+  "identifiant": "larka.formations",
+  "format": "declaratif/1",
+  "nom": "Habilitations et formations",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Suivi des habilitations du personnel : qui est habilité à quoi, jusqu'à quand, et ce qui arrive à échéance.",
+  "reglages": {
+    "couleur_module": {
+      "type": "couleur",
+      "libelle": "Couleur du module",
+      "defaut": "#7c3aed",
+      "applique": "couleur_accent",
+      "aide": "En-tête du tableau et filet latéral"
+    },
+    "prealerte_jours": {
+      "type": "entier",
+      "libelle": "Préalerte (jours)",
+      "defaut": 60,
+      "aide": "Une habilitation est signalée ce nombre de jours avant son échéance"
+    }
+  },
+  "langues": {
+    "en": {
+      "Habilitation": "Certification",
+      "Habilitations": "Certifications",
+      "Titulaire": "Holder",
+      "Intitulé": "Title",
+      "Catégorie": "Category",
+      "Organisme": "Issuing body",
+      "Contact organisme": "Issuer contact",
+      "Obtenue le": "Issued on",
+      "Validité": "Validity",
+      "Équipement concerné": "Related equipment",
+      "Valable jusqu'au": "Valid until",
+      "Jours restants": "Days left",
+      "Situation": "Status",
+      "Identification": "Identification",
+      "Portée": "Scope"
+    },
+    "es": {
+      "Habilitation": "Habilitación",
+      "Habilitations": "Habilitaciones",
+      "Titulaire": "Titular",
+      "Intitulé": "Denominación",
+      "Catégorie": "Categoría",
+      "Organisme": "Organismo",
+      "Contact organisme": "Contacto del organismo",
+      "Obtenue le": "Obtenida el",
+      "Validité": "Validez",
+      "Équipement concerné": "Equipo asociado",
+      "Valable jusqu'au": "Válida hasta",
+      "Jours restants": "Días restantes",
+      "Situation": "Situación",
+      "Identification": "Identificación",
+      "Portée": "Alcance"
+    },
+    "de": {
+      "Habilitation": "Befähigung",
+      "Habilitations": "Befähigungen",
+      "Titulaire": "Inhaber",
+      "Intitulé": "Bezeichnung",
+      "Catégorie": "Kategorie",
+      "Organisme": "Prüfstelle",
+      "Contact organisme": "Kontakt der Prüfstelle",
+      "Obtenue le": "Erteilt am",
+      "Validité": "Gültigkeit",
+      "Équipement concerné": "Betroffenes Gerät",
+      "Valable jusqu'au": "Gültig bis",
+      "Jours restants": "Verbleibende Tage",
+      "Situation": "Status",
+      "Identification": "Identifikation",
+      "Portée": "Geltungsbereich"
+    }
+  },
+  "donnees": {
+    "habilitations": {
+      "libelle": "Habilitation",
+      "libelle_pluriel": "Habilitations",
+      "champs": {
+        "titulaire": {
+          "type": "texte",
+          "libelle": "Titulaire",
+          "obligatoire": true,
+          "max": 80,
+          "groupe": "Identification",
+          "suggestions": true,
+          "suggestions_source": "personnes"
+        },
+        "intitule": {
+          "type": "texte",
+          "libelle": "Intitulé",
+          "obligatoire": true,
+          "max": 120,
+          "groupe": "Identification"
+        },
+        "categorie": {
+          "type": "choix",
+          "libelle": "Catégorie",
+          "liste": "HabilitationCategorie",
+          "groupe": "Identification",
+          "libre": false,
+          "ajout_autorise": true,
+          "aide": "Modifiable dans Configuration → Listes ; une valeur peut être ajoutée à la saisie",
+          "valeurs_initiales": [
+            "Électrique",
+            "Levage",
+            "Travail en hauteur",
+            "Incendie",
+            "Premiers secours",
+            "Conduite d'engin"
+          ]
+        },
+        "organisme": {
+          "type": "texte",
+          "libelle": "Organisme",
+          "max": 80,
+          "exemple": "Apave, Socotec…",
+          "groupe": "Validité",
+          "suggestions": true,
+          "suggestions_source": "fournisseurs"
+        },
+        "courriel": {
+          "type": "texte",
+          "libelle": "Contact organisme",
+          "format_saisie": "email",
+          "groupe": "Validité"
+        },
+        "obtenue_le": {
+          "type": "date",
+          "libelle": "Obtenue le",
+          "obligatoire": true,
+          "max_date": "today",
+          "defaut": "{{today}}",
+          "groupe": "Validité"
+        },
+        "validite": {
+          "type": "entier",
+          "libelle": "Validité",
+          "unite": "mois",
+          "min": 1,
+          "max": 240,
+          "defaut": 36,
+          "groupe": "Validité"
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Équipement concerné",
+          "groupe": "Portée"
+        },
+        "expire_le": {
+          "type": "formule",
+          "libelle": "Valable jusqu'au",
+          "format": "date",
+          "expression": "{{addMonths(record.obtenue_le, record.validite)}}"
+        },
+        "jours_restants": {
+          "type": "formule",
+          "libelle": "Jours restants",
+          "format": "nombre",
+          "expression": "{{diffDays(addMonths(record.obtenue_le, record.validite), today)}}"
+        },
+        "situation": {
+          "type": "formule",
+          "libelle": "Situation",
+          "expression": "{{if(diffDays(addMonths(record.obtenue_le, record.validite), today) < 0, 'Expirée', if(diffDays(addMonths(record.obtenue_le, record.validite), today) <= reglages.prealerte_jours, 'À renouveler', 'Valide'))}}"
+        }
+      }
+    }
+  },
+  "ancrages": [
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "habilitations",
+      "libelle": "Habilitations suivies",
+      "couleur": "#1b3a5c"
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "habilitations",
+      "champ_lien": "equipement",
+      "colonnes": [
+        "titulaire",
+        "intitule",
+        "expire_le"
+      ],
+      "libelle": "Personnel habilité"
+    }
+  ],
+  "pages": [
+    {
+      "cle": "habilitations",
+      "titre": "Habilitations",
+      "icone": "award",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "habilitations",
+        "colonnes": [
+          "titulaire",
+          "intitule",
+          "categorie",
+          "obtenue_le",
+          "expire_le",
+          "situation"
+        ],
+        "recherche": [
+          "titulaire",
+          "intitule",
+          "organisme"
+        ],
+        "filtres": [
+          {
+            "champ": "categorie"
+          }
+        ],
+        "tri": {
+          "titulaire": "ASC"
+        },
+        "grouper_par": "categorie",
+        "surligner": [
+          {
+            "si": {
+              "champ": "jours_restants",
+              "operateur": "inferieur_a",
+              "valeur": 0
+            },
+            "couleur": "rouge",
+            "libelle": "Habilitation expirée"
+          },
+          {
+            "si": {
+              "champ": "jours_restants",
+              "operateur": "inferieur_a",
+              "valeur": 60
+            },
+            "couleur": "orange",
+            "libelle": "À renouveler"
+          }
+        ],
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 6,
+          "espacement": "large",
+          "marges": "normale",
+          "responsive": [
+            {
+              "sous": "telephone",
+              "colonnes": 1
+            }
+          ],
+          "composants": [
+            {
+              "texte": "Qui est habilité",
+              "style": "titre",
+              "largeur": 6
+            },
+            {
+              "champ": "titulaire",
+              "x": 1,
+              "y": 2,
+              "largeur": 3
+            },
+            {
+              "champ": "intitule",
+              "x": 4,
+              "y": 2,
+              "largeur": 3
+            },
+            {
+              "champ": "categorie",
+              "x": 1,
+              "y": 3,
+              "largeur": 3
+            },
+            {
+              "espace": true,
+              "x": 1,
+              "y": 4,
+              "largeur": 6,
+              "taille": "compacte"
+            },
+            {
+              "texte": "Jusqu'à quand",
+              "style": "titre",
+              "largeur": 6,
+              "x": 1,
+              "y": 5
+            },
+            {
+              "champ": "obtenue_le",
+              "x": 1,
+              "y": 6,
+              "largeur": 2
+            },
+            {
+              "champ": "validite",
+              "x": 3,
+              "y": 6,
+              "largeur": 2,
+              "alignement_h": "droite",
+              "largeur_max_px": 120
+            },
+            {
+              "champ": "organisme",
+              "x": 1,
+              "y": 7,
+              "largeur": 3
+            },
+            {
+              "champ": "courriel",
+              "x": 4,
+              "y": 7,
+              "largeur": 3
+            },
+            {
+              "espace": true,
+              "x": 1,
+              "y": 8,
+              "largeur": 6,
+              "taille": "compacte"
+            },
+            {
+              "section": "Portée",
+              "style": "discret",
+              "x": 1,
+              "y": 9,
+              "largeur": 6,
+              "colonnes": 12,
+              "espacement": "serre",
+              "composants": [
+                {
+                  "texte": "Facultatif : l'habilitation peut viser un équipement précis.",
+                  "style": "aide",
+                  "largeur": 12
+                },
+                {
+                  "champ": "equipement",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "api_min": "1.1"
+}

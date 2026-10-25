@@ -1,0 +1,338 @@
+{
+  "identifiant": "larka.controles",
+  "format": "declaratif/1",
+  "nom": "Contrôles réglementaires",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Suivi des contrôles obligatoires : électricité, incendie, levage, gaz. Qui a contrôlé quoi, quand, et ce qui est à refaire.",
+  "donnees": {
+    "controles": {
+      "libelle": "Contrôle",
+      "libelle_pluriel": "Contrôles",
+      "champs": {
+        "objet": {
+          "type": "texte",
+          "libelle": "Objet du contrôle",
+          "obligatoire": true,
+          "max": 120,
+          "groupe": "Identification"
+        },
+        "domaine": {
+          "type": "choix",
+          "libelle": "Domaine",
+          "valeurs": [
+            "Électricité",
+            "Incendie",
+            "Levage",
+            "Gaz",
+            "Air / ventilation",
+            "Eau",
+            "Autre"
+          ],
+          "defaut": "Électricité",
+          "groupe": "Identification"
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Équipement",
+          "groupe": "Rattachement"
+        },
+        "bien": {
+          "type": "lien",
+          "vers": "biens",
+          "libelle": "Bâtiment",
+          "groupe": "Rattachement"
+        },
+        "contrat": {
+          "type": "lien",
+          "vers": "contrats",
+          "libelle": "Au titre du contrat",
+          "groupe": "Rattachement"
+        },
+        "realise_le": {
+          "type": "date",
+          "libelle": "Réalisé le",
+          "obligatoire": true,
+          "defaut": "{{today}}",
+          "groupe": "Réalisation"
+        },
+        "periodicite": {
+          "type": "entier",
+          "libelle": "Périodicité",
+          "min": 1,
+          "max": 120,
+          "defaut": 12,
+          "groupe": "Réalisation",
+          "unite": "mois"
+        },
+        "organisme": {
+          "type": "texte",
+          "libelle": "Organisme",
+          "max": 80,
+          "groupe": "Réalisation",
+          "exemple": "Apave, Socotec…"
+        },
+        "cout": {
+          "type": "decimal",
+          "libelle": "Coût",
+          "min": 0,
+          "groupe": "Réalisation",
+          "unite": "€"
+        },
+        "resultat": {
+          "type": "choix",
+          "libelle": "Résultat",
+          "valeurs": [
+            "Conforme",
+            "Conforme avec réserves",
+            "Non conforme"
+          ],
+          "defaut": "Conforme",
+          "groupe": "Résultat",
+          "couleurs": {
+            "Conforme": "vert",
+            "Conforme avec réserves": "orange",
+            "Non conforme": "rouge"
+          }
+        },
+        "reserves": {
+          "type": "texte_long",
+          "libelle": "Réserves levées ou en cours",
+          "max": 800,
+          "visible_si": {
+            "champ": "resultat",
+            "operateur": "different",
+            "valeur": "Conforme"
+          },
+          "groupe": "Résultat"
+        },
+        "prochain": {
+          "type": "formule",
+          "libelle": "Prochain contrôle",
+          "format": "date",
+          "expression": "{{addMonths(record.realise_le, record.periodicite)}}"
+        },
+        "jours_restants": {
+          "type": "formule",
+          "libelle": "Jours restants",
+          "format": "nombre",
+          "expression": "{{diffDays(addMonths(record.realise_le, record.periodicite), today)}}"
+        },
+        "echeance": {
+          "type": "formule",
+          "libelle": "Échéance",
+          "expression": "{{if(diffDays(addMonths(record.realise_le, record.periodicite), today) < 0, 'Dépassée', if(diffDays(addMonths(record.realise_le, record.periodicite), today) <= 60, 'À planifier', 'À jour'))}}"
+        },
+        "courriel_organisme": {
+          "type": "texte",
+          "libelle": "Courriel de l'organisme",
+          "format_saisie": "email",
+          "exemple": "contact@apave.fr",
+          "groupe": "Réalisation"
+        }
+      }
+    }
+  },
+  "ancrages": [
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "controles",
+      "libelle": "Contrôles non conformes",
+      "filtre": {
+        "resultat": "Non conforme"
+      },
+      "couleur": "#b91c1c"
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "controles",
+      "champ_lien": "equipement",
+      "colonnes": [
+        "objet",
+        "realise_le",
+        "resultat",
+        "prochain"
+      ],
+      "libelle": "Contrôles de cet équipement"
+    }
+  ],
+  "pages": [
+    {
+      "cle": "controles",
+      "titre": "Contrôles réglementaires",
+      "icone": "shield-check",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "controles",
+        "colonnes": [
+          "objet",
+          "domaine",
+          "equipement",
+          "realise_le",
+          "prochain",
+          "resultat",
+          "echeance"
+        ],
+        "recherche": [
+          "objet",
+          "organisme"
+        ],
+        "filtres": [
+          {
+            "champ": "domaine"
+          },
+          {
+            "champ": "resultat"
+          }
+        ],
+        "tri": {
+          "realise_le": "DESC"
+        },
+        "totaux": [
+          "cout"
+        ],
+        "grouper_par": "domaine",
+        "par_page": 50,
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 12,
+          "espacement": "normal",
+          "marges": "normale",
+          "responsive": [
+            {
+              "sous": "tablette",
+              "colonnes": 1
+            }
+          ],
+          "composants": [
+            {
+              "section": "Ce qui est contrôlé",
+              "style": "carte",
+              "couleur": "marine",
+              "x": 1,
+              "y": 1,
+              "largeur": 8,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "objet",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 8
+                },
+                {
+                  "champ": "domaine",
+                  "x": 9,
+                  "y": 1,
+                  "largeur": 4
+                },
+                {
+                  "champ": "equipement",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 4
+                },
+                {
+                  "champ": "bien",
+                  "x": 5,
+                  "y": 2,
+                  "largeur": 4
+                },
+                {
+                  "champ": "contrat",
+                  "x": 9,
+                  "y": 2,
+                  "largeur": 4
+                }
+              ]
+            },
+            {
+              "section": "Verdict",
+              "style": "encadre",
+              "couleur": "emeraude",
+              "x": 9,
+              "y": 1,
+              "largeur": 4,
+              "hauteur": 2,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "resultat",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 12
+                },
+                {
+                  "champ": "reserves",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12,
+                  "taille": "tres_grande"
+                }
+              ]
+            },
+            {
+              "section": "Comment il a été fait",
+              "style": "panneau",
+              "x": 1,
+              "y": 2,
+              "largeur": 8,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "realise_le",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 4
+                },
+                {
+                  "champ": "periodicite",
+                  "x": 5,
+                  "y": 1,
+                  "largeur": 4,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 150
+                },
+                {
+                  "champ": "cout",
+                  "x": 9,
+                  "y": 1,
+                  "largeur": 4,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 150
+                },
+                {
+                  "champ": "organisme",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 6
+                },
+                {
+                  "champ": "courriel_organisme",
+                  "x": 7,
+                  "y": 2,
+                  "largeur": 6
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "api_min": "1.1"
+}

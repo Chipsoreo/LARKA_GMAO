@@ -1,0 +1,455 @@
+{
+  "identifiant": "acme.interventions-terrain",
+  "format": "declaratif/1",
+  "nom": "Interventions de terrain",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Une interface complète : grille de 12 colonnes, sections en cartes et panneaux, volet repliable, affichage conditionnel, alignements, bornes de taille et adaptation au téléphone.",
+  "logo": "assets/logo.png",
+
+  "reglages": {
+    "accent": {
+      "type": "couleur",
+      "libelle": "Couleur d'accent",
+      "defaut": "#1b3a5c",
+      "applique": "couleur_accent"
+    }
+  },
+
+  "donnees": {
+    "interventions": {
+      "libelle": "Intervention",
+      "libelle_pluriel": "Interventions",
+      "champs": {
+        "numero": {
+          "type": "texte",
+          "libelle": "N°",
+          "obligatoire": true,
+          "unique": true,
+          "max": 20,
+          "format_saisie": "reference",
+          "exemple": "IT-2026-001",
+          "groupe": "Identification"
+        },
+        "objet": {
+          "type": "texte",
+          "libelle": "Objet",
+          "obligatoire": true,
+          "max": 120,
+          "groupe": "Identification"
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Équipement",
+          "obligatoire": true,
+          "groupe": "Identification"
+        },
+        "contrat": {
+          "type": "lien",
+          "vers": "contrats",
+          "libelle": "Au titre du contrat",
+          "groupe": "Identification"
+        },
+
+        "statut": {
+          "type": "choix",
+          "libelle": "Statut",
+          "valeurs": ["Planifiée", "En cours", "Terminée", "Annulée"],
+          "defaut": "Planifiée",
+          "couleurs": {
+            "Planifiée": "bleu",
+            "En cours": "ambre",
+            "Terminée": "emeraude",
+            "Annulée": "gris"
+          },
+          "groupe": "Suivi"
+        },
+        "priorite": {
+          "type": "choix",
+          "libelle": "Priorité",
+          "valeurs": ["Basse", "Normale", "Haute", "Critique"],
+          "defaut": "Normale",
+          "couleurs": { "Critique": "rouge", "Haute": "orange" },
+          "groupe": "Suivi"
+        },
+        "intervenant": {
+          "type": "texte",
+          "libelle": "Intervenant",
+          "suggestions": true,
+          "suggestions_source": "intervenants",
+          "groupe": "Suivi"
+        },
+        "planifiee_le": {
+          "type": "date",
+          "libelle": "Planifiée le",
+          "defaut": "{{today}}",
+          "groupe": "Suivi"
+        },
+        "duree_prevue": {
+          "type": "duree",
+          "libelle": "Durée prévue",
+          "unite": "min",
+          "groupe": "Suivi"
+        },
+
+        "realise_le": {
+          "type": "date",
+          "libelle": "Réalisée le",
+          "max_date": "today",
+          "visible_si": {
+            "champ": "statut",
+            "operateur": "parmi",
+            "valeur": ["Terminée"]
+          },
+          "groupe": "Clôture"
+        },
+        "conforme": {
+          "type": "booleen",
+          "libelle": "Conforme",
+          "defaut": true,
+          "groupe": "Clôture"
+        },
+        "satisfaction": {
+          "type": "note",
+          "libelle": "Satisfaction",
+          "groupe": "Clôture"
+        },
+        "cout_pieces": {
+          "type": "decimal",
+          "libelle": "Coût pièces HT",
+          "min": 0,
+          "unite": "€",
+          "groupe": "Coûts"
+        },
+        "cout_main_oeuvre": {
+          "type": "decimal",
+          "libelle": "Coût main-d'œuvre HT",
+          "min": 0,
+          "unite": "€",
+          "groupe": "Coûts"
+        },
+        "compte_rendu": {
+          "type": "texte_long",
+          "libelle": "Compte rendu",
+          "max": 2000,
+          "groupe": "Clôture"
+        },
+        "couleur_repere": {
+          "type": "couleur",
+          "libelle": "Repère",
+          "groupe": "Clôture"
+        },
+
+        "cout_total": {
+          "type": "formule",
+          "libelle": "Coût total HT",
+          "format": "monnaie",
+          "expression": "{{round(record.cout_pieces + record.cout_main_oeuvre, 2)}}"
+        },
+        "anciennete": {
+          "type": "formule",
+          "libelle": "Jours écoulés",
+          "format": "nombre",
+          "expression": "{{diffDays(today, record.planifiee_le)}}"
+        }
+      }
+    }
+  },
+
+  "ancrages": [
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "interventions",
+      "libelle": "Interventions en cours",
+      "filtre": { "statut": "En cours" },
+      "couleur": "ambre"
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "interventions",
+      "champ_lien": "equipement",
+      "colonnes": ["numero", "objet", "statut", "planifiee_le"],
+      "libelle": "Interventions sur cet équipement"
+    }
+  ],
+
+  "pages": [
+    {
+      "cle": "interventions",
+      "titre": "Interventions",
+      "icone": "wrench",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "liste",
+        "source": "interventions",
+        "colonnes": [
+          "numero",
+          "objet",
+          "equipement",
+          "statut",
+          "priorite",
+          "planifiee_le",
+          "cout_total"
+        ],
+        "recherche": ["numero", "objet", "intervenant"],
+        "filtres": [{ "champ": "statut" }, { "champ": "priorite" }],
+        "tri": { "planifiee_le": "DESC" },
+        "totaux": ["cout_total"],
+        "grouper_par": "statut",
+        "par_page": 50,
+        "actions": ["creer", "modifier", "supprimer", "exporter"],
+        "largeurs": { "numero": 110, "statut": 120, "planifiee_le": 120 },
+        "actions_rapides": [
+          {
+            "champ": "statut",
+            "valeur": "En cours",
+            "libelle": "Démarrer",
+            "couleur": "ambre"
+          },
+          {
+            "champ": "statut",
+            "valeur": "Terminée",
+            "libelle": "Clôturer",
+            "couleur": "emeraude"
+          }
+        ],
+        "surligner": [
+          {
+            "si": {
+              "tous": [
+                { "champ": "priorite", "operateur": "egal", "valeur": "Critique" },
+                { "champ": "statut", "operateur": "pas_parmi", "valeur": ["Terminée", "Annulée"] }
+              ]
+            },
+            "couleur": "rouge",
+            "libelle": "Critique non traitée"
+          }
+        ],
+
+        "layout": {
+          "type": "grille",
+          "colonnes": 12,
+          "gap_x_px": 16,
+          "gap_y_px": 12,
+          "marges_px": 4,
+          "alignement_v": "haut",
+
+          "responsive": [
+            { "en_dessous_de_px": 1200, "colonnes": 8 },
+            { "en_dessous_de_px": 900, "colonnes": 6 },
+            { "en_dessous_de_px": 620, "colonnes": 1, "gap_px": 10 }
+          ],
+
+          "composants": [
+            {
+              "section": "Identification",
+              "style": "carte",
+              "couleur": "marine",
+              "x": 1,
+              "y": 1,
+              "largeur": 12,
+              "colonnes": 12,
+              "gap_px": 12,
+              "composants": [
+                {
+                  "champ": "numero",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 3,
+                  "hauteur_px": 40,
+                  "largeur_min_px": 110,
+                  "largeur_max_px": 220
+                },
+                {
+                  "champ": "objet",
+                  "x": 4,
+                  "y": 1,
+                  "largeur": 9,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "equipement",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 6,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "contrat",
+                  "x": 7,
+                  "y": 2,
+                  "largeur": 6,
+                  "hauteur_px": 40
+                }
+              ]
+            },
+
+            {
+              "section": "Planification",
+              "style": "panneau",
+              "x": 1,
+              "y": 2,
+              "largeur": 7,
+              "colonnes": 12,
+              "gap_px": 12,
+              "composants": [
+                {
+                  "champ": "statut",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 6,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "priorite",
+                  "x": 7,
+                  "y": 1,
+                  "largeur": 6,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "intervenant",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 6,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "planifiee_le",
+                  "x": 7,
+                  "y": 2,
+                  "largeur": 3,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "duree_prevue",
+                  "x": 10,
+                  "y": 2,
+                  "largeur": 3,
+                  "hauteur_px": 40,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 160
+                }
+              ]
+            },
+
+            {
+              "section": "Coûts",
+              "style": "encadre",
+              "x": 8,
+              "y": 2,
+              "largeur": 5,
+              "colonnes": 6,
+              "gap_px": 12,
+              "composants": [
+                {
+                  "texte": "Montants hors taxes. Le total est calculé.",
+                  "style": "aide",
+                  "largeur": 6
+                },
+                {
+                  "champ": "cout_pieces",
+                  "largeur": 6,
+                  "hauteur_px": 40,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 220
+                },
+                {
+                  "champ": "cout_main_oeuvre",
+                  "largeur": 6,
+                  "hauteur_px": 40,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 220
+                }
+              ]
+            },
+
+            {
+              "section": "Clôture",
+              "style": "carte",
+              "couleur": "emeraude",
+              "x": 1,
+              "y": 3,
+              "largeur": 12,
+              "colonnes": 12,
+              "gap_px": 12,
+              "visible_si": {
+                "champ": "statut",
+                "operateur": "parmi",
+                "valeur": ["Terminée", "Annulée"]
+              },
+              "composants": [
+                {
+                  "champ": "realise_le",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 3,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "conforme",
+                  "x": 4,
+                  "y": 1,
+                  "largeur": 2,
+                  "hauteur_px": 40,
+                  "alignement_h": "gauche"
+                },
+                {
+                  "champ": "satisfaction",
+                  "x": 6,
+                  "y": 1,
+                  "largeur": 3,
+                  "hauteur_px": 40
+                },
+                {
+                  "champ": "couleur_repere",
+                  "x": 9,
+                  "y": 1,
+                  "largeur": 2,
+                  "hauteur_px": 40,
+                  "largeur_max_px": 90
+                },
+                {
+                  "champ": "compte_rendu",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12,
+                  "hauteur_px": 160,
+                  "hauteur_min_px": 90,
+                  "hauteur_max_px": 320
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+
+    {
+      "cle": "planning",
+      "titre": "Planning",
+      "icone": "calendar",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "calendrier",
+        "source": "interventions",
+        "colonnes": ["numero", "objet", "intervenant"],
+        "recherche": ["numero", "objet"],
+        "actions": ["creer", "modifier", "supprimer"],
+        "calendrier": {
+          "jour": "planifiee_le",
+          "creneau": "priorite",
+          "ressource": "statut",
+          "occupant": "intervenant",
+          "detail": "objet",
+          "etat": "statut",
+          "occupe": ["En cours", "Terminée"],
+          "masquer": ["Annulée"]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,352 @@
+/*
+ * SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+ * SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+ *
+ * This file is part of Larka, proprietary software by Mickaël Larcin.
+ * All rights reserved. Use is subject to the license terms; copying,
+ * distribution, modification or reverse-engineering without the author's
+ * prior written permission is prohibited. See the LICENSE file for details.
+ */
+
+/* Larka — Responsive : hamburger, bottom nav mobile, media queries */
+/* ── Hamburger (caché sur desktop) ── */
+.hamburger-btn {
+  display: none;
+  flex-direction: column; justify-content: center; align-items: center;
+  width: 36px; height: 36px; gap: 5px;
+  background: transparent; border: none; cursor: pointer;
+  padding: 4px; border-radius: 6px; flex-shrink: 0;
+  transition: background .15s;
+}
+.hamburger-btn:hover { background: var(--gray-bg); }
+.hamburger-btn span {
+  display: block; width: 20px; height: 2px;
+  background: var(--navy); border-radius: 2px;
+  transition: transform .25s, opacity .25s;
+}
+
+/* ── Overlay sidebar ── */
+.sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 199;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
+}
+.sidebar-overlay.active { display: block; }
+body.sidebar-locked { overflow: hidden; }
+
+/* ── Bottom nav (cachée sur desktop) ── */
+.bottom-nav {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 150;
+  background: var(--white);
+  border-top: 1px solid var(--gray-border);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.1);
+  padding: 0; height: 62px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  flex-direction: row; align-items: stretch;
+}
+.bottom-nav-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
+  background: transparent; border: none; cursor: pointer;
+  padding: 6px 2px; color: var(--gray-text);
+  transition: color .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav-item:hover,
+.bottom-nav-item.active { color: var(--blue); background: var(--blue-pale); }
+.bottom-nav-icon  { font-size: 18px; line-height: 1; }
+.bottom-nav-label { font-size: 10px; font-weight: 600; white-space: nowrap; }
+
+/* ── Menu plein écran mobile ── */
+.mobile-menu-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(10, 25, 60, 0.97);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: env(safe-area-inset-top, 20px) 20px calc(20px + env(safe-area-inset-bottom, 0)) 20px;
+  animation: mobileMenuIn .25s ease-out;
+}
+.mobile-menu-overlay.active { display: flex; }
+
+@keyframes mobileMenuIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.mobile-menu-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 4px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+  margin-bottom: 8px;
+}
+.mobile-menu-user {
+  display: flex; align-items: center; gap: 12px;
+}
+.mobile-menu-user .user-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--blue); display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: white;
+}
+.mobile-menu-user-name { color: white; font-size: 15px; font-weight: 600; }
+.mobile-menu-user-role { color: rgba(255,255,255,.4); font-size: 12px; }
+.mobile-menu-close {
+  background: rgba(255,255,255,.1); border: none; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: rgba(255,255,255,.7);
+  transition: background .15s;
+}
+.mobile-menu-close:active { background: rgba(255,255,255,.2); }
+
+.mobile-menu-section-title {
+  padding: 16px 4px 6px;
+  color: rgba(255,255,255,.3); font-size: 10px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase;
+}
+.mobile-menu-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 12px; cursor: pointer;
+  color: rgba(255,255,255,.7); font-size: 15px; font-weight: 500;
+  border-radius: 12px;
+  transition: background .15s, color .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-menu-item:active { background: rgba(255,255,255,.1); }
+.mobile-menu-item.active {
+  background: rgba(43,123,230,0.2);
+  color: white; font-weight: 600;
+}
+.mobile-menu-item .icon { font-size: 18px; width: 24px; text-align: center; }
+.mobile-menu-item.danger { color: rgba(231,76,60,.8); }
+.mobile-menu-item.danger:active { background: rgba(231,76,60,.1); }
+
+/* ── Tablette (601–900px) : hamburger + sidebar slide ── */
+@media (max-width: 900px) {
+  .hamburger-btn { display: flex; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-interv-grid { grid-template-columns: 1fr !important; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-group.span-2 { grid-column: span 1; }
+
+  /* Devis & stock inline rows: stack vertically on tablet */
+  .modal-body [style*="display:flex"][style*="flex-wrap:wrap"] { gap: 6px; }
+  .modal-body [style*="display:flex"] > div[style*="width:100px"],
+  .modal-body [style*="display:flex"] > div[style*="width:90px"],
+  .modal-body [style*="display:flex"] > div[style*="width:70px"] { width: auto !important; flex: 1; min-width: 80px; }
+
+  .sidebar {
+    position: fixed !important; top: 0; left: 0; bottom: 0; z-index: 200;
+    transform: translateX(-100%);
+    transition: transform .28s cubic-bezier(.4,0,.2,1);
+    width: 260px !important; min-width: 260px !important;
+  }
+  .sidebar.sidebar-open { transform: translateX(0); }
+
+  .main { width: 100%; min-width: 0; }
+}
+
+/* ── Mobile (≤ 600px) : bottom nav only, no sidebar ── */
+@media (max-width: 600px) {
+  /* Bottom nav visible */
+  .bottom-nav { display: flex; }
+
+  /* Sidebar complètement masquée sur mobile */
+  .sidebar {
+    display: none !important;
+  }
+  .sidebar-overlay { display: none !important; }
+
+  /* Hamburger inutile sur mobile (on a le menu plein écran) */
+  .hamburger-btn { display: none !important; }
+
+  /* Handle de resize inutile */
+  #sidebarResizeHandle { display: none !important; }
+  #sidebarCollapseBtn { display: none !important; }
+
+  /* Contenu plein écran avec padding pour bottom nav */
+  .content { padding: 12px; padding-bottom: calc(78px + env(safe-area-inset-bottom, 0)); }
+
+  /* La barre d'actions occupe le bas de .main, donc le bas de l'écran — or
+     .bottom-nav (fixe, 62 px, z-index 150) recouvre exactement cette zone.
+     On étend le padding bas de la barre pour que ses boutons remontent
+     au-dessus de la nav ; le fond de la barre passe dessous, sans gêne. */
+  .page-action-bar {
+    padding: 10px 12px calc(12px + 62px + env(safe-area-inset-bottom, 0px));
+    flex-direction: column-reverse; gap: 8px;
+  }
+  .page-action-bar .btn { width: 100%; justify-content: center; }
+  .page-action-bar .page-action-info { margin-right: 0; text-align: center; }
+  .topbar { padding: 0 12px; height: 48px; }
+  .topbar-title { font-size: 14px; }
+  /* Cacher le texte des boutons topbar (Interface, Mon profil, Feedback) sur mobile */
+  #uiPrefsBtnTopbar .hide-sm,
+  #myProfileBtnTopbar .hide-sm,
+  #feedbackBtnTopbar .hide-sm { display: none; }
+
+  /* Stats grid sur mobile */
+  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+  .stat-card { padding: 12px !important; }
+  .stat-value { font-size: 20px !important; }
+  .stat-label { font-size: 11px !important; }
+
+  /* ── Modals plein écran ── */
+  .modal {
+    width: 100% !important; max-width: 100% !important;
+    max-height: 95vh;
+    border-radius: 16px 16px 0 0;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    margin: 0;
+  }
+  .modal-overlay { align-items: flex-end; }
+  .modal-header { padding: 14px 16px 12px; }
+  .modal-title { font-size: 14px; }
+  .modal-body { padding: 14px 16px; }
+  .modal-footer { padding: 12px 16px; }
+
+  /* Form grids : single column on mobile */
+  .form-grid { grid-template-columns: 1fr !important; gap: 12px; }
+  .form-group.span-2 { grid-column: span 1; }
+  .form-control { font-size: 14px; padding: 10px 12px; }
+  .section-label { font-size: 10px; margin-bottom: 8px; padding-bottom: 6px; }
+
+  /* ── Inline flex rows (devis, stock, notes) : stack on mobile ── */
+  .modal-body [style*="display:flex"][style*="flex-wrap:wrap"],
+  .modal-body [style*="display:flex"][style*="align-items:flex-end"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .modal-body [style*="display:flex"][style*="flex-wrap:wrap"] > div,
+  .modal-body [style*="display:flex"][style*="align-items:flex-end"] > div {
+    width: 100% !important; min-width: 0 !important; flex: unset !important;
+  }
+  .modal-body [style*="display:flex"][style*="flex-wrap:wrap"] > button,
+  .modal-body [style*="display:flex"][style*="align-items:flex-end"] > button {
+    width: 100% !important; margin-top: 4px;
+  }
+
+  /* Note lines (texte + date) */
+  .note-line { flex-direction: column !important; gap: 4px !important; }
+  .note-line input[style*="width:145px"] { width: 100% !important; }
+  .note-line .icon-btn { align-self: flex-end; }
+
+  /* Devis lignes display */
+  .modal-body div[style*="border-bottom:1px solid var(--gray-border)"][style*="font-size:13px"] {
+    flex-wrap: wrap;
+    gap: 4px !important;
+  }
+
+  /* Relance row (champ libre + date) */
+  .form-group div[style*="display:flex"][style*="gap:6px"] {
+    flex-direction: column !important;
+  }
+  .form-group div[style*="display:flex"][style*="gap:6px"] input[style*="width:150px"] {
+    width: 100% !important;
+  }
+
+  /* Tableaux scrollables */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 600px; }
+
+  /* Chips scrollables horizontalement */
+  .chip-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; }
+  .chip-filters::-webkit-scrollbar { display: none; }
+
+  /* Search bar adaptée */
+  .search-bar { flex-wrap: wrap; padding: 10px 12px; gap: 6px; }
+  .search-input-wrap { max-width: 100% !important; min-width: 100% !important; }
+  .search-bar select { font-size: 12px !important; flex: 1; min-width: 0; }
+  .search-bar .btn { font-size: 12px; white-space: nowrap; }
+
+  /* Cards : interventions & general */
+  .card { border-radius: 12px !important; padding: 12px 14px !important; }
+  .card [style*="display:flex"][style*="align-items:flex-start"] {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .card [style*="display:flex"][style*="gap:8px"][style*="flex-wrap:wrap"] {
+    gap: 4px !important;
+  }
+  .badge { font-size: 10px !important; padding: 2px 6px !important; }
+
+  /* Notification panel mobile */
+  #notifPanel {
+    width: calc(100vw - 20px) !important;
+    right: -8px !important;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  /* Dashboard grid mobile */
+  .dashboard-grid { grid-template-columns: 1fr !important; }
+  .dashboard-interv-grid { grid-template-columns: 1fr !important; }
+
+  /* Combo dropdown (select searchable) */
+  .combo-dropdown { max-height: 200px; }
+
+  /* Assistant bubble ajusté pour bottom nav */
+  #assistantBubble { bottom: calc(76px + env(safe-area-inset-bottom, 0)) !important; }
+  #assistantPanel { bottom: calc(76px + env(safe-area-inset-bottom, 0)) !important; max-height: calc(100vh - 140px) !important; }
+
+  /* Pagination */
+  .pagination { flex-wrap: wrap; gap: 6px; font-size: 12px; }
+}
+
+/* ── Dark mode pour menu mobile ── */
+body.dark-mode .mobile-menu-overlay {
+  background: rgba(5, 10, 25, 0.97);
+}
+body.dark-mode .bottom-nav {
+  background: var(--navy-dark);
+  border-top-color: rgba(255,255,255,.08);
+}
+body.dark-mode .bottom-nav-item { color: rgba(255,255,255,.5); }
+body.dark-mode .bottom-nav-item:hover,
+body.dark-mode .bottom-nav-item.active { color: var(--blue); background: rgba(59,130,246,.1); }
+
+/* ── Contacts multiples (contrats) — responsive ── */
+@media (max-width: 700px) {
+  .contact-row { grid-template-columns: 1fr 1fr !important; }
+}
+@media (max-width: 480px) {
+  .contact-row { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 600px) {
+  /* ── Notification panel responsive ── */
+  #notifPanel { width: calc(100vw - 20px) !important; right: -60px !important; max-width: 340px; }
+
+  /* ── Confirm modal responsive ── */
+  #confirmModal .modal { width: 100% !important; max-width: 420px; }
+}
+
+/* ── Plans responsive ── */
+@media (max-width: 900px) {
+  .plan-shell { height:auto; min-height:calc(100vh - 100px); }
+  .plan-body { flex-direction:column; }
+  .plan-side { width:100%; min-width:0; max-height:none; }
+  .plan-side-left { max-height:200px; }
+  .plan-side-right { max-height:240px; }
+  .plan-mapcard { min-height:50vh; }
+  .plan-bottom-grid { grid-template-columns:1fr; gap:12px; }
+  /* Masquer les boutons collapse latéraux sur mobile */
+  .plan-side-collapsed { display:none !important; }
+  /* Barre d'outils plus compacte */
+  .plan-toolbar-row { gap:4px; }
+  .plan-tbtn { width:34px; height:32px; }
+  /* Boutons batbar empilés en mobile */
+  .plan-batbar-row { gap:6px; }
+  .plan-batbar-select { min-width:160px; max-width:none; flex:1 1 100%; }
+}
+
+@media (max-width: 600px) {
+  .plan-shell { padding:0 2px; gap:8px; }
+  .plan-batbar-card { padding:8px 10px; }
+  .plan-toolbar-card { padding:6px 8px; }
+  /* Le bouton Recadrer/Fond/Importer/⋯ sur 2 lignes au besoin */
+  .plan-batbar-row .btn { font-size:11px; padding:5px 8px; }
+}

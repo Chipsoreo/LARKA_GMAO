@@ -1,0 +1,344 @@
+{
+  "identifiant": "larka.prestataires",
+  "format": "declaratif/1",
+  "nom": "Annuaire des prestataires",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Carnet d'adresses des entreprises qui interviennent : coordonnées, domaines, assurance et évaluation.",
+  "reglages": {
+    "note_minimale": {
+      "type": "entier",
+      "libelle": "Note minimale acceptable",
+      "defaut": 3
+    }
+  },
+  "langues": {
+    "en": {
+      "Prestataire": "Contractor",
+      "Prestataires": "Contractors",
+      "Raison sociale": "Company name",
+      "Domaine": "Field",
+      "Téléphone": "Phone",
+      "Courriel": "Email",
+      "Site web": "Website",
+      "SIRET": "Company ID",
+      "Assurance jusqu'au": "Insured until",
+      "Évaluation": "Rating",
+      "Coordonnées": "Contact details",
+      "Administratif": "Administrative",
+      "Appréciation": "Assessment",
+      "Assurance": "Insurance"
+    },
+    "es": {
+      "Prestataire": "Proveedor",
+      "Prestataires": "Proveedores",
+      "Raison sociale": "Razón social",
+      "Domaine": "Ámbito",
+      "Téléphone": "Teléfono",
+      "Courriel": "Correo",
+      "Site web": "Sitio web",
+      "SIRET": "Identificación",
+      "Assurance jusqu'au": "Seguro hasta",
+      "Évaluation": "Valoración",
+      "Coordonnées": "Datos de contacto",
+      "Administratif": "Administrativo",
+      "Appréciation": "Valoración",
+      "Assurance": "Seguro"
+    },
+    "de": {
+      "Prestataire": "Dienstleister",
+      "Prestataires": "Dienstleister",
+      "Raison sociale": "Firmenname",
+      "Domaine": "Bereich",
+      "Téléphone": "Telefon",
+      "Courriel": "E-Mail",
+      "Site web": "Webseite",
+      "SIRET": "Firmennummer",
+      "Assurance jusqu'au": "Versichert bis",
+      "Évaluation": "Bewertung",
+      "Coordonnées": "Kontaktdaten",
+      "Administratif": "Verwaltung",
+      "Appréciation": "Bewertung",
+      "Assurance": "Versicherung"
+    }
+  },
+  "donnees": {
+    "prestataires": {
+      "libelle": "Prestataire",
+      "libelle_pluriel": "Prestataires",
+      "champs": {
+        "raison_sociale": {
+          "type": "texte",
+          "libelle": "Raison sociale",
+          "obligatoire": true,
+          "unique": true,
+          "max": 120,
+          "groupe": "Coordonnées",
+          "suggestions": true,
+          "suggestions_source": "fournisseurs",
+          "largeur": "grand"
+        },
+        "domaine": {
+          "type": "choix",
+          "libelle": "Domaine",
+          "liste": "PrestataireDomaine",
+          "groupe": "Coordonnées",
+          "ajout_autorise": true,
+          "valeurs_initiales": [
+            "Électricité",
+            "Plomberie",
+            "CVC",
+            "Espaces verts",
+            "Nettoyage",
+            "Levage",
+            "Incendie",
+            "Serrurerie"
+          ],
+          "largeur": "moyen"
+        },
+        "telephone": {
+          "type": "texte",
+          "libelle": "Téléphone",
+          "format_saisie": "telephone",
+          "groupe": "Coordonnées",
+          "largeur": "moyen"
+        },
+        "courriel": {
+          "type": "texte",
+          "libelle": "Courriel",
+          "format_saisie": "email",
+          "groupe": "Coordonnées",
+          "largeur": "grand"
+        },
+        "site": {
+          "type": "texte",
+          "libelle": "Site web",
+          "format_saisie": "url",
+          "groupe": "Coordonnées",
+          "masque_liste": true,
+          "largeur": "grand"
+        },
+        "siret": {
+          "type": "texte",
+          "libelle": "SIRET",
+          "format_saisie": "siret",
+          "groupe": "Administratif",
+          "masque_liste": true,
+          "largeur": "moyen"
+        },
+        "assurance": {
+          "type": "date",
+          "libelle": "Assurance jusqu'au",
+          "groupe": "Administratif",
+          "largeur": "moyen"
+        },
+        "note": {
+          "type": "note",
+          "libelle": "Évaluation",
+          "groupe": "Appréciation",
+          "largeur": "petit"
+        },
+        "remarques": {
+          "type": "texte_long",
+          "libelle": "Remarques",
+          "max": 800,
+          "groupe": "Appréciation",
+          "masque_liste": true,
+          "largeur": "pleine"
+        },
+        "assurance_etat": {
+          "type": "formule",
+          "libelle": "Assurance",
+          "expression": "{{if(isEmpty(record.assurance), 'Non renseignée', if(isPast(record.assurance), 'Expirée', concat('Valide — ', diffDays(record.assurance, today), ' j')))}}"
+        }
+      }
+    }
+  },
+  "ancrages": [
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "prestataires",
+      "libelle": "Prestataires référencés",
+      "couleur": "#0d9488"
+    }
+  ],
+  "pages": [
+    {
+      "cle": "prestataires",
+      "titre": "Prestataires",
+      "icone": "users",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "prestataires",
+        "colonnes": [
+          "raison_sociale",
+          "domaine",
+          "telephone",
+          "courriel",
+          "note",
+          "assurance_etat"
+        ],
+        "recherche": [
+          "raison_sociale",
+          "courriel",
+          "telephone"
+        ],
+        "filtres": [
+          {
+            "champ": "domaine"
+          }
+        ],
+        "tri": {
+          "raison_sociale": "ASC"
+        },
+        "grouper_par": "domaine",
+        "par_page": 50,
+        "surligner": [
+          {
+            "si": {
+              "champ": "assurance",
+              "operateur": "date_passee"
+            },
+            "couleur": "rouge",
+            "libelle": "Assurance expirée"
+          },
+          {
+            "si": {
+              "champ": "assurance",
+              "operateur": "dans_les_n_jours",
+              "valeur": 60
+            },
+            "couleur": "orange",
+            "libelle": "Assurance à renouveler"
+          }
+        ],
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 8,
+          "espacement": "normal",
+          "marges": "normale",
+          "responsive": [
+            {
+              "sous": "tablette",
+              "colonnes": 4
+            },
+            {
+              "sous": "telephone",
+              "colonnes": 1
+            }
+          ],
+          "composants": [
+            {
+              "section": "Coordonnées",
+              "style": "carte",
+              "couleur": "marine",
+              "x": 1,
+              "y": 1,
+              "largeur": 5,
+              "colonnes": 8,
+              "composants": [
+                {
+                  "champ": "raison_sociale",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 5
+                },
+                {
+                  "champ": "domaine",
+                  "x": 6,
+                  "y": 1,
+                  "largeur": 3
+                },
+                {
+                  "champ": "telephone",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 3
+                },
+                {
+                  "champ": "courriel",
+                  "x": 4,
+                  "y": 2,
+                  "largeur": 5
+                },
+                {
+                  "champ": "site",
+                  "x": 1,
+                  "y": 3,
+                  "largeur": 8
+                }
+              ]
+            },
+            {
+              "section": "Appréciation",
+              "style": "carte",
+              "couleur": "ambre",
+              "x": 6,
+              "y": 1,
+              "largeur": 3,
+              "hauteur": 2,
+              "colonnes": 8,
+              "espacement": "serre",
+              "composants": [
+                {
+                  "texte": "Qualité de service",
+                  "style": "titre",
+                  "largeur": 8
+                },
+                {
+                  "champ": "note",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 8,
+                  "masquer_libelle": true
+                },
+                {
+                  "champ": "remarques",
+                  "x": 1,
+                  "y": 3,
+                  "largeur": 8,
+                  "taille": "grande"
+                }
+              ]
+            },
+            {
+              "section": "Administratif",
+              "style": "panneau",
+              "x": 1,
+              "y": 2,
+              "largeur": 5,
+              "colonnes": 8,
+              "composants": [
+                {
+                  "champ": "siret",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 4
+                },
+                {
+                  "champ": "assurance",
+                  "x": 5,
+                  "y": 1,
+                  "largeur": 4
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "api_min": "1.1"
+}

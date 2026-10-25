@@ -1,0 +1,39 @@
+{
+    "version": "2.2.0",
+    "canal": "Stable",
+    "date": "2026-10-24",
+    "php_min": "8.1",
+    "prerequis": {
+        "_": "Exigences de CETTE version, vérifiées avant installation, démarrage et mise à jour (api/Prerequis.php).",
+        "php": "8.1",
+        "php_eprouve": "8.5",
+        "extensions": {
+            "requises": {
+                "pdo": "accès aux bases",
+                "mbstring": "textes accentués",
+                "ctype": "contrôle des saisies",
+                "openssl": "chiffrement des secrets",
+                "session": "connexion",
+                "fileinfo": "type des documents déposés"
+            },
+            "recommandees": {
+                "curl": "mises à jour, OAuth, facteurs carbone",
+                "zip": "modules, thèmes, mises à jour",
+                "sodium": "signature des mises à jour",
+                "intl": "recherche sans accents",
+                "dom": "import de fichiers XML",
+                "gd": "images"
+            },
+            "par_base": {
+                "sqlite": "pdo_sqlite",
+                "pgsql": "pdo_pgsql",
+                "mysql": "pdo_mysql"
+            }
+        },
+        "sqlite": "3.24",
+        "sqlite_sauvegarde": "3.27",
+        "postgresql": "10",
+        "mariadb": "10.3",
+        "mysql": "5.7"
+    }
+}

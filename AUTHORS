@@ -1,0 +1,14 @@
+Larka — Auteurs et titulaires du copyright
+==========================================
+
+Copyright (C) 2025-2026 Mickaël Larcin (Chipsoreo). Tous droits réservés.
+
+Ce logiciel est un logiciel propriétaire, distribué sous la « Licence
+d'utilisation Larka » (identifiant SPDX LicenseRef-Larka-Proprietary).
+Voir le fichier LICENSE.
+
+Auteur principal :
+  - Mickaël Larcin — alias « Chipsoreo »
+
+Bibliothèques tierces incluses (sous leurs licences respectives) :
+  - js/zxing-browser.min.js — ZXing ("Zebra Crossing"), licence Apache 2.0

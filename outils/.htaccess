@@ -1,0 +1,18 @@
+# Larka — outils de développement, jamais servis par le web.
+#
+# Ces scripts ne sont pas nécessaires au fonctionnement de Larka : ils servent à
+# écrire des modules, à vérifier des traductions et à faire tourner les épreuves
+# de sécurité. Aucun n'a besoin d'être atteignable par une URL.
+#
+# Chacun refuse déjà d'être exécuté hors ligne de commande, mais c'était
+# l'unique protection : un script ajouté sans cette garde aurait été exposé
+# aussitôt. Les .md et .sh, eux, étaient servis tels quels.
+#
+# Équivalent nginx dans deploy/nginx.conf (location ^~).
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

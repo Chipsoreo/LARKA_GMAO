@@ -1,0 +1,8 @@
+# Les scripts Windows exigent des fins de ligne CRLF (cmd.exe lit mal les
+# étiquettes d'un .cmd en LF) ; le .ps1 garde aussi son BOM UTF-8.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.ico binary
+# Et les scripts shell, des fins de ligne LF où qu'ils soient extraits : un
+# start.sh récupéré en CRLF sur un poste Windows ne se lance plus sous Linux.
+*.sh text eol=lf

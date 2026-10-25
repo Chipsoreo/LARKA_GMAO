@@ -1,0 +1,345 @@
+{
+  "identifiant": "larka.moteur-apparence",
+  "format": "declaratif/1",
+  "nom": "Moteur d'apparence",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Définit le vocabulaire d'apparence : quelles variables existent, ce qu'elles pilotent et entre quelles bornes. Ne change rien par lui-même — il permet aux modules de thème d'exister. Installez-le, puis un ou plusieurs thèmes ; chacun choisit le sien.",
+  "vocabulaire": {
+    "couleur_primaire": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--navy",
+      "libelle": "Couleur principale",
+      "defaut": "#1b3a5c"
+    },
+    "couleur_secondaire": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--blue",
+      "libelle": "Couleur secondaire",
+      "defaut": "#2563eb"
+    },
+    "couleur_fond": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--body-bg",
+      "libelle": "Fond de l'application",
+      "defaut": "#f5f7fa"
+    },
+    "couleur_carte": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--white",
+      "libelle": "Fond des cartes",
+      "defaut": "#ffffff"
+    },
+    "couleur_texte": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--text",
+      "libelle": "Texte",
+      "defaut": "#0f172a"
+    },
+    "couleur_texte_doux": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--gray-text",
+      "libelle": "Texte secondaire",
+      "defaut": "#64748b"
+    },
+    "couleur_bordure": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--gray-border",
+      "libelle": "Bordures",
+      "defaut": "#e2e8f0"
+    },
+    "couleur_succes": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--green",
+      "libelle": "Succès",
+      "defaut": "#16a34a"
+    },
+    "couleur_alerte": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--orange",
+      "libelle": "Alerte",
+      "defaut": "#ea580c"
+    },
+    "couleur_erreur": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--red",
+      "libelle": "Erreur",
+      "defaut": "#b91c1c"
+    },
+    "taille_texte": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--font-size",
+      "libelle": "Taille du texte",
+      "defaut": 14,
+      "min": 10,
+      "max": 24
+    },
+    "taille_titre": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--font-size-title",
+      "libelle": "Taille des titres",
+      "defaut": 20,
+      "min": 12,
+      "max": 48
+    },
+    "taille_petit": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--font-size-small",
+      "libelle": "Petit texte",
+      "defaut": 12,
+      "min": 8,
+      "max": 20
+    },
+    "hauteur_ligne": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--row-height",
+      "libelle": "Hauteur de ligne",
+      "defaut": 38,
+      "min": 24,
+      "max": 72
+    },
+    "espacement": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--gap",
+      "libelle": "Espacement",
+      "defaut": 12,
+      "min": 0,
+      "max": 48
+    },
+    "rayon": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--radius",
+      "libelle": "Arrondi",
+      "defaut": 8,
+      "min": 0,
+      "max": 32
+    },
+    "rayon_bouton": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--radius-btn",
+      "libelle": "Arrondi des boutons",
+      "defaut": 6,
+      "min": 0,
+      "max": 32
+    },
+    "epaisseur_bordure": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--border-width",
+      "libelle": "Épaisseur des bordures",
+      "defaut": 1,
+      "min": 0,
+      "max": 6
+    },
+    "largeur_menu": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--sidebar-width",
+      "libelle": "Largeur du menu",
+      "defaut": 240,
+      "min": 140,
+      "max": 420
+    },
+    "hauteur_entete": {
+      "type": "px",
+      "cible": "css",
+      "variable": "--topbar-height",
+      "libelle": "Hauteur de l'en-tête",
+      "defaut": 62,
+      "min": 40,
+      "max": 120
+    },
+    "police": {
+      "type": "choix",
+      "cible": "css",
+      "variable": "--font",
+      "libelle": "Police",
+      "defaut": "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      "valeurs": [
+        "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+        "'Helvetica Neue', Arial, sans-serif",
+        "Georgia, 'Times New Roman', serif",
+        "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+        "'Optima', 'Segoe UI', Candara, sans-serif",
+        "'Roboto Condensed', 'Arial Narrow', sans-serif"
+      ]
+    },
+    "police_titres": {
+      "type": "choix",
+      "cible": "css",
+      "variable": "--font-title",
+      "libelle": "Police des titres",
+      "defaut": "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      "valeurs": [
+        "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+        "'Helvetica Neue', Arial, sans-serif",
+        "Georgia, 'Times New Roman', serif",
+        "'Roboto Condensed', 'Arial Narrow', sans-serif"
+      ]
+    },
+    "graisse_titres": {
+      "type": "choix",
+      "cible": "css",
+      "variable": "--font-weight-title",
+      "libelle": "Graisse des titres",
+      "defaut": "700",
+      "valeurs": [
+        "400",
+        "500",
+        "600",
+        "700",
+        "800"
+      ]
+    },
+    "image_fond": {
+      "type": "image",
+      "cible": "css",
+      "variable": "--body-image",
+      "libelle": "Image de fond",
+      "defaut": "none"
+    },
+    "image_position": {
+      "type": "choix",
+      "cible": "css",
+      "variable": "--body-image-size",
+      "libelle": "Cadrage de l'image",
+      "defaut": "cover",
+      "valeurs": [
+        "cover",
+        "contain",
+        "auto",
+        "100% 100%"
+      ]
+    },
+    "image_repetition": {
+      "type": "choix",
+      "cible": "css",
+      "variable": "--body-image-repeat",
+      "libelle": "Répétition",
+      "defaut": "no-repeat",
+      "valeurs": [
+        "no-repeat",
+        "repeat",
+        "repeat-x",
+        "repeat-y"
+      ]
+    },
+    "voile_fond": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--body-overlay",
+      "libelle": "Voile au-dessus de l'image",
+      "defaut": "rgba(0,0,0,0)"
+    },
+    "ombre_carte": {
+      "type": "ombre",
+      "cible": "css",
+      "variable": "--card-shadow",
+      "libelle": "Ombre des cartes",
+      "defaut": "0px 1px 3px rgba(0,0,0,0.08)"
+    },
+    "ombre_menu": {
+      "type": "ombre",
+      "cible": "css",
+      "variable": "--sidebar-shadow",
+      "libelle": "Ombre du menu",
+      "defaut": "none"
+    },
+    "bordure_carte": {
+      "type": "bordure",
+      "cible": "css",
+      "variable": "--card-border",
+      "libelle": "Cadre des cartes",
+      "defaut": "1px solid #e2e8f0"
+    },
+    "bordure_champ": {
+      "type": "bordure",
+      "cible": "css",
+      "variable": "--input-border",
+      "libelle": "Cadre des champs",
+      "defaut": "1px solid #e2e8f0"
+    },
+    "bordure_entete": {
+      "type": "bordure",
+      "cible": "css",
+      "variable": "--topbar-border",
+      "libelle": "Cadre de l'en-tête",
+      "defaut": "1px solid #e2e8f0"
+    },
+    "couleur_menu": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--sidebar-bg",
+      "libelle": "Fond du menu",
+      "defaut": "#ffffff"
+    },
+    "couleur_menu_texte": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--sidebar-text",
+      "libelle": "Texte du menu",
+      "defaut": "#0f172a"
+    },
+    "couleur_menu_actif": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--sidebar-active",
+      "libelle": "Élément de menu actif",
+      "defaut": "#1b3a5c"
+    },
+    "couleur_entete": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--topbar-bg",
+      "libelle": "Fond de l'en-tête",
+      "defaut": "#ffffff"
+    },
+    "couleur_bouton": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--btn-bg",
+      "libelle": "Fond des boutons",
+      "defaut": "#2563eb"
+    },
+    "couleur_bouton_texte": {
+      "type": "couleur",
+      "cible": "css",
+      "variable": "--btn-text",
+      "libelle": "Texte des boutons",
+      "defaut": "#ffffff"
+    }
+  },
+  "pages": [
+    {
+      "cle": "apparence",
+      "titre": "Apparence",
+      "icone": "palette",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur",
+        "Demandeur"
+      ],
+      "vue": {
+        "type": "apparence"
+      }
+    }
+  ]
+}

@@ -1,0 +1,421 @@
+{
+  "identifiant": "larka.cles",
+  "format": "declaratif/1",
+  "nom": "Gestion des clés",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Répertoire des clés et badges d'un patrimoine : qui détient quoi, où, et depuis quand.",
+  "logo": "assets/logo.png",
+  "donnees": {
+    "cles": {
+      "libelle": "Clé",
+      "libelle_pluriel": "Clés",
+      "champs": {
+        "numero": {
+          "type": "texte",
+          "libelle": "Numéro",
+          "obligatoire": true,
+          "unique": true,
+          "max": 40,
+          "aide": "Gravure ou étiquette portée par la clé",
+          "groupe": "Identification"
+        },
+        "nomination": {
+          "type": "texte",
+          "libelle": "Désignation",
+          "obligatoire": true,
+          "max": 120,
+          "groupe": "Identification"
+        },
+        "type": {
+          "type": "choix",
+          "libelle": "Type",
+          "valeurs": [
+            "Clé",
+            "Passe",
+            "Passe général",
+            "Badge",
+            "Cadenas"
+          ],
+          "defaut": "Clé",
+          "groupe": "Identification"
+        },
+        "statut": {
+          "type": "choix",
+          "libelle": "Statut",
+          "valeurs": [
+            "En armoire",
+            "Attribuée",
+            "Perdue",
+            "Réformée"
+          ],
+          "defaut": "En armoire",
+          "groupe": "Identification"
+        },
+        "detenteur": {
+          "type": "texte",
+          "libelle": "Détenteur",
+          "max": 80,
+          "visible_si": {
+            "champ": "statut",
+            "operateur": "egal",
+            "valeur": "Attribuée"
+          },
+          "groupe": "Attribution"
+        },
+        "remise_le": {
+          "type": "date",
+          "libelle": "Remise le",
+          "visible_si": {
+            "champ": "statut",
+            "operateur": "egal",
+            "valeur": "Attribuée"
+          },
+          "groupe": "Attribution"
+        },
+        "retour_prevu": {
+          "type": "date",
+          "libelle": "Retour prévu",
+          "visible_si": {
+            "champ": "statut",
+            "operateur": "egal",
+            "valeur": "Attribuée"
+          },
+          "groupe": "Attribution"
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Ouvre l'équipement",
+          "groupe": "Rattachement"
+        },
+        "bien": {
+          "type": "lien",
+          "vers": "biens",
+          "libelle": "Bâtiment",
+          "groupe": "Rattachement"
+        },
+        "exemplaires": {
+          "type": "entier",
+          "libelle": "Exemplaires",
+          "min": 1,
+          "max": 99,
+          "defaut": 1,
+          "groupe": "Rangement"
+        },
+        "armoire": {
+          "type": "texte",
+          "libelle": "Rangement",
+          "max": 60,
+          "groupe": "Rangement"
+        },
+        "commentaire": {
+          "type": "texte_long",
+          "libelle": "Commentaire",
+          "max": 500,
+          "groupe": "Rangement"
+        },
+        "etage_id": {
+          "type": "entier",
+          "libelle": "Étage du plan",
+          "aide": "Renseigné en posant le repère sur le plan",
+          "groupe": "Repère sur plan"
+        },
+        "lat": {
+          "type": "decimal",
+          "libelle": "Position (lat)",
+          "groupe": "Repère sur plan"
+        },
+        "lng": {
+          "type": "decimal",
+          "libelle": "Position (lng)",
+          "groupe": "Repère sur plan"
+        },
+        "retard": {
+          "type": "formule",
+          "libelle": "Retard",
+          "format": "nombre",
+          "expression": "{{if(isEmpty(record.retour_prevu), null, diffDays(today, record.retour_prevu))}}"
+        },
+        "situation": {
+          "type": "formule",
+          "libelle": "Situation",
+          "expression": "{{if(record.statut != 'Attribuée', '—', if(isEmpty(record.retour_prevu), 'Sans échéance', if(diffDays(today, record.retour_prevu) > 0, 'En retard', 'Dans les temps')))}}"
+        }
+      }
+    }
+  },
+  "ancrages": [
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "cles",
+      "libelle": "Clés attribuées",
+      "filtre": {
+        "statut": "Attribuée"
+      },
+      "couleur": "#1b3a5c"
+    },
+    {
+      "emplacement": "plans.barre_outils",
+      "type": "marqueurs",
+      "source": "cles",
+      "champ_etage": "etage_id",
+      "champ_lat": "lat",
+      "champ_lng": "lng",
+      "etiquette": "numero",
+      "icone": "🔑",
+      "libelle": "Clés sur ce plan"
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "cles",
+      "champ_lien": "equipement",
+      "colonnes": [
+        "numero",
+        "nomination",
+        "detenteur"
+      ],
+      "libelle": "Clés de cet équipement"
+    }
+  ],
+  "partage": [
+    {
+      "nom": "cles_publiques",
+      "libelle": "Numéro et statut des clés",
+      "source": "cles",
+      "champs": [
+        "numero",
+        "statut"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "cle": "cles",
+      "titre": "Gestion des clés",
+      "icone": "key",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "cles",
+        "colonnes": [
+          "numero",
+          "nomination",
+          "type",
+          "statut",
+          "detenteur",
+          "situation"
+        ],
+        "recherche": [
+          "numero",
+          "nomination",
+          "detenteur",
+          "armoire"
+        ],
+        "filtres": [
+          {
+            "champ": "statut"
+          },
+          {
+            "champ": "type"
+          }
+        ],
+        "tri": {
+          "numero": "ASC"
+        },
+        "grouper_par": "statut",
+        "par_page": 50,
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 12,
+          "espacement": "normal",
+          "responsive": [
+            {
+              "sous": "tablette",
+              "colonnes": 6
+            },
+            {
+              "sous": "telephone",
+              "colonnes": 1
+            }
+          ],
+          "composants": [
+            {
+              "texte": "Le trousseau",
+              "style": "titre",
+              "largeur": 12
+            },
+            {
+              "champ": "numero",
+              "x": 1,
+              "y": 2,
+              "largeur": 2,
+              "largeur_max_px": 150
+            },
+            {
+              "champ": "nomination",
+              "x": 3,
+              "y": 2,
+              "largeur": 6
+            },
+            {
+              "champ": "type",
+              "x": 9,
+              "y": 2,
+              "largeur": 2
+            },
+            {
+              "champ": "statut",
+              "x": 11,
+              "y": 2,
+              "largeur": 2
+            },
+            {
+              "section": "Attribution",
+              "style": "encadre",
+              "couleur": "ambre",
+              "x": 1,
+              "y": 3,
+              "largeur": 12,
+              "colonnes": 12,
+              "visible_si": {
+                "champ": "statut",
+                "operateur": "egal",
+                "valeur": "Attribuée"
+              },
+              "composants": [
+                {
+                  "texte": "Qui la détient, depuis quand, et jusqu'à quand.",
+                  "style": "aide",
+                  "largeur": 12
+                },
+                {
+                  "champ": "detenteur",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 5
+                },
+                {
+                  "champ": "remise_le",
+                  "x": 6,
+                  "y": 2,
+                  "largeur": 3
+                },
+                {
+                  "champ": "retour_prevu",
+                  "x": 9,
+                  "y": 2,
+                  "largeur": 4
+                }
+              ]
+            },
+            {
+              "section": "Ce qu'elle ouvre",
+              "style": "panneau",
+              "x": 1,
+              "y": 4,
+              "largeur": 5,
+              "colonnes": 12,
+              "espacement": "serre",
+              "composants": [
+                {
+                  "champ": "equipement",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 12
+                },
+                {
+                  "champ": "bien",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12
+                }
+              ]
+            },
+            {
+              "section": "Où elle est rangée",
+              "style": "panneau",
+              "x": 6,
+              "y": 4,
+              "largeur": 7,
+              "colonnes": 12,
+              "espacement": "serre",
+              "composants": [
+                {
+                  "champ": "exemplaires",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 3,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 110
+                },
+                {
+                  "champ": "armoire",
+                  "x": 4,
+                  "y": 1,
+                  "largeur": 9
+                },
+                {
+                  "champ": "commentaire",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 12,
+                  "taille": "grande"
+                }
+              ]
+            },
+            {
+              "section": "Repère sur plan",
+              "style": "discret",
+              "x": 1,
+              "y": 5,
+              "largeur": 12,
+              "colonnes": 12,
+              "espacement": "serre",
+              "repliable": true,
+              "repliee": true,
+              "composants": [
+                {
+                  "texte": "Renseigné en posant le repère sur le plan — inutile de le saisir ici.",
+                  "style": "aide",
+                  "largeur": 12
+                },
+                {
+                  "champ": "etage_id",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 4
+                },
+                {
+                  "champ": "lat",
+                  "x": 5,
+                  "y": 2,
+                  "largeur": 4
+                },
+                {
+                  "champ": "lng",
+                  "x": 9,
+                  "y": 2,
+                  "largeur": 4
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "api_min": "1.1"
+}

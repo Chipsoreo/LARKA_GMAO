@@ -1,0 +1,56 @@
+{
+  "identifiant": "larka.recharge",
+  "format": "declaratif/1",
+  "nom": "Bornes de recharge",
+  "version": "1.0.0",
+  "auteur": "Larka",
+  "description": "Réservation des bornes de recharge pour véhicules électriques. Les agents déposent leurs créneaux depuis « Mes demandes », le gestionnaire arbitre et imprime le planning de la semaine. Déclaration répartie sur sept fichiers reliés par $ref.",
+  "reglages": {
+    "$ref": "parties/reglages.json"
+  },
+  "donnees": {
+    "creneaux": {
+      "libelle": "Créneaux de recharge",
+      "champs": {
+        "$ref": "parties/demandeur.json"
+      }
+    }
+  },
+  "pages": [
+    {
+      "cle": "mes_recharges",
+      "titre": "Recharge électrique",
+      "icone": "bolt",
+      "roles": [
+        "Visionneur",
+        "Demandeur"
+      ],
+      "vue": {
+        "$ref": "parties/vue-demandeur.json"
+      }
+    },
+    {
+      "cle": "planning_public",
+      "titre": "Planning des bornes",
+      "icone": "calendar",
+      "roles": [
+        "Gestionnaire",
+        "Admin"
+      ],
+      "vue": {
+        "$ref": "parties/vue-planning-public.json"
+      }
+    }
+  ],
+  "ancrages": [
+    {
+      "emplacement": "demandes.type",
+      "type": "formulaire",
+      "source": "creneaux",
+      "page": "mes_recharges",
+      "libelle": "Recharge électrique",
+      "icone": "⚡"
+    }
+  ],
+  "api_min": "1.3"
+}

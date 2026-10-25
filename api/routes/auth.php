@@ -1,0 +1,671 @@
+<?php
+// SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+// SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+//
+// This file is part of Larka, proprietary software by Mickaël Larcin.
+// All rights reserved. Use is subject to the license terms; copying,
+// distribution, modification or reverse-engineering without the author's
+// prior written permission is prohibited. See the LICENSE file for details.
+/**
+ * Larka — Routes : Authentification
+ *
+ * Actions : login, logout, me, register, change_password, reset_password,
+ *           oauth_microsoft_url, oauth_google_url, auth_config
+ */
+
+// ── Résolution du tenant d'un compte (login, mot de passe oublié, reset) ─────
+//
+// ⚠️ FIX BUG : la résolution n'existait que dans « login ». « forgot_password »
+// et « reset_password » travaillaient sur la base choisie par le nom d'hôte :
+// en multi-tenant, le code de réinitialisation d'un agent était cherché (et
+// écrit) dans la mauvaise base — l'agent ne recevait jamais rien, ou pire, un
+// homonyme d'une autre organisation recevait le code.
+//
+// ⚠️ FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
+// locaux) ignoraient l'état « actif » du tenant ; une organisation désactivée
+// par le super administrateur restait donc accessible par ce chemin.
+//
+// Retourne ['cle' => ?string, 'erreur' => ?string, 'code' => int].
+// En mono-tenant : cle = null, sans erreur.
+if (!function_exists('tenant_du_compte')) {
+    function tenant_du_compte(string $login): array {
+        return TenantResolver::tenantPourConnexion($login, true);
+    }
+
+    /** Base d'un tenant résolu ; null si sa configuration n'est pas chargeable. */
+    function base_du_tenant(string $cle): ?Database {
+        $cfg = TenantResolver::getDbConfigForTenant($cle);
+        if (!$cfg) {
+            // ⚠️ Jamais de repli sur la base par défaut : le mot de passe d'un
+            // agent serait vérifié contre les comptes d'un autre tenant.
+            error_log("[AUTH] Tenant '{$cle}' résolu mais config DB introuvable.");
+            return null;
+        }
+        return new Database($cfg);
+    }
+}
+
+// ── Connexion locale (avec résolution multi-tenant) ──────────────────────────
+if ($action === 'login' && $method === 'POST') {
+    $body = get_body();
+    $login = trim((string)($body['login'] ?? ''));
+    $password = (string)($body['password'] ?? '');
+    $tenantKey = null;
+
+    // Rate limiting par IP et par login.
+    // ⚠️ FIX BUG : chaque appel — connexions RÉUSSIES comprises — était compté.
+    // Cinq connexions légitimes en cinq minutes (plusieurs onglets, un poste
+    // partagé, un test) bloquaient le compte. Seuls les échecs comptent
+    // désormais ; le plafond, lui, est vérifié avant toute vérification.
+    $clientIp = client_ip();
+    check_rate_limit('login_' . $clientIp, 10, 300, false);
+    if ($login !== '') // Seuil par compte relevé (20 échecs / 15 min) : à 5, n'importe qui
+    // bloquait un login connu à volonté. La limite par IP reste à 10 / 5 min.
+    check_rate_limit('login_user_' . strtolower($login), 20, 900, false);
+    $echecConnexion = static function () use ($clientIp, $login): void {
+        rate_limit_noter('login_' . $clientIp);
+        if ($login !== '') rate_limit_noter('login_user_' . strtolower($login));
+    };
+
+    $res = tenant_du_compte($login);
+    if ($res['erreur']) { $echecConnexion(); json_error($res['erreur'], $res['code']); }
+    if ($res['cle']) {
+        $tenantKey = $res['cle'];
+        $db = base_du_tenant($tenantKey);
+        if (!$db) json_error('Configuration tenant indisponible. Contactez l\'administrateur.', 503);
+        // ⚠️ FIX SÉCURITÉ : tenant_key n'est plus écrit en session AVANT la
+        // vérification du mot de passe. Un utilisateur déjà connecté qui tentait
+        // (et ratait) une connexion avec le login d'une autre organisation
+        // basculait sa session existante sur la base de cette organisation —
+        // avec ses propres droits.
+    }
+
+    $user = $db->login($login, $password);
+    if (!$user) {
+        $echecConnexion();
+        // Log de sécurité — corrélation possible avec les rate_limited
+        if (class_exists('SecurityLog')) {
+            SecurityLog::loginFailure($login);
+        }
+        json_error('Identifiant ou mot de passe incorrect.', 401);
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+    $_SESSION['user'] = $user;
+    if ($tenantKey) {
+        $_SESSION['tenant_key'] = $tenantKey;
+    }
+    // Une connexion d'agent met fin à une éventuelle bascule super admin.
+    unset($_SESSION['forced_tenant']);
+    $user['_tenant'] = $_SESSION['tenant_key'] ?? 'default';
+    if (class_exists('SecurityLog')) {
+        SecurityLog::loginSuccess($login, $user['_tenant']);
+    }
+    json_ok($user);
+}
+
+// ── Déconnexion ───────────────────────────────────────────────────────────────
+if ($action === 'logout' && $method === 'POST') {
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params['path'] ?? '/',
+            $params['domain'] ?? '',
+            (bool)($params['secure'] ?? false),
+            (bool)($params['httponly'] ?? true)
+        );
+    }
+    session_destroy();
+    json_ok('Déconnecté');
+}
+
+// ── Vérification session courante ─────────────────────────────────────────────
+if ($action === 'me' && $method === 'GET') {
+    $user = require_auth();
+    $user['_tenant'] = $_SESSION['tenant_key'] ?? $_SESSION['forced_tenant'] ?? 'default';
+    json_ok($user);
+}
+
+// ── Vérification OAuth (postMessage + polling) ────────────────────────────────
+if ($action === 'oauth_check' && $method === 'GET') {
+    // 1. Session déjà initialisée (même cookie) → connexion directe
+    if (!empty($_SESSION['user'])) {
+        json_ok($_SESSION['user']);
+    }
+    // 2. Token fichier transmis via postMessage (cross-window)
+    $oauthToken = $_GET['token'] ?? '';
+    if ($oauthToken && preg_match('/^[a-f0-9]{48}$/', $oauthToken)) {
+        $tokenFile = __DIR__ . '/../../data/oauth_result_' . $oauthToken . '.json';
+        if (file_exists($tokenFile)) {
+            $data = json_decode(file_get_contents($tokenFile), true);
+            @unlink($tokenFile);
+            if ($data && isset($data['user']) && (time() - ($data['ts'] ?? 0)) < 300) {
+                if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+                unset($_SESSION['forced_tenant']);
+                $_SESSION['user'] = $data['user'];
+                // Restaurer le tenant depuis le token OAuth
+                if (!empty($data['tenant_key'])) {
+                    $_SESSION['tenant_key'] = $data['tenant_key'];
+                }
+                json_ok($data['user']);
+            }
+        }
+    }
+    json_error('En attente', 202);
+}
+
+// ── Configuration OAuth publique (sans secrets) ───────────────────────────────
+/**
+ * Accès de la démonstration « Ville de Larkaville », pour l'écran de connexion.
+ *
+ * Montrés seulement si la démonstration est posée (data/demo/comptes-demo.csv,
+ * copié par « ./start.sh demo » / « Larka.cmd demo ») ET si son compte
+ * principal a TOUJOURS le mot de passe d'origine : dès qu'on le change — ce
+ * qu'il faut faire si d'autres que soi joignent le serveur —, plus rien
+ * n'apparaît. Jamais en multi-tenant (la démonstration vise une installation
+ * simple). null sinon.
+ */
+if (!function_exists('auth_acces_demo')) {
+function auth_acces_demo(): ?array {
+    $csv = __DIR__ . '/../../data/demo/comptes-demo.csv';
+    if (!is_file($csv)) return null;
+    try {
+        if (class_exists('TenantResolver') && TenantResolver::isMultiTenant()) return null;
+        $fh = fopen($csv, 'r');
+        if (!$fh) return null;
+        $entete = fgetcsv($fh, 0, ';');
+        if (!$entete) { fclose($fh); return null; }
+        $entete[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string)$entete[0]);
+        $col = array_flip(array_map('trim', $entete));
+        $comptes = [];
+        while (($l = fgetcsv($fh, 0, ';')) !== false) {
+            $login = trim((string)($l[$col['Identifiant'] ?? 0] ?? ''));
+            if ($login === '' || stripos((string)($l[$col['Actif'] ?? 8] ?? 'oui'), 'non') === 0) continue;
+            $comptes[] = [
+                'login'  => $login,
+                'mdp'    => (string)($l[$col['Mot de passe'] ?? 1] ?? ''),
+                'role'   => trim((string)($l[$col['Rôle'] ?? 4] ?? '')),
+                'profil' => trim((string)($l[$col['Profil'] ?? 5] ?? '')),
+                'poste'  => trim((string)($l[$col['Poste'] ?? 7] ?? '')),
+            ];
+        }
+        fclose($fh);
+        if (!$comptes) return null;
+        // Compte principal : claire.moreau (gestionnaire du patrimoine), sinon
+        // le premier gestionnaire.
+        $principal = null;
+        foreach ($comptes as $c) if ($c['login'] === 'claire.moreau') $principal = $c;
+        if (!$principal) foreach ($comptes as $c) if ($c['role'] === 'Gestionnaire') { $principal = $c; break; }
+        if (!$principal || $principal['mdp'] === '') return null;
+        $dbd = (($GLOBALS['db'] ?? null) instanceof Database) ? $GLOBALS['db'] : new Database();
+        if (!$dbd->motDePasseInchange($principal['login'], $principal['mdp'])) return null;
+        // Un compte par profil (gestionnaire, technicien, visionneur, demandeur).
+        $profils = [$principal['role'] . '|' . $principal['profil'] => true];
+        $autres = [];
+        foreach ($comptes as $c) {
+            $k = $c['role'] . '|' . $c['profil'];
+            if (isset($profils[$k]) || $c['login'] === 'admin' || $c['mdp'] !== $principal['mdp']) continue;
+            $profils[$k] = true;
+            $autres[] = $c;
+        }
+        $vue = fn($c) => ['login' => $c['login'], 'role' => $c['role'], 'profil' => $c['profil'], 'poste' => $c['poste']];
+        return [
+            'nom'          => 'Ville de Larkaville',
+            'mot_de_passe' => $principal['mdp'],
+            'principal'    => $vue($principal),
+            'autres'       => array_map($vue, array_slice($autres, 0, 4)),
+        ];
+    } catch (\Throwable $e) {
+        return null;
+    }
+}
+}
+
+if ($action === 'auth_config' && $method === 'GET') {
+    require_once __DIR__ . '/../Version.php';
+    json_ok([
+        'microsoft' => MICROSOFT_ENABLED && MICROSOFT_CLIENT_ID !== '',
+        'google'    => GOOGLE_ENABLED    && GOOGLE_CLIENT_ID    !== '',
+        // Affichée sous le formulaire de connexion (« V2.2.0 »).
+        'version'   => LarkaVersion::libelle(),
+        // Démonstration posée : identifiant et mot de passe à l'écran.
+        'demo'      => auth_acces_demo(),
+    ]);
+}
+
+// ── URL du serveur (redirect mobile OAuth) ────────────────────────────────────
+if ($action === 'server_url' && $method === 'GET') {
+    json_ok(['url' => APP_URL]);
+}
+
+// ── URL d'autorisation Microsoft ──────────────────────────────────────────────
+if ($action === 'oauth_microsoft_url' && $method === 'GET') {
+    $state = bin2hex(random_bytes(16));
+    $_SESSION['oauth_state'] = $state;
+    // Stocker le state dans un fichier dédié (évite la race condition avec login concurrent)
+    $stateDir = __DIR__ . '/../../data/oauth_states';
+    if (!is_dir($stateDir)) @mkdir($stateDir, 0700, true);
+    if (!oauth_etat_autorise($stateDir)) json_error('Trop de tentatives de connexion. Réessayez dans quelques minutes.', 429);
+    // Lie le flux à CE navigateur (anti login-CSRF, cf. config.php).
+    $nonceHash = oauth_nonce_emettre();
+    file_put_contents($stateDir . '/' . hash('sha256', $state) . '.json', json_encode(['state' => $state, 'ts' => time(), 'nonce' => $nonceHash]));
+
+    $isMobile    = !empty($_GET['mobile']);
+    $redirectUri = ($isMobile && MICROSOFT_REDIRECT_URI_MOBILE)
+        ? MICROSOFT_REDIRECT_URI_MOBILE
+        : MICROSOFT_REDIRECT_URI;
+    if ($isMobile) $_SESSION['oauth_redirect_uri_ms'] = $redirectUri;
+
+    $scopes = 'openid profile email offline_access User.Read User.ReadBasic.All';
+    if (SHAREPOINT_ENABLED) $scopes .= ' Files.Read.All Sites.Read.All';
+    if (defined('PLANS_PRESENCE_ENABLED') && PLANS_PRESENCE_ENABLED) $scopes .= ' Presence.Read.All Calendars.Read.Shared';
+
+    $params = http_build_query([
+        'client_id'     => MICROSOFT_CLIENT_ID,
+        'response_type' => 'code',
+        'redirect_uri'  => $redirectUri,
+        'scope'         => $scopes,
+        'response_mode' => 'query',
+        'state'         => $state,
+        'prompt'        => !empty($_GET['consent']) ? 'consent' : 'select_account',
+    ]);
+    json_ok(['url' => 'https://login.microsoftonline.com/' . MICROSOFT_TENANT_ID . '/oauth2/v2.0/authorize?' . $params]);
+}
+
+// ── Mot de passe oublié — demande de code ────────────────────────────────────
+if ($action === 'forgot_password' && $method === 'POST') {
+    $body  = get_body();
+    $login = trim($body['login'] ?? '');
+    $emailInput = trim($body['email'] ?? '');
+    if (!$login) json_error('Identifiant requis.');
+    if (!$emailInput || !str_contains($emailInput, '@')) json_error('Adresse email requise.');
+
+    // Rate limiting
+    $clientIp = client_ip();
+    check_rate_limit('forgot_' . $clientIp, 3, 600);
+    check_rate_limit('forgot_user_' . strtolower($login), 3, 600);
+
+    // Vérifier que SMTP est configuré (erreur générique côté admin, pas côté UX)
+    if (!SMTP_HOST) {
+        error_log('Larka: forgot_password appelée mais SMTP non configuré.');
+        json_ok(['email' => 'votre adresse email']);
+    }
+
+    // ⚠️ FIX SÉCURITÉ : pour éviter l'énumération d'utilisateurs, on retourne
+    // toujours une réponse "succès" générique, que le compte existe ou non,
+    // qu'il soit local ou OAuth, que l'email corresponde ou non. Les vrais
+    // erreurs sont seulement loggées côté serveur.
+    $genericOk = ['email' => 'votre adresse email enregistrée'];
+
+    // Base de l'organisation du compte (multi-tenant), comme pour la connexion.
+    $res = tenant_du_compte($login);
+    if ($res['erreur']) {
+        error_log("Larka: forgot_password — \"$login\" : " . $res['erreur']);
+        json_ok($genericOk);
+    }
+    if ($res['cle']) {
+        $db = base_du_tenant($res['cle']);
+        if (!$db) json_ok($genericOk);
+    }
+
+    // Compte local ? (sinon on log + on retourne le OK générique)
+    if (!$db->isLocalAccount($login)) {
+        error_log("Larka: forgot_password — login \"$login\" non local ou inexistant.");
+        json_ok($genericOk);
+    }
+
+    $emailDb = $db->getUserEmail($login);
+    if (!$emailDb) {
+        error_log("Larka: forgot_password — login \"$login\" sans email.");
+        json_ok($genericOk);
+    }
+    if (strtolower(trim($emailInput)) !== strtolower(trim($emailDb))) {
+        error_log("Larka: forgot_password — email saisi ne correspond pas pour \"$login\".");
+        json_ok($genericOk);
+    }
+
+    // Générer un code à 6 chiffres
+    $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    $db->setResetToken($login, $code);
+    // Trace côté serveur uniquement (la réponse au client reste générique) :
+    // une demande de code est le premier pas d'une récupération de compte.
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('password_reset_requested', [
+            'login'  => $login,
+            'tenant' => (string)($res['cle'] ?? 'default'),
+        ]);
+    }
+
+    // Envoyer le mail
+    $subject = 'Larka — Code de réinitialisation';
+    $body_html = "<div style='font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:8px'>
+        <h2 style='color:#1d4ed8;margin-top:0'>🔑 Réinitialisation de mot de passe</h2>
+        <p>Votre code temporaire est :</p>
+        <div style='font-size:32px;font-weight:700;letter-spacing:6px;text-align:center;padding:16px;background:#f0f9ff;border-radius:8px;color:#1d4ed8;margin:16px 0'>$code</div>
+        <p style='color:#6b7280;font-size:13px'>Ce code expire dans <strong>15 minutes</strong>.<br>Si vous n'avez pas demandé cette réinitialisation, ignorez ce message.</p>
+        <hr style='border:none;border-top:1px solid #e5e7eb;margin:16px 0'>
+        <p style='color:#9ca3af;font-size:11px;text-align:center'>Larka — Gestion de Maintenance Assistée</p>
+    </div>";
+
+    $sent = gmao_send_mail($emailDb, $subject, $body_html);
+    if (!$sent) {
+        // Log uniquement — on retourne quand même OK (générique) pour ne pas
+        // donner d'indice sur l'existence du compte vs. un échec SMTP.
+        error_log('Larka: forgot_password — échec envoi email à ' . $emailDb);
+    }
+
+    // Masquer l'email pour la réponse
+    $parts = explode('@', $emailDb);
+    $masked = substr($parts[0], 0, 2) . str_repeat('•', max(1, strlen($parts[0]) - 2)) . '@' . $parts[1];
+    json_ok(['email' => $masked]);
+}
+
+// ── Mot de passe oublié — vérifier code et reset ─────────────────────────────
+if ($action === 'reset_password' && $method === 'POST') {
+    $body     = get_body();
+    $login    = trim($body['login'] ?? '');
+    $code     = trim($body['code'] ?? '');
+    $newPwd   = $body['newPassword'] ?? '';
+
+    // Rate limiting — brute force code
+    $clientIp = client_ip();
+    check_rate_limit('reset_' . $clientIp, 5, 600);
+    if ($login) check_rate_limit('reset_user_' . strtolower($login), 5, 600);
+
+    if (!$login || !$code || !$newPwd) json_error('Tous les champs sont requis.');
+    if (strlen($newPwd) < 8) json_error('Le mot de passe doit contenir au moins 8 caractères.');
+
+    // Même base que celle où forgot_password a écrit le code.
+    $res = tenant_du_compte($login);
+    if ($res['erreur']) json_error('Code invalide ou expiré. Veuillez redemander un code.');
+    if ($res['cle']) {
+        $db = base_du_tenant($res['cle']);
+        if (!$db) json_error('Configuration tenant indisponible. Contactez l\'administrateur.', 503);
+    }
+
+    $ok = $db->resetPassword($login, $code, $newPwd);
+    if (!$ok) {
+        // Un code faux en série = tentative de deviner le code à 6 chiffres.
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('password_reset_failure', [
+                'login' => $login, 'tenant' => (string)($res['cle'] ?? 'default'),
+                'reason' => 'code_invalide_ou_expire',
+            ]);
+        }
+        json_error('Code invalide ou expiré. Veuillez redemander un code.');
+    }
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('password_reset_success', [
+            'login' => $login, 'tenant' => (string)($res['cle'] ?? 'default'),
+        ]);
+    }
+    json_ok('Mot de passe réinitialisé avec succès.');
+}
+
+// ── Changer son mot de passe (connecté) ──────────────────────────────────────
+if ($action === 'change_password' && $method === 'POST') {
+    $user = require_auth();
+    // Rate limiting
+    check_rate_limit('chgpwd_' . (int)$user['Id'], 5, 600);
+    $body = get_body();
+    $oldPwd = $body['oldPassword'] ?? '';
+    $newPwd = $body['newPassword'] ?? '';
+
+    if (!$oldPwd || !$newPwd) json_error('Ancien et nouveau mot de passe requis.');
+    if (strlen($newPwd) < 8) json_error('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+
+    if ($newPwd === $oldPwd) json_error('Le nouveau mot de passe doit être différent de l\'ancien.');
+
+    $ok = $db->changePassword((int)$user['Id'], $oldPwd, $newPwd);
+    if (!$ok) {
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('password_change_failure', [
+                'login' => (string)($user['Login'] ?? ''), 'user_id' => (int)$user['Id'],
+                'reason' => 'ancien_mot_de_passe_incorrect',
+            ]);
+        }
+        json_error('Ancien mot de passe incorrect.');
+    }
+    if (class_exists('SecurityLog')) {
+        SecurityLog::audit('password_changed', [
+            'login' => (string)($user['Login'] ?? ''), 'user_id' => (int)$user['Id'],
+            'tenant' => (string)($_SESSION['tenant_key'] ?? 'default'),
+        ]);
+    }
+    // ⚠️ FIX BUG : la base remettait MustChangePassword à 0 mais la SESSION
+    // gardait 1 — l'agent restait bloqué sur « Vous devez changer votre mot de
+    // passe » jusqu'à se déconnecter. (utilisateur_session() relit aussi la
+    // fiche à chaque requête ; on aligne la session tout de suite.)
+    if (!empty($_SESSION['user']) && (int)($_SESSION['user']['Id'] ?? 0) === (int)$user['Id']) {
+        $_SESSION['user']['MustChangePassword'] = 0;
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+    // Le mot de passe initial (data/security/admin-initial.txt) ne sert plus :
+    // il restait sur le disque, en clair, après avoir été changé.
+    if (strtolower((string)($user['Login'] ?? '')) === 'admin' && empty($_SESSION['tenant_key'])) {
+        @unlink(__DIR__ . '/../../data/security/admin-initial.txt');
+    }
+    json_ok('Mot de passe modifié avec succès.');
+}
+
+// ── Mise à jour du profil utilisateur connecté ────────────────────────────────
+// Permet à un Demandeur ou un Gestionnaire de compléter ses informations
+// personnelles (téléphone, service, poste, bureau...) — utile pour enrichir
+// le contexte du chatbot et pour que les autres utilisateurs sachent qui
+// contacter en cas de besoin.
+//
+// SÉCURITÉ — règles importantes :
+//  - Les champs sensibles (Login, Role, Provider, MotDePasse, Id, Actif) ne sont
+//    JAMAIS modifiables par cette route. Seul un admin via /superadmin peut y toucher.
+//  - Pour les comptes non-locaux (Microsoft/Google), les champs synchronisés
+//    depuis le provider (Email, Service, Poste, ManagerName...) sont en
+//    LECTURE SEULE — la route les ignore silencieusement. C'est pour éviter
+//    que la prochaine connexion OAuth écrase la modification de l'utilisateur.
+//  - Validation stricte : longueur max, regex sur tél, emails ignorés.
+if ($action === 'update_profile' && $method === 'POST') {
+    $user = require_auth();
+    check_rate_limit('updprof_' . (int)$user['Id'], 20, 600);
+    $body = get_body();
+    $provider = strtolower($user['Provider'] ?? 'local');
+    $isLocal  = ($provider === 'local' || $provider === '');
+
+    // Champs autorisés à la modification + leur validation.
+    // Pour chaque champ : 'maxlen' (limite caractères), 'regex' (optionnel),
+    //                     'local_only' (true = ignoré pour les comptes Microsoft/Google).
+    $fieldSpec = [
+        // Téléphone(s) — toujours modifiables même en OAuth (le provider ne les pousse pas)
+        'Tel'        => ['maxlen' => 30, 'regex' => '/^[\d\s\+\-\.\(\)]*$/', 'local_only' => false],
+        'TelMobile'  => ['maxlen' => 30, 'regex' => '/^[\d\s\+\-\.\(\)]*$/', 'local_only' => false],
+        'TelPro'     => ['maxlen' => 30, 'regex' => '/^[\d\s\+\-\.\(\)]*$/', 'local_only' => false],
+        // Identité — modifiable uniquement en local (Microsoft/Google la synchronisent)
+        'Nom'        => ['maxlen' => 80, 'regex' => null, 'local_only' => true],
+        'Prenom'     => ['maxlen' => 80, 'regex' => null, 'local_only' => true],
+        // Organisation — modifiable uniquement en local
+        'Service'    => ['maxlen' => 100, 'regex' => null, 'local_only' => true],
+        'Poste'      => ['maxlen' => 100, 'regex' => null, 'local_only' => true],
+        // Email — modifiable uniquement en local (OAuth gère son propre email)
+        'Email'      => ['maxlen' => 150, 'regex' => '/^$|^[^\s@]+@[^\s@]+\.[^\s@]+$/', 'local_only' => true],
+    ];
+
+    // Construction de la mise à jour SQL en ne gardant que les champs autorisés ET fournis.
+    $updates = [];
+    $params  = ['id' => (int)$user['Id']];
+    $ignored = []; // pour diagnostiquer : champs qu'on a refusés
+
+    foreach ($fieldSpec as $col => $spec) {
+        if (!array_key_exists($col, $body)) continue;        // pas fourni → on ne touche pas
+        $val = trim((string)$body[$col]);
+
+        // Champ verrouillé pour ce provider → on ignore
+        if ($spec['local_only'] && !$isLocal) {
+            $ignored[] = $col;
+            continue;
+        }
+        // Validation longueur
+        if (mb_strlen($val) > $spec['maxlen']) {
+            json_error("Le champ '$col' dépasse la longueur maximale (" . $spec['maxlen'] . ').');
+        }
+        // Validation regex si présente (la regex doit accepter la chaîne vide)
+        if ($spec['regex'] !== null && !preg_match($spec['regex'], $val)) {
+            json_error("Le champ '$col' contient des caractères invalides.");
+        }
+        // OK — on ajoute à la mise à jour
+        $updates[] = "\"$col\" = :$col";
+        $params[$col] = $val;
+    }
+
+    if (empty($updates)) {
+        json_ok([
+            'message' => 'Aucun champ à mettre à jour.',
+            'ignored' => $ignored,
+        ]);
+    }
+
+    // Exécution
+    try {
+        $sql = "UPDATE Utilisateurs SET " . implode(', ', $updates) . " WHERE Id = :id";
+        $db->execute($sql, $params);
+    } catch (\Throwable $e) {
+        // Le message PDO (noms de colonnes, contraintes…) reste côté serveur.
+        Journal::erreur('auth', 'Mise à jour du profil impossible', ['exception' => $e]);
+        json_error('Erreur lors de la mise à jour du profil (référence : ' . Journal::requestId() . ').');
+    }
+
+    // Rafraîchir la session avec les nouvelles valeurs
+    $fresh = $db->fetchOne("SELECT * FROM Utilisateurs WHERE Id = :id", ['id' => (int)$user['Id']]);
+    if ($fresh) {
+        unset($fresh['MotDePasse'], $fresh['ResetToken'], $fresh['ResetTokenExpiry']);
+        $_SESSION['user'] = $fresh;
+    }
+
+    json_ok([
+        'message' => 'Profil mis à jour.',
+        'user'    => $fresh,
+        'ignored' => $ignored, // pour que le front puisse afficher "X champs ignorés car compte Microsoft"
+    ]);
+}
+
+// ── Helper : envoi d'email via SMTP ──────────────────────────────────────────
+function gmao_send_mail(string $to, string $subject, string $htmlBody): bool {
+    $host = SMTP_HOST;
+    $port = SMTP_PORT;
+    $user = SMTP_USERNAME;
+    $pass = SMTP_PASSWORD;
+    $from = SMTP_FROM_EMAIL;
+    $fromName = SMTP_FROM_NAME;
+    $encryption = SMTP_ENCRYPTION;
+
+    if (!$host) return false;
+
+    $cleanHeader = static function (string $value): string {
+        return trim(preg_replace('/[\r\n]+/', ' ', $value));
+    };
+
+    $to       = $cleanHeader($to);
+    $subject  = $cleanHeader($subject);
+    $from     = $cleanHeader($from);
+    $fromName = $cleanHeader($fromName);
+
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL) || !filter_var($from, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    try {
+        $boundary = md5(time());
+        $headers  = "MIME-Version: 1.0\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $headers .= "From: $fromName <$from>\r\n";
+        $headers .= "Reply-To: $from\r\n";
+
+        // Tenter d'utiliser SMTP via socket
+        // ⚠️ FIX SÉCURITÉ (H2) : vérifier le certificat TLS du serveur SMTP par
+        // défaut (anti interception/MITM sur le canal mail). Pour un serveur
+        // interne à certificat auto-signé, mettre smtp.verify_peer=false dans
+        // config.json en connaissance de cause.
+        $_smtpVerify = function_exists('cfg') ? (bool)(cfg('smtp', 'verify_peer') ?? true) : true;
+        $ctx = stream_context_create(['ssl' => [
+            'verify_peer'       => $_smtpVerify,
+            'verify_peer_name'  => $_smtpVerify,
+            'allow_self_signed' => !$_smtpVerify,
+        ]]);
+        $prefix = ($encryption === 'ssl') ? 'ssl://' : '';
+        $sock = @stream_socket_client("$prefix$host:$port", $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+        if (!$sock) {
+            // Fallback: PHP mail()
+            return @mail($to, $subject, $htmlBody, $headers);
+        }
+
+        $read = function() use ($sock) {
+            $resp = '';
+            while (($line = fgets($sock, 512)) !== false) {
+                $resp .= $line;
+                if (preg_match('/^\d{3} /', $line)) break;
+            }
+            return $resp;
+        };
+        $write = function($cmd) use ($sock) { fwrite($sock, $cmd . "\r\n"); };
+        $expect = static function (string $resp, array $codes): bool {
+            foreach ($codes as $code) {
+                if (str_starts_with(trim($resp), (string)$code)) return true;
+            }
+            return false;
+        };
+
+        $greeting = $read();
+        if (!$expect($greeting, [220])) { fclose($sock); return false; }
+
+        $write("EHLO " . gethostname());
+        $ehlo = $read();
+        if (!$expect($ehlo, [250])) { fclose($sock); return false; }
+
+        // STARTTLS if needed
+        if ($encryption === 'tls') {
+            $write("STARTTLS");
+            $startTls = $read();
+            if (!$expect($startTls, [220])) { fclose($sock); return false; }
+            if (!stream_socket_enable_crypto($sock, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT)) {
+                fclose($sock);
+                return false;
+            }
+            $write("EHLO " . gethostname());
+            $ehloTls = $read();
+            if (!$expect($ehloTls, [250])) { fclose($sock); return false; }
+        }
+
+        // AUTH
+        if ($user) {
+            $write("AUTH LOGIN");
+            if (!$expect($read(), [334])) { fclose($sock); return false; }
+            $write(base64_encode($user));
+            if (!$expect($read(), [334])) { fclose($sock); return false; }
+            $write(base64_encode($pass));
+            $resp = $read();
+            if (!str_starts_with(trim($resp), '235')) { fclose($sock); return false; }
+        }
+
+        $write("MAIL FROM:<$from>");
+        if (!$expect($read(), [250])) { fclose($sock); return false; }
+        $write("RCPT TO:<$to>");
+        if (!$expect($read(), [250, 251])) { fclose($sock); return false; }
+        $write("DATA");
+        if (!$expect($read(), [354])) { fclose($sock); return false; }
+        // ⚠️ Message envoyé tel quel jusqu'ici : fins de ligne « \n » nues (que
+        // des serveurs stricts refusent) et aucune « transparence » RFC 5321 —
+        // une ligne commençant par « . » perdait son point, et une ligne réduite
+        // à « . » terminait le message avant l'heure. On normalise en CRLF et on
+        // double le point de tête de chaque ligne.
+        $message = "Subject: $subject\r\nTo: $to\r\n" . rtrim($headers, "\r\n") . "\r\n\r\n" . $htmlBody;
+        $message = preg_replace('/\r\n|\r|\n/', "\r\n", $message);
+        $message = preg_replace('/^\./m', '..', $message);
+        fwrite($sock, rtrim($message, "\r\n") . "\r\n.\r\n");
+        if (!$expect($read(), [250])) { fclose($sock); return false; }
+        $write("QUIT");
+        fclose($sock);
+        return true;
+    } catch (\Throwable $e) {
+        error_log("SMTP error: " . $e->getMessage());
+        return @mail($to, $subject, $htmlBody, $headers);
+    }
+}

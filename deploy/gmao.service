@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
+# SPDX-License-Identifier: LicenseRef-Larka-Proprietary
+#
+# This file is part of Larka, proprietary software by Mickaël Larcin.
+# All rights reserved. Use is subject to the license terms; copying,
+# distribution, modification or reverse-engineering without the author's
+# prior written permission is prohibited. See the LICENSE file for details.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Larka — Service systemd (déploiement « léger » autonome)
+#
+# Lance le serveur PHP intégré comme service géré (démarrage auto, redémarrage
+# en cas de crash, journaux via journalctl). Convient à un usage interne ou
+# derrière un reverse-proxy. Pour la production multi-utilisateurs avec HTTPS,
+# préférez Nginx + PHP-FPM : ./start.sh prod (voir deploy/install.sh).
+#
+# Installation :
+#   sudo cp deploy/gmao.service /etc/systemd/system/gmao.service
+#   sudo nano /etc/systemd/system/gmao.service   # adapter chemins/port
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gmao
+#   sudo systemctl status gmao
+#   journalctl -u gmao -f                          # journaux
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description=Larka — serveur applicatif (PHP built-in)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/gmao
+# Les secrets restent lus depuis le fichier .env de l'application.
+# (Optionnel : EnvironmentFile=/var/www/gmao/.env pour les charger au niveau systemd.)
+# IMPORTANT : sans PHP_CLI_SERVER_WORKERS, le serveur PHP intégré est mono-thread.
+# Une requête longue (assistant IA local : 30-120 s) gèle alors tout le site.
+Environment=PHP_CLI_SERVER_WORKERS=8
+ExecStart=/usr/bin/php -S 127.0.0.1:8000 -t /var/www/gmao /var/www/gmao/router.php
+Restart=on-failure
+RestartSec=3
+
+# Renforcement
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/gmao/data
+
+[Install]
+WantedBy=multi-user.target

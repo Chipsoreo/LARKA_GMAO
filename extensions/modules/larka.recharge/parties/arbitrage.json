@@ -1,0 +1,53 @@
+{
+  "statut": {
+    "type": "choix",
+    "libelle": "Décision",
+    "obligatoire": true,
+    "liste": "RechargeStatut",
+    "groupe": "Arbitrage",
+    "modifiable": 1,
+    "libre": false,
+    "defaut": "Demandé",
+    "valeurs_initiales": [
+      "Demandé",
+      "Accepté",
+      "Refusé",
+      "Annulé",
+      "Réalisé"
+    ],
+    "couleurs": {
+      "Demandé": "#f59e0b",
+      "Accepté": "#16a34a",
+      "Refusé": "#dc2626",
+      "Annulé": "#6b7280",
+      "Réalisé": "#2563eb"
+    }
+  },
+  "reponse": {
+    "type": "texte_long",
+    "libelle": "Motif de la décision",
+    "max": 400,
+    "groupe": "Arbitrage",
+    "aide": "Visible par le demandeur",
+    "hauteur_px": 90
+  },
+  "creneau_occupe": {
+    "type": "formule",
+    "libelle": "Créneau",
+    "groupe": "Arbitrage",
+    "expression": "{{concat(formatDate(record.date, \"dd/MM\"), \" · \", record.horaire, \" · \", record.place)}}",
+    "aide": "Signature du créneau : deux lignes identiques signalent un conflit"
+  },
+  "trop_long": {
+    "type": "formule",
+    "libelle": "Durée",
+    "groupe": "Arbitrage",
+    "expression": "{{if(record.duree_h > variables.duree_max_heures, \"Au-delà du plafond\", \"\")}}"
+  },
+  "passe": {
+    "type": "formule",
+    "libelle": "Échéance",
+    "groupe": "Arbitrage",
+    "expression": "{{if(isPast(record.date), \"Passé\", concat(\"Dans \", diffDays(today(), record.date), \" j\"))}}"
+  }
+}
