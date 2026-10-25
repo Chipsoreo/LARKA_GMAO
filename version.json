@@ -4,7 +4,7 @@
     "date": "2026-10-25",
     "php_min": "8.1",
     "prerequis": {
-        "_": "Exigences de CETTE version, vérifiées avant installation, démarrage et mise à jour (api/Prerequis.php).",
+        "_": "Exigences de CETTE version, vérifiées avant installation, démarrage et mise à jour (api\/Prerequis.php).",
         "php": "8.1",
         "php_eprouve": "8.5",
         "extensions": {
