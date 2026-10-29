@@ -11,6 +11,11 @@
  *   php api/outils/mise-a-jour.php --installer            (demande confirmation)
  *   php api/outils/mise-a-jour.php --installer --oui      (sans question)
  *   php api/outils/mise-a-jour.php --historique
+ *   php api/outils/mise-a-jour.php --archive <zip> [--sans-signature] [--reinstaller] [--oui]
+ *      (archive d'une version déposée sur le serveur — c'est ce que fait
+ *       « ./start.sh maj <zip> » : mêmes protections que la mise à jour en ligne,
+ *       config.json, .env, data/ et réglages des modules jamais écrasés,
+ *       sauvegarde avant écriture ; signature vérifiée si <zip>.sig est là)
  *   php api/outils/mise-a-jour.php --restaurer <id>
  *      (seule voie pour une sauvegarde antérieure à la signature obligatoire ;
  *       les fichiers de la chaîne de confiance des mises à jour ne sont jamais
@@ -20,12 +25,24 @@
  *   sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --verifier
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+$args = array_slice($argv, 1);
+// --racine <dossier> : installation à mettre à jour, quand ce n'est pas celle
+// de cet outil — typiquement, depuis la nouvelle version décompressée à côté,
+// pour mettre à jour une installation dont l'outil ne sait pas encore lire une
+// archive (« ./start.sh maj --cible <dossier> »). Sa configuration est lue ;
+// le code de la mise à jour est celui de cet outil.
 $racine = dirname(__DIR__, 2);
+if (($i = array_search('--racine', $args, true)) !== false) {
+    $r = realpath((string)($args[$i + 1] ?? ''));
+    if ($r === false || !is_file($r . '/api/index.php') || !is_file($r . '/version.json')) {
+        fwrite(STDERR, "--racine : installation de Larka introuvable.\n"); exit(2);
+    }
+    $racine = $r;
+    array_splice($args, $i, 2);
+}
 require_once $racine . '/api/config.php';
 if (is_file($racine . '/api/env.php')) { require_once $racine . '/api/env.php'; if (function_exists('loadEnv')) loadEnv(); }
-require_once $racine . '/api/MiseAJour.php';
-
-$args = array_slice($argv, 1);
+require_once __DIR__ . '/../MiseAJour.php';
 $maj = new LarkaMiseAJour($racine);
 $affiche = function (array $e) {
     echo "Installée  : {$e['locale']['libelle']}\n";
@@ -52,6 +69,22 @@ try {
         $r = $maj->restaurer((string)($args[$i + 1] ?? ''), 'cli', true);
         echo "Restauré : {$r['fichiers']} fichier(s) — version {$r['version']['libelle']}\n"; exit(0);
     }
+    if (($i = array_search('--archive', $args, true)) !== false) {
+        $zipLocal = (string)($args[$i + 1] ?? '');
+        if ($zipLocal === '' || str_starts_with($zipLocal, '--')) { fwrite(STDERR, "--archive attend le chemin du zip.\n"); exit(2); }
+        $vLoc = $maj->locale();
+        echo "Installée : {$vLoc['libelle']}\nArchive   : $zipLocal\n";
+        if (!in_array('--oui', $args, true)) {
+            echo "\nAppliquer cette archive ? config.json, .env, data/ et les réglages des modules ne sont pas modifiés ;\n"
+               . "les fichiers remplacés et les bases sont sauvegardés avant. [o/N] ";
+            if (strtolower(trim((string)fgets(STDIN))) !== 'o') { echo "Annulé.\n"; exit(1); }
+        }
+        $r = $maj->installerArchive($zipLocal, 'cli', in_array('--sans-signature', $args, true), in_array('--reinstaller', $args, true));
+        echo "\n✓ {$r['libelle']} installée depuis l'archive : {$r['fichiers']} fichiers ({$r['nouveaux']} nouveaux)"
+           . ($r['signee'] ? ', signature vérifiée' : ', sans signature') . ".\nSauvegarde : {$r['sauvegarde']}"
+           . " (retour arrière : php api/outils/mise-a-jour.php --restaurer {$r['sauvegarde']})\n";
+        exit(0);
+    }
     if (in_array('--installer', $args, true)) {
         $e = $maj->verifier();
         $affiche($e);
@@ -64,7 +97,7 @@ try {
         echo "\n✓ {$r['libelle']} installée : {$r['fichiers']} fichiers ({$r['nouveaux']} nouveaux). Sauvegarde : {$r['sauvegarde']}\n";
         exit(0);
     }
-    fwrite(STDERR, "Usage : --verifier | --installer [--oui] | --historique | --restaurer <id>\n"); exit(2);
+    fwrite(STDERR, "Usage : --verifier | --installer [--oui] | --archive <zip> [--sans-signature] [--reinstaller] [--oui] | --historique | --restaurer <id>\n"); exit(2);
 } catch (\Throwable $e) {
     fwrite(STDERR, "Erreur : " . $e->getMessage() . "\n"); exit(1);
 }

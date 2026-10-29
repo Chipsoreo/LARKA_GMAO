@@ -163,6 +163,7 @@ const BiensApi = {
   create:  (data)     => apiRequest('biens', 'POST',   data),
   update:  (id, data) => apiRequest('biens', 'PUT',    data, id),
   delete:  (id)       => apiRequest('biens', 'DELETE', null, id),
+  supprimerLot: (ids) => apiRequest('biens_supprimer_lot', 'POST', { ids }),
 };
 
 // ── Équipements ────────────────────────────────────────────────────────────────
@@ -171,6 +172,7 @@ const EquipementsApi = {
   create:  (data)     => apiRequest('equipements', 'POST',   data),
   update:  (id, data) => apiRequest('equipements', 'PUT',    data, id),
   delete:  (id)       => apiRequest('equipements', 'DELETE', null, id),
+  supprimerLot: (ids) => apiRequest('equipements_supprimer_lot', 'POST', { ids }),
 };
 
 // ── Contrats ───────────────────────────────────────────────────────────────────

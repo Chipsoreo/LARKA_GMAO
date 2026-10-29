@@ -317,9 +317,21 @@ async function _checkSharePointAvailable(entiteType, entiteId) {
       // Retirer les boutons de téléchargement déjà rendus dans les cartes.
       document.querySelectorAll('[data-sp-dl]').forEach(a => a.remove());
     }
+    const btn = document.getElementById(`btnSharePoint_${entiteType}_${entiteId}`);
     if (status.enabled && status.hasToken) {
-      const btn = document.getElementById(`btnSharePoint_${entiteType}_${entiteId}`);
-      if (btn) btn.style.display = 'inline-flex';
+      if (btn) {
+        btn.style.display = 'inline-flex';
+        btn.title = 'Lier un fichier depuis SharePoint (raccourci, sans copie)';
+        btn.onclick = () => ouvrirNavigateurSharePoint(entiteType, entiteId);
+      }
+    } else if (btn && status.actif && !status.hasToken) {
+      // SharePoint est activé, mais la session n'a pas de jeton Microsoft
+      // (compte connecté autrement, ou jeton perdu) : le bouton reste visible
+      // et propose de reprendre la connexion Microsoft au lieu de disparaître.
+      btn.style.display = 'inline-flex';
+      btn.title = 'SharePoint demande votre connexion Microsoft : cliquez pour la reprendre';
+      btn.onclick = () => reconnecterMicrosoft(() => _checkSharePointAvailable(entiteType, entiteId)
+        .then(() => { if (_spHasToken) ouvrirNavigateurSharePoint(entiteType, entiteId); }));
     }
   } catch(_) { /* SharePoint non dispo, on n'affiche rien */ }
 }

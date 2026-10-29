@@ -15,6 +15,7 @@ rem    Larka.cmd                  demarre Larka et ouvre le navigateur
 rem    Larka.cmd menu             toutes les actions
 rem    Larka.cmd aide             liste des commandes
 rem    Larka.cmd php [zip]        installe / met a jour PHP (zip local accepte)
+rem    Larka.cmd maj [zip]        met Larka a jour (config.json, .env, data intacts)
 rem
 rem  Autre PHP que celui du dossier php\ : variable LARKA_PHP = chemin de php.exe
 rem  Le travail est fait par deploy\windows\larka.php (et installer-php.ps1).

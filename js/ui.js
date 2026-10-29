@@ -107,7 +107,12 @@ function openModal(title, bodyHTML, saveFn, saveLabel = 'Enregistrer', cancelLab
   }
   // Largeur personnalisée (ex: pour Chauffage avec nombreux champs)
   const modalEl = document.querySelector('.modal');
-  if (modalEl) modalEl.style.width = modalWidth || '';
+  if (modalEl) { modalEl.style.width = modalWidth || ''; modalEl.style.maxWidth = ''; }
+  // ⚠️ L'assistant d'import masque le pied de la modale (ses boutons sont dans
+  // ses étapes) et l'élargit : sans ce rappel, la fiche ouverte juste après un
+  // import n'avait plus de bouton « Enregistrer ».
+  const pied = document.querySelector('#modalOverlay .modal-footer');
+  if (pied) pied.style.display = '';
   document.getElementById('modalOverlay').classList.add('open');
   _modalSaveFn = saveFn;
   // Focus premier input
@@ -212,12 +217,14 @@ function renderPendingDocsPreview(key) {
  * @param {boolean}      canEdit
  * @param {boolean}      canDelete
  * @param {Object|null}  advancedFilter   { fields:[{key,label,type,options}] }
+ * @param {Object|null}  selection        { cle, supprimerFn } — cases à cocher et
+ *                                         suppression groupée (supprimerFn(ids))
  */
 function renderTable({
   container, data, columns, addBtnFn = null, extraButtons = '',
   filters = null, searchTerm = '', currentFilter = 'Tous',
   canEdit = true, canDelete = true,
-  advancedFilter = null,
+  advancedFilter = null, selection = null,
 }) {
   // Tri
   let sorted = [...data];
@@ -242,7 +249,7 @@ function renderTable({
     const matchSearch = !searchTerm || columns.some(c => {
       const v = row[c.key] ?? '';
       return smartTextMatch(v, searchTerm);
-    });
+    }) || (row._recherche ? smartTextMatch(row._recherche, searchTerm) : false);   // ex. cases complémentaires
     // FiltresEngine (nouveau système unifié)
     const matchAdvanced = FiltresEngine.getConfig(_fePage)
       ? FiltresEngine.matchRow(_fePage, row)
@@ -270,6 +277,19 @@ function renderTable({
   const pageData = (perPage === 'all') ? filtered : filtered.slice(startIdx, startIdx + perPage);
   const from = totalFiltered === 0 ? 0 : (startIdx + 1);
   const to   = totalFiltered === 0 ? 0 : (startIdx + pageData.length);
+
+  // Sélection multiple (cases à cocher) : gardée d'un affichage à l'autre
+  // (recherche, tri, page) tant qu'on reste sur la même liste.
+  const avecSel = !!(selection && canDelete && selection.supprimerFn);
+  if (avecSel) {
+    const st = window._tblSel;
+    if (!st || st.cle !== selection.cle) window._tblSel = { cle: selection.cle, ids: new Set(), dernier: null };
+    const existants = new Set(data.map(r => r.Id));
+    window._tblSel.ids.forEach(id => { if (!existants.has(id)) window._tblSel.ids.delete(id); });
+    window._tblSel.fn      = selection.supprimerFn;
+    window._tblSel.filtres = filtered.map(r => r.Id);
+    window._tblSel.page    = pageData.map(r => r.Id);
+  }
 
   let html = `<div class="card">`;
 
@@ -332,8 +352,14 @@ function renderTable({
     html += `</div>`;
   }
 
+  // Barre de sélection (remplie par _tblSelMaj)
+  if (avecSel) html += `<div id="_tblSelBar" class="tbl-sel-bar" style="display:none"></div>`;
+
   // Tableau
   html += `<div class="table-wrap"><table><thead><tr>`;
+  if (avecSel) {
+    html += `<th style="width:34px;text-align:center"><input type="checkbox" id="_tblSelTout" title="Sélectionner les lignes de cette page" onclick="_tblSelPage(this.checked)" style="cursor:pointer;width:16px;height:16px"></th>`;
+  }
   columns.forEach(col => {
     const isSorted = App._sortKey === col.key;
     const arrow = isSorted ? (App._sortDir === 'asc' ? ' ↑' : ' ↓') : '';
@@ -343,10 +369,14 @@ function renderTable({
   html += `<th>Actions</th></tr></thead><tbody>`;
 
   if (pageData.length === 0) {
-    html += `<tr><td colspan="${columns.length+1}" class="no-results">Aucun résultat.</td></tr>`;
+    html += `<tr><td colspan="${columns.length + 1 + (avecSel ? 1 : 0)}" class="no-results">Aucun résultat.</td></tr>`;
   } else {
     pageData.forEach(row => {
-      html += `<tr>`;
+      const coche = avecSel && window._tblSel.ids.has(row.Id);
+      html += `<tr${coche ? ' class="tbl-sel-ligne"' : ''}>`;
+      if (avecSel) {
+        html += `<td style="text-align:center"><input type="checkbox" class="tbl-sel" data-id="${Number(row.Id)}" ${coche ? 'checked' : ''} onclick="_tblSelBascule(event, ${Number(row.Id)}, this.checked)" title="Sélectionner (Maj+clic : plage)" style="cursor:pointer;width:16px;height:16px"></td>`;
+      }
       columns.forEach(c => {
         const v = row[c.key];
         let cell;
@@ -386,8 +416,74 @@ function renderTable({
   html += `</div>`;
 
   container.innerHTML = html;
+  if (avecSel) _tblSelMaj();
   // Restaurer les valeurs des filtres avancés dans le DOM
   if (typeof App !== 'undefined') App.restoreFilters();
+}
+
+// ── Sélection multiple des listes (renderTable({ selection })) ─────────────────
+function _tblSelBascule(evt, id, coche) {
+  const st = window._tblSel; if (!st) return;
+  // Maj+clic : toute la plage depuis la dernière case cliquée (sur cette page).
+  if (evt && evt.shiftKey && st.dernier != null && st.page) {
+    const a = st.page.indexOf(st.dernier), b = st.page.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      st.page.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(x => coche ? st.ids.add(x) : st.ids.delete(x));
+    }
+  }
+  coche ? st.ids.add(id) : st.ids.delete(id);
+  st.dernier = id;
+  _tblSelMaj();
+}
+
+function _tblSelPage(coche) {
+  const st = window._tblSel; if (!st || !st.page) return;
+  st.page.forEach(id => coche ? st.ids.add(id) : st.ids.delete(id));
+  _tblSelMaj();
+}
+
+function _tblSelFiltres() {
+  const st = window._tblSel; if (!st || !st.filtres) return;
+  st.filtres.forEach(id => st.ids.add(id));
+  _tblSelMaj();
+}
+
+function _tblSelVider() {
+  const st = window._tblSel; if (!st) return;
+  st.ids.clear(); st.dernier = null;
+  _tblSelMaj();
+}
+
+function _tblSelSupprimer() {
+  const st = window._tblSel; if (!st || !st.ids.size) return;
+  const fn = window[st.fn];
+  if (typeof fn === 'function') fn([...st.ids]);
+}
+
+function _tblSelMaj() {
+  const st = window._tblSel; if (!st) return;
+  document.querySelectorAll('input.tbl-sel').forEach(cb => {
+    const on = st.ids.has(Number(cb.dataset.id));
+    cb.checked = on;
+    const tr = cb.closest('tr'); if (tr) tr.classList.toggle('tbl-sel-ligne', on);
+  });
+  const tout = document.getElementById('_tblSelTout');
+  if (tout && st.page) {
+    const n = st.page.filter(id => st.ids.has(id)).length;
+    tout.checked = st.page.length > 0 && n === st.page.length;
+    tout.indeterminate = n > 0 && n < st.page.length;
+  }
+  const bar = document.getElementById('_tblSelBar');
+  if (!bar) return;
+  const n = st.ids.size;
+  if (!n) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const resteFiltres = (st.filtres || []).filter(id => !st.ids.has(id)).length;
+  bar.style.display = 'flex';
+  bar.innerHTML = `<span><b>${n}</b> <span>${n > 1 ? 'éléments sélectionnés' : 'élément sélectionné'}</span></span>`
+    + (resteFiltres > 0 ? `<button type="button" class="btn btn-ghost btn-sm" onclick="_tblSelFiltres()" title="Ajouter à la sélection toutes les lignes qui répondent à la recherche et aux filtres"><span>Sélectionner les</span> ${(st.filtres || []).length} <span>résultats filtrés</span></button>` : '')
+    + `<button type="button" class="btn btn-ghost btn-sm" onclick="_tblSelVider()">Tout désélectionner</button>`
+    + `<div style="flex:1"></div>`
+    + `<button type="button" class="btn btn-danger btn-sm" onclick="_tblSelSupprimer()">🗑️ Supprimer la sélection</button>`;
 }
 
 // Toggle panneau filtre avancé
@@ -1182,3 +1278,127 @@ function clearPageActionBar() {
   bar.innerHTML = '';
   bar.hidden = true;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Cases complémentaires des fiches (biens, équipements) — section « fourre-tout »
+// ═══════════════════════════════════════════════════════════════════════════════
+// Une information que Larka ne prévoit pas (date de sortie administrative, n°
+// d'inventaire de l'ancien logiciel, code analytique…) devient une CASE de la
+// fiche : créée à l'import (colonne du fichier sans champ Larka) ou à la main
+// (bouton « 🗂️ Cases des fiches » des listes). Définitions : action
+// champs_perso ; valeurs : colonne ChampsPerso de chaque fiche.
+const ChampsPerso = {
+  _cache: {},
+  TYPES: [['texte', 'Texte'], ['texte_long', 'Texte long'], ['date', 'Date'], ['nombre', 'Nombre']],
+
+  async charger(cible, forcer = false) {
+    if (!forcer && this._cache[cible]) return this._cache[cible];
+    try { this._cache[cible] = await apiRequest('champs_perso&cible=' + encodeURIComponent(cible)) || []; }
+    catch (_e) { this._cache[cible] = []; }
+    return this._cache[cible];
+  },
+
+  valeurs(fiche) {
+    try { const v = JSON.parse((fiche && fiche.ChampsPerso) || '{}'); return (v && typeof v === 'object') ? v : {}; }
+    catch (_e) { return {}; }
+  },
+
+  /** Clé stable d'un libellé : « Date de sortie administrative » → date_de_sortie_administrative */
+  cle(libelle) {
+    const t = String(libelle || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/œ/g, 'oe').replace(/æ/g, 'ae').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return (t || 'case').substring(0, 60);
+  },
+
+  /** Section de la fiche ; '' si aucune case n'est définie. */
+  sectionHtml(defs, valeurs, readOnly) {
+    if (!defs || !defs.length) return '';
+    const dis = readOnly ? 'disabled' : '';
+    let h = '<div><div class="section-label">🗂️ Informations complémentaires</div><div class="form-grid">';
+    defs.forEach(d => {
+      const v = valeurs[d.cle] == null ? '' : String(valeurs[d.cle]);
+      const id = 'f_cp_' + d.cle;
+      h += '<div class="form-group' + (d.type === 'texte_long' ? ' span-2" style="grid-column:span 2' : '') + '">'
+        + '<label class="form-label" for="' + id + '">' + escHtml(d.libelle) + '</label>';
+      if (d.type === 'texte_long') h += '<textarea class="form-control" id="' + id + '" rows="2" ' + dis + '>' + escHtml(v) + '</textarea>';
+      else if (d.type === 'date')  h += '<input class="form-control" type="date" id="' + id + '" value="' + escHtml(/^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '') + '" ' + dis + '>'
+        + (v && !/^\d{4}-\d{2}-\d{2}$/.test(v) ? '<div style="font-size:11px;color:var(--gray-text)">' + escHtml(v) + '</div>' : '');
+      else if (d.type === 'nombre') h += '<input class="form-control" type="number" step="any" id="' + id + '" value="' + escHtml(v) + '" ' + dis + '>';
+      else h += '<input class="form-control" id="' + id + '" value="' + escHtml(v) + '" ' + dis + '>';
+      h += '</div>';
+    });
+    return h + '</div></div>';
+  },
+
+  /** Valeurs saisies dans la fiche ({} si la section n'est pas affichée). */
+  lireFormulaire(defs) {
+    const out = {};
+    (defs || []).forEach(d => {
+      const el = document.getElementById('f_cp_' + d.cle);
+      if (el) out[d.cle] = el.value;
+    });
+    return out;
+  },
+
+  // ── Gestion des cases (nom, type, ordre, ajout, retrait) ──────────────────
+  async ouvrirGestion(cible, apres) {
+    const defs = (await this.charger(cible, true)).map(d => Object.assign({}, d));
+    this._edition = { cible, defs, apres };
+    openModal('🗂️ Cases des fiches ' + (cible === 'equipements' ? 'équipements' : 'biens'),
+      '<div id="cpGestion"></div>', async () => {
+        this._lireGestion();
+        const propres = this._edition.defs.filter(d => d.libelle.trim());
+        try {
+          this._cache[cible] = await apiRequest('champs_perso&cible=' + encodeURIComponent(cible), 'POST', { cible, champs: propres });
+          toast('Cases enregistrées.', 'success');
+          closeModal();
+          if (typeof this._edition.apres === 'function') this._edition.apres();
+        } catch (e) { toast(e.message, 'error'); }
+      }, 'Enregistrer', 'Annuler');
+    this._rendreGestion();
+  },
+
+  _lireGestion() {
+    const st = this._edition; if (!st) return;
+    st.defs.forEach((d, i) => {
+      const l = document.getElementById('cpLib' + i), t = document.getElementById('cpType' + i);
+      if (l) d.libelle = l.value;
+      if (t) d.type = t.value;
+    });
+  },
+
+  _rendreGestion() {
+    const st = this._edition, box = document.getElementById('cpGestion');
+    if (!st || !box) return;
+    let h = '<div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">Ces cases apparaissent dans la section « Informations complémentaires » de chaque fiche. '
+      + 'Retirer une case ne supprime pas les valeurs déjà saisies : recréée sous le même nom, elle les retrouve.</div>';
+    if (!st.defs.length) h += '<div style="padding:14px;text-align:center;color:var(--gray-text);font-size:13px">Aucune case pour l\'instant.</div>';
+    st.defs.forEach((d, i) => {
+      h += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
+        + '<input class="form-control" id="cpLib' + i + '" value="' + escHtml(d.libelle) + '" placeholder="Nom de la case" style="flex:1">'
+        + '<select class="form-control" id="cpType' + i + '" style="width:130px">'
+        + this.TYPES.map(([v, l]) => '<option value="' + v + '" ' + (d.type === v ? 'selected' : '') + '>' + l + '</option>').join('') + '</select>'
+        + '<button type="button" class="icon-btn" title="Monter" onclick="ChampsPerso._bouger(' + i + ',-1)" ' + (i === 0 ? 'disabled' : '') + '>↑</button>'
+        + '<button type="button" class="icon-btn" title="Descendre" onclick="ChampsPerso._bouger(' + i + ',1)" ' + (i === st.defs.length - 1 ? 'disabled' : '') + '>↓</button>'
+        + '<button type="button" class="icon-btn delete" title="Retirer la case" onclick="ChampsPerso._retirer(' + i + ')">🗑️</button></div>';
+    });
+    h += '<button type="button" class="btn btn-ghost btn-sm" onclick="ChampsPerso._ajouter()">➕ Ajouter une case</button>';
+    box.innerHTML = h;
+  },
+  _bouger(i, sens) {
+    this._lireGestion();
+    const a = this._edition.defs, j = i + sens;
+    if (j < 0 || j >= a.length) return;
+    [a[i], a[j]] = [a[j], a[i]];
+    this._rendreGestion();
+  },
+  _retirer(i) { this._lireGestion(); this._edition.defs.splice(i, 1); this._rendreGestion(); },
+  _ajouter() {
+    this._lireGestion();
+    this._edition.defs.push({ cle: '', libelle: '', type: 'texte' });
+    this._rendreGestion();
+    const el = document.getElementById('cpLib' + (this._edition.defs.length - 1));
+    if (el) el.focus();
+  },
+};
+window.ChampsPerso = ChampsPerso;

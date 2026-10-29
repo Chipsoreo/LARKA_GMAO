@@ -45,6 +45,12 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
 ok()    { echo -e "${GREEN}[OK]${NC}    $1"; }
+# Copie de la version remplacée d'un fichier système (vhost Nginx, pool PHP-FPM,
+# cron) : relancer ce script pour une mise à jour régénère ces fichiers ; une
+# adaptation faite à la main reste ainsi récupérable (<fichier>.bak-larka).
+# Le suffixe n'est lu ni par Nginx (*.conf, sites-enabled), ni par PHP-FPM
+# (pool.d/*.conf), ni par cron (pas de point dans les noms de cron.d).
+sauver_conf() { [[ -f "$1" ]] && cp -p "$1" "$1.bak-larka" 2>/dev/null; return 0; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 err()   { echo -e "${RED}[ERR]${NC}   $1"; exit 1; }
 
@@ -190,8 +196,13 @@ case "${SP_CHOICE,,}" in
     off|non|n|no|false|0)    SP_ACTIF=false ;;
     "")
         SP_ACTIF=""
-        if [[ -f "${INSTALL_DIR}/config.json" ]] && command -v php >/dev/null 2>&1; then
-            SP_ACTIF=$(php -r '$c=json_decode(@file_get_contents($argv[1]),true); if (isset($c["sharepoint"]["actif"])) echo $c["sharepoint"]["actif"] ? "true" : "false";' "${INSTALL_DIR}/config.json" 2>/dev/null || true)
+        # ⚠️ FIX : une configuration EXISTANTE n'est jamais modifiée sans choix
+        # explicite (--sharepoint on|off). Sans le choix inscrit, SharePoint y est
+        # ACTIF (comportement historique, api/config.php) : relancer ce script
+        # pour une mise à jour — souvent sans terminal — y écrivait « false »,
+        # et SharePoint disparaissait.
+        if [[ -f "${INSTALL_DIR}/config.json" ]]; then
+            SP_ACTIF="conserve"
         fi
         if [[ -z "$SP_ACTIF" ]]; then
             if [[ -t 0 ]]; then
@@ -228,6 +239,8 @@ else
 fi
 if [[ "$SP_ACTIF" == "true" ]]; then
   echo "  SharePoint    : activé (avec la connexion Microsoft)"
+elif [[ "$SP_ACTIF" == "conserve" ]]; then
+  echo "  SharePoint    : réglage existant conservé (config.json)"
 else
   echo "  SharePoint    : désactivé — documents stockés dans Larka"
 fi
@@ -524,13 +537,12 @@ EOCFG
     ok "config.json généré."
 else
     warn "config.json existant conservé."
-    # Seul le choix SharePoint y est reporté (demandé ou passé par --sharepoint).
-    if command -v php >/dev/null 2>&1; then
-        php -r '$f=$argv[1]; $c=json_decode(file_get_contents($f),true); if (!is_array($c)) exit(0);
-                $v=$argv[2]==="true"; if (($c["sharepoint"]["actif"] ?? null) === $v) exit(0);
-                $c["sharepoint"]=["actif"=>$v];
-                file_put_contents($f, json_encode($c, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n");' \
-            "${INSTALL_DIR}/config.json" "$SP_ACTIF" && info "SharePoint : ${SP_ACTIF} (config.json)."
+    # Seul un choix SharePoint EXPLICITE (--sharepoint on|off) y est reporté :
+    # clé par clé, en place, après copie dans data/backups/config/
+    # (api/outils/config-json.php — rien d'autre n'est réécrit).
+    if [[ "$SP_ACTIF" == "true" || "$SP_ACTIF" == "false" ]] && command -v php >/dev/null 2>&1; then
+        _r=$(php "${INSTALL_DIR}/api/outils/config-json.php" ecrire "${INSTALL_DIR}/config.json" "sharepoint.actif=${SP_ACTIF}" 2>&1) \
+            && [[ "$_r" == modifie* ]] && info "SharePoint : ${SP_ACTIF} (config.json)."
     fi
 fi
 
@@ -551,11 +563,13 @@ if [[ -z "$PHP_FPM_DIR" ]]; then
     warn "PHP-FPM non trouvé — configuration ignorée. Configurez manuellement."
 elif [[ -f "${INSTALL_DIR}/deploy/php-fpm-gmao.conf" ]]; then
     # Adapter la version dans le fichier
+    sauver_conf "${PHP_FPM_DIR}/gmao.conf"
     sed "s/php8\.3/php${PHP_VERSION}/g" "${INSTALL_DIR}/deploy/php-fpm-gmao.conf" > "${PHP_FPM_DIR}/gmao.conf"
     BODY_MAX="500M"   # aligné sur upload_max_filesize du pool fourni
     ok "Pool PHP-FPM copié dans ${PHP_FPM_DIR}/gmao.conf"
 else
     BODY_MAX="40M"    # aligné sur post_max_size du pool minimal ci-dessous (document 25 Mo en base64 ≈ 34 Mo)
+    sauver_conf "${PHP_FPM_DIR}/gmao.conf"
     cat > "${PHP_FPM_DIR}/gmao.conf" <<EOFPM
 [gmao]
 user = www-data
@@ -736,6 +750,7 @@ EOLOG
 if [[ "$BEHIND_PROXY" == "1" ]]; then
     # ── Mode reverse-proxy / tunnel (Cloudflare, etc.) : HTTP local, TLS en amont ──
     info "Mode reverse-proxy/tunnel : Nginx en HTTP sur le port ${HTTP_PORT} (pas de Let's Encrypt)."
+    sauver_conf /etc/nginx/sites-available/gmao
     cat > /etc/nginx/sites-available/gmao <<EONGINX
 server {
     listen ${HTTP_PORT};
@@ -755,6 +770,7 @@ EONGINX
     warn "Faites pointer le tunnel/proxy vers http://127.0.0.1:${HTTP_PORT}."
 else
 
+sauver_conf /etc/nginx/sites-available/gmao
 cat > /etc/nginx/sites-available/gmao <<EONGINX
 server {
     listen 80;
@@ -854,6 +870,7 @@ _CERTBOT_CRON='0 3 * * * root certbot renew --quiet --post-hook "systemctl reloa
 [[ "$BEHIND_PROXY" == "1" ]] && _CERTBOT_CRON='# (TLS géré en amont : renouvellement certbot non requis)'
 [[ "$BEHIND_PROXY" != "1" && "$USE_CERTBOT" != "1" ]] && _CERTBOT_CRON='# (Certbot non utilisé : renouveler le certificat fourni selon sa propre procédure)'
 _PHP_BIN="$(command -v php || echo /usr/bin/php)"
+sauver_conf /etc/cron.d/gmao
 cat > /etc/cron.d/gmao <<EOCRON
 # Renouvellement certificat SSL (uniquement si TLS géré localement)
 ${_CERTBOT_CRON}

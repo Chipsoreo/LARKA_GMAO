@@ -394,7 +394,7 @@ if ($action === 'presence_effectif' && $method === 'GET') {
         $token   = '';
         $origine = '';
         if (!empty($_SESSION['ms_access_token'] ?? '') && function_exists('ensureMsToken')) {
-            try { $token = ensureMsToken(); $origine = 'delegue'; }
+            try { $token = function_exists('msTokenOuNull') ? (string)(msTokenOuNull() ?? '') : ensureMsToken(); $origine = $token !== '' ? 'delegue' : ''; }
             catch (\Throwable $e) { $token = ''; }
         }
         if ($token === '') {

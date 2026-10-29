@@ -128,7 +128,155 @@ if ($action === 'assistant_status') {
         'timeout_ms'  => (int)(($timeout * 1.5 + 15) * 1000),
         // Préchauffer ne sert qu'au modèle : en mode fiable, seulement s'il peut être appelé.
         'prechauffage'=> $local && (bool)_acfg('prechauffage', true) && ($mode === 'agent' || _assistantInterpretation()),
+        // Un modèle peut-il être appelé (aide de l'import, etc.) ?
+        'ia_disponible' => $actif && $keyOk,
     ]);
+}
+
+/**
+ * Client « JSON contraint » vers le modèle configuré, pour les aides ponctuelles
+ * (import). Mêmes règles que l'assistant : fournisseur connu, hôte autorisé
+ * (anti-SSRF), HTTPS pour le distant, réseau privé pour le local.
+ */
+function _assistantClientJson(int $maxTokens = 1500): AssistantLLM {
+    if (!(bool)_acfg('actif', false)) json_error("L'assistant IA est désactivé (Configuration → Assistant IA).", 403);
+    $providers = _assistantProviders();
+    $f = strtolower((string)_acfg('fournisseur', 'anthropic'));
+    if (!isset($providers[$f])) json_error("Fournisseur non reconnu : $f.", 400);
+    $local  = in_array($f, AssistantLLM::LOCAL, true);
+    $apiKey = (string)_acfg('api_key', '');
+    if (!$local && strlen($apiKey) < 5) json_error("Clé API non configurée pour \"$f\".", 400);
+    $apiUrl = trim((string)_acfg('api_url', '')) ?: $providers[$f]['url'];
+    $u = parse_url($apiUrl);
+    if (!$u || empty($u['host']) || empty($u['scheme'])) json_error("URL d'API invalide.", 400);
+    $scheme = strtolower($u['scheme']); $host = strtolower($u['host']);
+    if (!in_array($scheme, ['http', 'https'], true)) json_error("Schéma d'URL non autorisé : $scheme.", 400);
+    if ($local) {
+        $hote = trim($host, '[]');
+        $ok = in_array($host, ['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'], true)
+           || (filter_var($hote, FILTER_VALIDATE_IP) && !filter_var($hote, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE))
+           || (bool)preg_match('/\.(local|lan|internal|home)$/i', $host);
+        if (!$ok) json_error("Host non autorisé pour provider local : $host.", 400);
+    } else {
+        if (!in_array($host, $providers[$f]['hosts'], true)) json_error("Host non autorisé pour $f : $host.", 400);
+        if ($scheme !== 'https') json_error("HTTPS requis pour $f.", 400);
+    }
+    return new AssistantLLM([
+        'fournisseur' => $f,
+        'model'       => trim((string)_acfg('model', '')) ?: $providers[$f]['model'],
+        'url'         => $apiUrl,
+        'key'         => $apiKey,
+        'timeout'     => _assistantTimeout($local),
+        'max_tokens'  => $maxTokens,
+        'temperature' => 0.0,
+        'temperature_explicite' => true,
+        'top_p'       => 0.9,
+        'seed'        => 7,
+        'num_ctx'     => max(8192, (int)_acfg('num_ctx', 8192)),
+        'num_thread'  => (int)_acfg('num_thread', 0),
+        'keep_alive'  => _acfg('keep_alive', -1),
+        'reflexion'   => 'off',
+        'gemini_thinking' => 'auto',
+        'reasoning_effort'=> 'low',
+        'anthropic_cache' => false,
+        'ollama_natif'    => (bool)_acfg('ollama_natif', true),
+    ]);
+}
+
+// ── Import de biens / équipements : correspondances proposées par l'IA ────────
+// Le modèle ne voit que les EN-TÊTES du fichier et quelques valeurs d'exemple
+// par colonne (tronquées) ; il ne reçoit jamais le fichier. Sa proposition est
+// vérifiée ici (colonnes et champs existants, valeurs cibles autorisées) et
+// reste une PROPOSITION : l'écran la montre, l'utilisateur la corrige.
+if ($action === 'import_biens_ia') {
+    $user = require_auth();
+    require_role($user, ['Admin', 'Gestionnaire']);
+    if ($method !== 'POST') json_error('Méthode non supportée.', 405);
+    check_rate_limit('import_ia_' . ($user['Id'] ?? 0), 10, 300);
+    $b = get_body();
+    $court = static fn($v, int $n) => mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$v)), 0, $n);
+    $colonnes = [];
+    foreach (array_slice((array)($b['colonnes'] ?? []), 0, 80) as $c) {
+        if (!is_array($c) || !isset($c['idx'])) continue;
+        $ex = array_values(array_filter(array_map(fn($x) => $court($x, 60), array_slice((array)($c['exemples'] ?? []), 0, 5)), 'strlen'));
+        $colonnes[(int)$c['idx']] = ['libelle' => $court($c['libelle'] ?? '', 80), 'exemples' => $ex];
+    }
+    $champs = [];
+    foreach (array_slice((array)($b['champs'] ?? []), 0, 60) as $c) {
+        if (!is_array($c) || !preg_match('/^_?[A-Za-z]{2,40}$/', (string)($c['cle'] ?? ''))) continue;
+        $champs[(string)$c['cle']] = $court($c['libelle'] ?? $c['cle'], 60);
+    }
+    $valeursCibles = [];
+    foreach (['Statut', 'Etat'] as $k) {
+        $valeursCibles[$k] = array_values(array_filter(array_map(fn($x) => $court($x, 40), (array)($b['valeurs'][$k]['cibles'] ?? [])), 'strlen'));
+    }
+    $valeursSource = [];
+    foreach (['Statut', 'Etat'] as $k) {
+        $valeursSource[$k] = array_values(array_filter(array_map(fn($x) => $court($x, 40), array_slice((array)($b['valeurs'][$k]['source'] ?? []), 0, 40)), 'strlen'));
+    }
+    if (!$colonnes || !$champs) json_error('Rien à analyser.', 400);
+
+    $lignes = [];
+    foreach ($colonnes as $i => $c) {
+        $lignes[] = "Colonne $i : « {$c['libelle']} »" . ($c['exemples'] ? ' — exemples : ' . implode(' | ', $c['exemples']) : ' — (vide)');
+    }
+    $listeChamps = [];
+    foreach ($champs as $k => $l) $listeChamps[] = "$k = $l";
+    $question = "Champs Larka disponibles :\n" . implode("\n", $listeChamps)
+        . "\n\nColonnes du fichier :\n" . implode("\n", $lignes);
+    foreach (['Statut', 'Etat'] as $k) {
+        if ($valeursSource[$k] && $valeursCibles[$k]) {
+            $question .= "\n\nValeurs « $k » du fichier : " . implode(' | ', $valeursSource[$k])
+                . "\nValeurs « $k » autorisées dans Larka : " . implode(' | ', $valeursCibles[$k]);
+        }
+    }
+    $system = "Tu prépares l'import d'un inventaire (mobilier, informatique, équipements techniques d'un bâtiment) dans le logiciel de maintenance Larka.\n"
+        . "Pour chaque colonne du fichier, choisis le champ Larka qui lui correspond (par sa clé), d'après son libellé ET ses exemples, "
+        . "ou ignore-la si aucun champ ne convient. Un champ ne sert qu'une fois. Ne devine pas : une colonne douteuse est ignorée.\n"
+        . "confiance : 0 à 100. Pour les valeurs Statut / État, associe chaque valeur du fichier à une valeur autorisée, seulement si le sens est clair.\n"
+        . "Réponds uniquement par le JSON demandé.";
+    $schema = [
+        'type' => 'object',
+        'properties' => [
+            'correspondances' => ['type' => 'array', 'items' => [
+                'type' => 'object',
+                'properties' => ['colonne' => ['type' => 'integer'], 'champ' => ['type' => 'string'], 'confiance' => ['type' => 'integer']],
+                'required' => ['colonne', 'champ', 'confiance'],
+            ]],
+            'valeurs' => ['type' => 'array', 'items' => [
+                'type' => 'object',
+                'properties' => ['champ' => ['type' => 'string'], 'source' => ['type' => 'string'], 'cible' => ['type' => 'string']],
+                'required' => ['champ', 'source', 'cible'],
+            ]],
+        ],
+        'required' => ['correspondances', 'valeurs'],
+    ];
+    session_write_close();   // l'appel peut durer : ne pas bloquer les autres requêtes de l'utilisateur
+    $llm = _assistantClientJson(1800);
+    $r = $llm->json($system, $question, $schema, ['max_tokens' => 1800]);
+    if (!empty($r['_error']) || !is_array($r['data'] ?? null)) {
+        json_error("L'IA n'a pas pu proposer de correspondances" . (!empty($r['_error']) ? ' : ' . mb_substr((string)$r['_error'], 0, 200) : ' (réponse illisible).'), 502);
+    }
+    // Vérification : rien d'inventé ne passe.
+    $out = []; $prisCol = []; $prisChamp = [];
+    $corr = (array)($r['data']['correspondances'] ?? []);
+    usort($corr, fn($x, $y) => (int)($y['confiance'] ?? 0) <=> (int)($x['confiance'] ?? 0));
+    foreach ($corr as $c) {
+        $col = (int)($c['colonne'] ?? -1); $ch = (string)($c['champ'] ?? '');
+        if (!isset($colonnes[$col]) || !isset($champs[$ch]) || isset($prisCol[$col]) || isset($prisChamp[$ch])) continue;
+        $conf = max(0, min(100, (int)($c['confiance'] ?? 0)));
+        if ($conf < 30) continue;
+        $prisCol[$col] = $prisChamp[$ch] = true;
+        $out[] = ['colonne' => $col, 'champ' => $ch, 'confiance' => $conf];
+    }
+    $vals = [];
+    foreach ((array)($r['data']['valeurs'] ?? []) as $v) {
+        $ch = (string)($v['champ'] ?? ''); $ch = $ch === 'État' ? 'Etat' : $ch;
+        $src = (string)($v['source'] ?? ''); $cib = (string)($v['cible'] ?? '');
+        if (!isset($valeursCibles[$ch]) || !in_array($src, $valeursSource[$ch], true) || !in_array($cib, $valeursCibles[$ch], true)) continue;
+        $vals[] = ['champ' => $ch, 'source' => $src, 'cible' => $cib];
+    }
+    json_ok(['correspondances' => $out, 'valeurs' => $vals, 'modele' => $llm->model(), 'fournisseur' => $llm->fournisseur(), 'ms' => (int)($r['usage']['ms'] ?? 0)]);
 }
 
 if ($action === 'assistant') {

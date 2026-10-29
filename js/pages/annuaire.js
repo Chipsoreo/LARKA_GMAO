@@ -274,11 +274,28 @@ async function _anLoadPresence() {
   }
 }
 
+// Jeton Microsoft absent ou périmé (présence, agenda) : la connexion Microsoft
+// est reprise dans une fenêtre, SANS quitter Larka. La session reçoit les
+// jetons (oauth_check + jeton de relais) ; la page n'est rechargée que si le
+// compte Microsoft choisi n'est pas celui connecté.
+function _anReconnexionUtile(reason) {
+  return ['no_ms_token', 'graph_401', 'graph_403', 'token_error'].includes(String(reason || ''));
+}
+
+function _anReconnecterMs() {
+  reconnecterMicrosoft(async () => {
+    await _anLoadPresence();
+    const qEl = document.getElementById('anListQuery');
+    _anRenderList(qEl ? qEl.value : '', true);
+    if (_an.selected && _an.markers[_an.selected]) _anShowFiche(_an.markers[_an.selected].pt);
+  });
+}
+
 // Traduit le code renvoyé par l'API en explication actionnable (infobulle).
 function _anPresenceWhy() {
   switch (_an.presenceReason) {
     case 'disabled':    return "Présence désactivée : ajoutez \"plans_presence\": { \"actif\": true } dans config.json.";
-    case 'no_ms_token': return "Vous n'êtes pas connecté via Microsoft. La présence est une permission déléguée : déconnectez-vous puis reconnectez-vous avec Microsoft.";
+    case 'no_ms_token': return "Votre session n'a pas de jeton Microsoft. La présence est une permission déléguée : utilisez « Reconnecter Microsoft ».";
     case 'no_ms_id':    return "Cette personne n'a pas de compte Microsoft lié (fiche créée à la main, ou jamais connectée via Microsoft).";
     case 'graph_403':   return "Microsoft a refusé (403) : votre token ne porte pas Presence.Read.All. Reconnectez-vous via Microsoft.";
     case 'no_helper':   return "Module SharePoint non chargé côté serveur.";
@@ -433,7 +450,10 @@ function _anShowFiche(pt) {
     const pr = _an.presence[u.Id] ? _anPresenceInfo(_an.presence[u.Id].availability, _an.presence[u.Id].activity) : null;
     const pill = pr
       ? '<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500"><span style="width:10px;height:10px;border-radius:50%;background:' + pr.c + '"></span>' + _anEsc(pr.label) + '</span>'
-      : '<span style="font-size:12px;color:var(--gray-text);cursor:help;border-bottom:1px dotted var(--gray-text)" title="' + _anEsc(_anPresenceWhy()) + '">Statut indisponible ⓘ</span>';
+      : '<span style="font-size:12px;color:var(--gray-text);cursor:help;border-bottom:1px dotted var(--gray-text)" title="' + _anEsc(_anPresenceWhy()) + '">Statut indisponible ⓘ</span>'
+        + (_anReconnexionUtile(_an.presenceReason)
+          ? ' <button type="button" class="btn btn-sm btn-secondary" style="margin-left:8px;font-size:11px;padding:2px 8px" onclick="_anReconnecterMs()">🔑 Reconnecter Microsoft</button>'
+          : '');
     // L'agenda a désormais son propre panneau (#anCal) sous la fiche : ici on
     // ne garde que la pastille de statut, qui doit rester collée à l'identité.
     presenceHtml = '<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--gray-border);border-radius:8px">'
@@ -625,7 +645,10 @@ async function _anLoadAgenda(userId, u) {
   const c = cell(); if (!c) return;                 // la fiche a changé entre-temps
   if (!res || res.enabled === false || res.available === false) {
     c.innerHTML = _anCalHeader(s, e)
-      + '<div style="cursor:help;border-bottom:1px dotted var(--gray-text)" title="' + _anEsc(_anAgendaWhy(res && res.reason)) + '">Agenda indisponible ⓘ</div>';
+      + '<div style="cursor:help;border-bottom:1px dotted var(--gray-text)" title="' + _anEsc(_anAgendaWhy(res && res.reason)) + '">Agenda indisponible ⓘ</div>'
+      + (_anReconnexionUtile(res && res.reason)
+        ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:11px;padding:2px 8px" onclick="_anReconnecterMs()">🔑 Reconnecter Microsoft</button>'
+        : '');
     return;
   }
   const slots = res.slots || [];

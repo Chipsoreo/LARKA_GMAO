@@ -29,9 +29,35 @@ if ($action === 'biens') {
         }
     }
     require_role($user, ['Admin','Gestionnaire']);
-    if ($method==='POST')   json_ok(['id' => $db->addBien(get_body(), $user['Login'])]);
-    if ($method==='PUT')    { $db->updateBien($id, get_body(), $user['Login']); json_ok('OK'); }
+    if ($method==='POST') {
+        $b = get_body();
+        $nid = $db->addBien($b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('biens', $nid, $b['champsPerso']);
+        json_ok(['id' => $nid]);
+    }
+    if ($method==='PUT') {
+        $b = get_body();
+        $db->updateBien($id, $b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('biens', $id, $b['champsPerso']);
+        json_ok('OK');
+    }
     if ($method==='DELETE') { $db->deleteBien($id, $user['Login']); json_ok('OK'); }
+}
+
+// ── Cases complémentaires des fiches (définitions) ────────────────────────────
+// GET ?cible=biens|equipements → [{cle, libelle, type}] ; POST {cible, champs:[…]}
+// remplace la liste (ordre compris). Les valeurs vivent dans chaque fiche.
+if ($action === 'champs_perso') {
+    $user = require_auth();
+    $cible = (string)($_GET['cible'] ?? (get_body()['cible'] ?? 'biens'));
+    if (!in_array($cible, ['biens', 'equipements'], true)) json_error('Cible inconnue.');
+    require_lecture($user, ['Admin','Gestionnaire','Visionneur'], $cible, $db);
+    if ($method === 'GET') json_ok($db->getChampsPersoDefs($cible));
+    require_role($user, ['Admin','Gestionnaire']);
+    if ($method !== 'POST') json_error('Méthode non supportée', 405);
+    $champs = get_body()['champs'] ?? null;
+    if (!is_array($champs)) json_error('Liste des cases attendue.');
+    json_ok($db->setChampsPersoDefs($cible, $champs));
 }
 
 // ── Équipements ───────────────────────────────────────────────────────────────
@@ -40,12 +66,53 @@ if ($action === 'equipements') {
     if ($method==='GET')    json_ok($db->getAllEquipements());
     require_role($user, ['Admin','Gestionnaire']);
     if ($method==='POST') {
-        $nouvelId = $db->addEquipement(get_body(), $user['Login']);
-        $creee = $db->getEquipementById($nouvelId) ?: [];
+        $b = get_body();
+        $nouvelId = $db->addEquipement($b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('equipements', $nouvelId, $b['champsPerso']);
         json_ok(['id' => $nouvelId]);
     }
-    if ($method==='PUT')    { $db->updateEquipement($id, get_body(), $user['Login']); json_ok('OK'); }
+    if ($method==='PUT') {
+        $b = get_body();
+        $db->updateEquipement($id, $b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('equipements', $id, $b['champsPerso']);
+        json_ok('OK');
+    }
     if ($method==='DELETE') { $db->deleteEquipement($id, $user['Login']); json_ok('OK'); }
+}
+
+// ── Suppression groupée (biens / équipements) ─────────────────────────────────
+// Une seule requête pour toute la sélection (cases à cocher de la liste). Chaque
+// suppression reste une suppression ordinaire : tracée (logSuppression), logique
+// (DateSuppression) — donc retrouvable dans l'historique comme les autres. En une
+// transaction : tout ou rien, et rapide même pour plusieurs centaines de lignes.
+if ($action === 'biens_supprimer_lot' || $action === 'equipements_supprimer_lot') {
+    $estBien = ($action === 'biens_supprimer_lot');
+    $user = require_auth();
+    require_lecture($user, ['Admin','Gestionnaire','Visionneur'], $estBien ? 'biens' : 'equipements', $db);
+    require_role($user, ['Admin','Gestionnaire']);
+    if ($method !== 'POST') json_error('Méthode non supportée', 405);
+    $ids = array_values(array_unique(array_filter(
+        array_map('intval', (array)(get_body()['ids'] ?? [])), fn($i) => $i > 0)));
+    if (!$ids) json_error('Aucun élément sélectionné.');
+    if (count($ids) > 5000) json_error('Sélection trop grande : 5000 éléments au plus par suppression.');
+    $pdo = $db->getPdo();
+    $pdo->beginTransaction();
+    try {
+        $n = 0;
+        foreach ($ids as $i) {
+            if ($estBien) $db->deleteBien($i, $user['Login']); else $db->deleteEquipement($i, $user['Login']);
+            $n++;
+        }
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    if (class_exists('Journal')) {
+        try { Journal::log(Journal::AUDIT, $estBien ? 'biens' : 'equipements',
+            "Suppression groupée : $n " . ($estBien ? 'bien(s)' : 'équipement(s)') . " par {$user['Login']}."); } catch (\Throwable $_) {}
+    }
+    json_ok(['supprimes' => $n]);
 }
 
 // ── Stock ─────────────────────────────────────────────────────────────────────
@@ -423,33 +490,68 @@ if ($action === 'import_biens') {
     }
 
     // ── Helpers de normalisation pour rendre l'import robuste ──
+    // ⚠️ Dates : une date impossible (31/02/2020) ou mal lue passait par
+    // strtotime(), qui l'« arrangeait » (3 mars) — ou devenait NULL en silence.
+    // Désormais seules les dates RÉELLES sont acceptées ; les autres sont
+    // signalées dans le rapport (avertissements de l'aperçu).
     $cleanDate = function($v) {
         if (!$v) return null;
         $s = trim((string)$v);
         if ($s === '' || $s === '0' || $s === 'null' || $s === 'NULL') return null;
-        // Format ISO YYYY-MM-DD
-        if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})/', $s, $m)) {
-            return sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+        $ok = static function ($y, $mo, $d) {
+            $y = (int)$y; $mo = (int)$mo; $d = (int)$d;
+            if ($y < 100) $y += ($y < 50 ? 2000 : 1900);
+            return ($y >= 1900 && $y <= 2100 && checkdate($mo, $d, $y)) ? sprintf('%04d-%02d-%02d', $y, $mo, $d) : null;
+        };
+        // ISO AAAA-MM-JJ (ou AAAA/MM/JJ), heure éventuelle ignorée
+        if (preg_match('#^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})#', $s, $m)) return $ok($m[1], $m[2], $m[3]);
+        // Français JJ/MM/AAAA, JJ-MM-AAAA, JJ.MM.AAAA (année sur 2 ou 4 chiffres)
+        if (preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})(?!\d)#', $s, $m)) return $ok($m[3], $m[2], $m[1]);
+        // Numéro de série Excel (jours depuis le 30/12/1899)
+        if (preg_match('/^\d{5}(\.\d+)?$/', $s) && (float)$s > 20000 && (float)$s < 80000) {
+            return gmdate('Y-m-d', (int)round(((float)$s - 25569) * 86400));
         }
-        // Format français DD/MM/YYYY
-        if (preg_match('#^(\d{1,2})/(\d{1,2})/(\d{2,4})#', $s, $m)) {
-            $y = $m[3]; if (strlen($y) == 2) $y = ($y < '50' ? '20' : '19') . $y;
-            return sprintf('%04d-%02d-%02d', $y, $m[2], $m[1]);
+        // « 10 janvier 2020 », « janv. 2020 »…
+        $mois = ['janv' => 1, 'jan' => 1, 'fevr' => 2, 'fev' => 2, 'feb' => 2, 'mars' => 3, 'mar' => 3, 'avr' => 4, 'apr' => 4,
+                 'mai' => 5, 'may' => 5, 'juin' => 6, 'jun' => 6, 'juil' => 7, 'jul' => 7, 'aout' => 8, 'aug' => 8,
+                 'sept' => 9, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+        $n = strtolower(strtr($s, ['é' => 'e', 'è' => 'e', 'û' => 'u', 'É' => 'e', 'Û' => 'u']));
+        if (preg_match('/^(?:(\d{1,2})(?:er)?\s+)?([a-z]{3,9})\.?\s+(\d{4})$/', $n, $m)) {
+            foreach ($mois as $k => $no) if (str_starts_with($m[2], $k)) return $ok($m[3], $no, $m[1] !== '' ? $m[1] : 1);
         }
-        // Format DD-MM-YYYY
-        if (preg_match('/^(\d{1,2})-(\d{1,2})-(\d{2,4})/', $s, $m)) {
-            $y = $m[3]; if (strlen($y) == 2) $y = ($y < '50' ? '20' : '19') . $y;
-            return sprintf('%04d-%02d-%02d', $y, $m[2], $m[1]);
-        }
-        // Tentative générique
-        $t = strtotime($s);
-        if ($t !== false) return date('Y-m-d', $t);
         return null;
     };
-    $cleanNum = function($v) {
+    // ⚠️ Nombres : « 1.234,56 » devenait « 1.234.56 » — non numérique — donc 0 €,
+    // sans un mot. Séparateurs de milliers (espace, espace insécable, point,
+    // apostrophe) et décimale (virgule ou point) sont maintenant reconnus.
+    // null = valeur présente mais illisible (signalée par l'aperçu).
+    $parseNum = static function($v): ?float {
         if ($v === null || $v === '' || $v === false) return 0.0;
-        $s = str_replace([' ', "\xc2\xa0", '€', ','], ['', '', '', '.'], (string)$v);
-        return is_numeric($s) ? (float)$s : 0.0;
+        if (is_int($v) || is_float($v)) return (float)$v;
+        $s = trim((string)$v);
+        if ($s === '' || $s === '-') return 0.0;
+        $neg = false;
+        if (preg_match('/^\((.*)\)$/', $s, $m)) { $neg = true; $s = $m[1]; }
+        $s = preg_replace('/[\s\x{00A0}\x{202F}\x{2009}\'’]|€|eur(os?)?|ht|ttc/iu', '', $s);
+        if (str_starts_with($s, '-')) { $neg = !$neg; $s = substr($s, 1); }
+        if ($s === '' || !preg_match('/^[0-9.,]+$/', $s)) return null;
+        $p = strrpos($s, '.'); $c = strrpos($s, ',');
+        if ($p !== false && $c !== false) {
+            $dec = $p > $c ? '.' : ',';
+            $s = str_replace($dec === '.' ? ',' : '.', '', $s);
+            $s = str_replace(',', '.', $s);
+        } elseif ($c !== false) {
+            // Virgule seule : décimale, sauf « 1,234,567 » (plusieurs virgules = milliers).
+            $s = substr_count($s, ',') > 1 ? str_replace(',', '', $s) : str_replace(',', '.', $s);
+        } elseif ($p !== false && substr_count($s, '.') > 1) {
+            $s = str_replace('.', '', $s);                 // 1.234.567
+        }
+        if (!is_numeric($s)) return null;
+        return $neg ? -(float)$s : (float)$s;
+    };
+    $cleanNum = static function($v) use ($parseNum) {
+        $n = $parseNum($v);
+        return $n === null ? 0.0 : $n;
     };
     $cleanStr = function($v) {
         if ($v === null) return '';
@@ -488,6 +590,9 @@ if ($action === 'import_biens') {
 
     // ── Phase 2 : analyse + détection des nouvelles valeurs de listes ──
     $errors        = [];
+    $avertissements = [];   // valeurs présentes mais illisibles (dates, montants) : importées vides
+    $champsDates   = ['dateCommande' => 'Date commande', 'dateLivraison' => 'Date livraison', 'dateInstallation' => 'Date installation', 'dateSortie' => 'Date de sortie'];
+    $champsNombres = ['prix' => 'Prix', '_AmortCum' => 'Amortissements cumulés', '_VNC' => 'VNC'];
     $duplicatesSuffixed = 0;
     $listesToAdd   = array_fill_keys($listCats, []);
     $toCreateIdx   = []; $toUpdateIdx = []; $toSkipIdx = [];
@@ -508,8 +613,29 @@ if ($action === 'import_biens') {
             $biens[$i][$fld] = $v;
         }
         if ($numero === '') {
-            $errors[] = ['row' => $row, 'message' => 'N° de bien vide'];
+            $errors[] = ['row' => $row, 'champ' => 'N°', 'message' => 'N° vide : ligne ignorée'];
             continue;
+        }
+        if (mb_strlen($numero) > 100) {
+            $errors[] = ['row' => $row, 'numero' => mb_substr($numero, 0, 40) . '…', 'champ' => 'N°', 'message' => 'N° trop long (100 caractères au plus) : ligne ignorée'];
+            continue;
+        }
+        foreach ($champsDates as $k => $lib) {
+            $brut = trim((string)($b[$k . '_brut'] ?? $b[$k] ?? ''));
+            if ($brut !== '' && $cleanDate($brut) === null) {
+                $avertissements[] = ['row' => $row, 'numero' => $numero, 'champ' => $lib, 'valeur' => mb_substr($brut, 0, 60),
+                                     'message' => 'date non reconnue : importée vide'];
+            }
+        }
+        foreach ($champsNombres as $k => $lib) {
+            $brut = $b[$k . '_brut'] ?? $b[$k] ?? '';
+            if (is_string($brut) && trim($brut) !== '' && $parseNum($brut) === null) {
+                $avertissements[] = ['row' => $row, 'numero' => $numero, 'champ' => $lib, 'valeur' => mb_substr(trim($brut), 0, 60),
+                                     'message' => 'montant non reconnu : importé à 0'];
+            } elseif ($k === 'prix' && ($n = $parseNum($brut)) !== null && $n < 0) {
+                $avertissements[] = ['row' => $row, 'numero' => $numero, 'champ' => $lib, 'valeur' => (string)$n,
+                                     'message' => 'montant négatif'];
+            }
         }
         // En mode auto, déterminer la cible de cette ligne d'après _targetGuess
         // (envoyé par le frontend) ou recalcul côté serveur si manquant.
@@ -616,12 +742,42 @@ if ($action === 'import_biens') {
         $toUpdateIdx = [];
     }
 
-    // Listes à ajouter — déduplication
+    // Listes à ajouter — déduplication, moins les valeurs que l'utilisateur a
+    // décochées (« ne pas créer dans les listes ») : la fiche garde la valeur
+    // telle quelle, la liste de choix n'est pas modifiée.
+    $nePasCreer = [];
+    foreach ((array)($body['listesNePasCreer'] ?? []) as $cat => $vals) {
+        foreach ((array)$vals as $v) $nePasCreer[(string)$cat][strtolower(trim((string)$v))] = true;
+    }
     $listesToAddOut = [];
     foreach ($listesToAdd as $cat => $vals) {
-        $vals = array_values(array_unique($vals));
+        $vals = array_values(array_filter(array_unique($vals), fn($v) => empty($nePasCreer[$cat][strtolower(trim((string)$v))])));
         if (count($vals) > 0) $listesToAddOut[$cat] = $vals;
     }
+
+    // ── Cases complémentaires (colonnes du fichier sans champ Larka) ──
+    // champsPersoNouveaux : [{cle, libelle, type}] — créées dans les fiches de
+    // chaque cible qui reçoit au moins une ligne ; items[].champsPerso : valeurs.
+    $nouvellesCases = [];
+    foreach ((array)($body['champsPersoNouveaux'] ?? []) as $d) {
+        if (is_array($d) && preg_match('/^[a-z0-9_]{1,60}$/', (string)($d['cle'] ?? '')) && trim((string)($d['libelle'] ?? '')) !== '') {
+            $nouvellesCases[] = ['cle' => $d['cle'], 'libelle' => mb_substr(trim((string)$d['libelle']), 0, 80),
+                                 'type' => in_array($d['type'] ?? '', Database::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+        }
+    }
+    $ciblesLignes = [];
+    foreach (array_merge($toCreateIdx, $toUpdateIdx) as $i) {
+        $ciblesLignes[($target === 'auto') ? ($biens[$i]['_targetGuess'] ?? 'biens') : $target] = true;
+    }
+    $casesACreer = [];
+    foreach (array_keys($ciblesLignes) as $cb) {
+        $existantes = array_column($db->getChampsPersoDefs($cb), 'cle');
+        foreach ($nouvellesCases as $d) if (!in_array($d['cle'], $existantes, true)) $casesACreer[$d['libelle']] = true;
+    }
+    // Champs effectivement lus dans le fichier : les autres ne sont PAS
+    // remplacés à la mise à jour d'une fiche existante (null : ancien écran,
+    // ancien comportement).
+    $champsMappes = is_array($body['champsMappes'] ?? null) ? array_values(array_filter($body['champsMappes'], 'is_string')) : null;
 
     // ── DRY-RUN : on s'arrête ici et on retourne le diagnostic ──
     if ($dryRun) {
@@ -636,13 +792,16 @@ if ($action === 'import_biens') {
             'toCreate'           => count($toCreateIdx),
             'toUpdate'           => count($toUpdateIdx),
             'toSkip'             => count($toSkipIdx),
-            'errors'             => array_slice($errors, 0, 200),
+            'errors'             => array_slice($errors, 0, 500),
+            'avertissements'     => array_slice($avertissements, 0, 1000),
+            'nbAvertissements'   => count($avertissements),
             'listesToCreate'     => $listesToAddOut,
             'totalParsed'        => count($biens),
             'duplicatesSuffixed' => $duplicatesSuffixed,
             'routedBiens'        => $routedBiens,
             'routedEquipements'  => $routedEquips,
             'sortis'             => $sortis,
+            'casesACreer'        => array_keys($casesACreer),
         ]);
     }
 
@@ -704,6 +863,24 @@ if ($action === 'import_biens') {
         }
     }
 
+    // 3a bis) Cases complémentaires à créer dans les fiches
+    $clesPerso = ['biens' => [], 'equipements' => []];
+    foreach (['biens', 'equipements'] as $cb) {
+        try {
+            if ($nouvellesCases && !empty($ciblesLignes[$cb])) $db->ajouterChampsPersoDefs($cb, $nouvellesCases);
+            $clesPerso[$cb] = array_column($db->getChampsPersoDefs($cb), 'cle');
+        } catch (\Throwable $e) {
+            $errors[] = ['row' => '—', 'message' => 'Cases complémentaires non créées : ' . mb_substr($e->getMessage(), 0, 150)];
+        }
+    }
+    $clesChamps = [
+        'biens' => ['numero','famille','sousFamille','statut','numeroSerie','etat','dateCommande','dateLivraison','prix','infoProduit',
+                    'batiment','etage','numeroBureau','nomPrenom','affecteUserId','commentaireSortie','dateSortie'],
+        'equipements' => ['numero','famille','sousFamille','statut','numeroSerie','etat','dateCommande','dateLivraison','dateInstallation',
+                    'prix','infoProduit','marque','modele','fournisseur','batiment','etage','numeroBureau','nomPrenom','observations',
+                    'commentaireSortie','dateSortie'],
+    ];
+
     // 3b) Importer les items (biens ou équipements ou les deux selon mode)
     // Stratégie : un SAVEPOINT par item. Si une ligne échoue, on rollback CE savepoint
     // mais la transaction principale reste valide pour les lignes suivantes.
@@ -730,37 +907,43 @@ if ($action === 'import_biens') {
             // Construire les données selon la cible (avec helpers de nettoyage robustes)
             if ($itemTarget === 'equipements') {
                 $itemData = [
-                    'numero'       => $cleanStr($b['numero']),
-                    'famille'      => $cleanStr($b['famille']) ?: 'Plomberie',
-                    'sousFamille'  => $cleanStr($b['sousFamille']),
-                    'infoProduit'  => $cleanStr($b['infoProduit']),
-                    'numeroSerie'  => $cleanStr($b['numeroSerie']),
+                    'numero'       => $cleanStr($b['numero'] ?? ''),
+                    'famille'      => $cleanStr($b['famille'] ?? '') ?: 'Plomberie',
+                    'sousFamille'  => $cleanStr($b['sousFamille'] ?? ''),
+                    'infoProduit'  => $cleanStr($b['infoProduit'] ?? ''),
+                    'numeroSerie'  => $cleanStr($b['numeroSerie'] ?? ''),
                     'marque'       => $cleanStr($b['marque'] ?? ''),
                     'modele'       => $cleanStr($b['modele'] ?? ''),
                     'fournisseur'  => $cleanStr($b['fournisseur'] ?? ''),
-                    'batiment'     => $cleanStr($b['batiment']),
+                    'batiment'     => $cleanStr($b['batiment'] ?? ''),
                     'etage'        => $cleanStr($b['etage'] ?? ''),
                     'numeroBureau' => $cleanStr($b['numeroBureau'] ?? ''),
-                    'nomPrenom'    => $cleanStr($b['nomPrenom']),
+                    'nomPrenom'    => $cleanStr($b['nomPrenom'] ?? ''),
                     'observations' => $cleanStr($b['observations'] ?? ''),
-                    'statut'       => $cleanStr($b['statut']) ?: 'Commande',
-                    'etat'         => $cleanStr($b['etat']) ?: 'Stock',
+                    'statut'       => $cleanStr($b['statut'] ?? '') ?: 'Commande',
+                    'etat'         => $cleanStr($b['etat'] ?? '') ?: 'Stock',
                     'dateCommande' => $cleanDate($b['dateCommande'] ?? null),
                     'dateLivraison'=> $cleanDate($b['dateLivraison'] ?? null),
                     'dateInstallation' => $cleanDate($b['dateInstallation'] ?? null),
                     'prix'         => $cleanNum($b['prix'] ?? 0),
+                    'dateSortie'   => $cleanDate($b['dateSortie'] ?? null) ?? '',
+                    'commentaireSortie' => $cleanStr($b['commentaireSortie'] ?? ''),
                 ];
             } else {
                 $itemData = [
-                    'numero'       => $cleanStr($b['numero']),
-                    'famille'      => $cleanStr($b['famille']) ?: 'Mobilier',
-                    'sousFamille'  => $cleanStr($b['sousFamille']),
-                    'infoProduit'  => $cleanStr($b['infoProduit']),
-                    'numeroSerie'  => $cleanStr($b['numeroSerie']),
-                    'batiment'     => $cleanStr($b['batiment']),
-                    'nomPrenom'    => $cleanStr($b['nomPrenom']),
-                    'statut'       => $cleanStr($b['statut']) ?: 'Livre',
-                    'etat'         => $cleanStr($b['etat']) ?: 'Stock',
+                    'numero'       => $cleanStr($b['numero'] ?? ''),
+                    'famille'      => $cleanStr($b['famille'] ?? '') ?: 'Mobilier',
+                    'sousFamille'  => $cleanStr($b['sousFamille'] ?? ''),
+                    'infoProduit'  => $cleanStr($b['infoProduit'] ?? ''),
+                    'numeroSerie'  => $cleanStr($b['numeroSerie'] ?? ''),
+                    'batiment'     => $cleanStr($b['batiment'] ?? ''),
+                    'etage'        => $cleanStr($b['etage'] ?? ''),
+                    'numeroBureau' => $cleanStr($b['numeroBureau'] ?? ''),
+                    'nomPrenom'    => $cleanStr($b['nomPrenom'] ?? ''),
+                    'dateSortie'   => $cleanDate($b['dateSortie'] ?? null) ?? '',
+                    'commentaireSortie' => $cleanStr($b['commentaireSortie'] ?? ''),
+                    'statut'       => $cleanStr($b['statut'] ?? '') ?: 'Livre',
+                    'etat'         => $cleanStr($b['etat'] ?? '') ?: 'Stock',
                     'dateCommande' => $cleanDate($b['dateCommande'] ?? null),
                     'dateLivraison'=> $cleanDate($b['dateLivraison'] ?? null),
                     'prix'         => $cleanNum($b['prix'] ?? 0),
@@ -777,6 +960,20 @@ if ($action === 'import_biens') {
 
             $existKey = strtolower($itemData['numero']);
             $itemId = null;
+            // ⚠️ Mise à jour : seuls les champs LUS DANS LE FICHIER remplacent la
+            // fiche. Avant, tout champ non associé à une colonne était vidé
+            // (affectation, étage, date de sortie…) — réimporter un inventaire
+            // partiel effaçait ce qui avait été saisi dans Larka.
+            if (isset($dico[$existKey]) && $champsMappes !== null) {
+                $exist = $itemTarget === 'equipements' ? $db->getEquipementById($dico[$existKey]) : $db->getBienById($dico[$existKey]);
+                if ($exist) {
+                    foreach ($clesChamps[$itemTarget] as $k) {
+                        if ($k === 'numero' || in_array($k, $champsMappes, true)) continue;
+                        $col = ucfirst($k);
+                        if (array_key_exists($col, $exist)) $itemData[$k] = $exist[$col] ?? '';
+                    }
+                }
+            }
             if (isset($dico[$existKey])) {
                 if ($itemTarget === 'equipements') $db->updateEquipement($dico[$existKey], $itemData, $login);
                 else $db->updateBien($dico[$existKey], $itemData, $login);
@@ -790,6 +987,12 @@ if ($action === 'import_biens') {
                 $created++;
             }
             unset($dico); // libérer la référence
+
+            // Cases complémentaires de la fiche (fusionnées avec l'existant)
+            if (!empty($b['champsPerso']) && is_array($b['champsPerso']) && $itemId) {
+                $vals = array_intersect_key($b['champsPerso'], array_flip($clesPerso[$itemTarget]));
+                if ($vals) $db->setChampsPersoValeurs($itemTarget, (int)$itemId, $vals);
+            }
 
             // Compta : uniquement pour les Biens (pas pour les Équipements)
             if ($itemTarget === 'biens') {
@@ -887,6 +1090,7 @@ if ($action === 'import_biens') {
                 if (strlen($msg) > 200) $msg = substr($msg, 0, 200) . '…';
             }
             $errors[] = ['row' => $b['_row'] ?? '?', 'numero' => $itemData['numero'] ?? '', 'message' => $msg];
+            if (count($errors) <= 3) error_log('[Larka][import] ligne ' . ($b['_row'] ?? '?') . ' : ' . $e->getMessage());
         }
     }
 
@@ -900,7 +1104,7 @@ if ($action === 'import_biens') {
         'failed'         => $failed,
         'comptaCreated'  => $comptaCreated,
         'listesAdded'    => $listesAdded,
-        'errors'         => array_slice($errors, 0, 200),
+        'errors'         => array_slice($errors, 0, 500),
         'totalProcessed' => $created + $updated + $failed,
         'duplicatesSuffixed' => $duplicatesSuffixed,
     ]);

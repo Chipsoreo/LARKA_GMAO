@@ -13,5 +13,6 @@ La base en place est d'abord mise de côté dans `data/backups/`. Connexion : `c
 
 Le guide complet (restauration à la main, PostgreSQL, comptes) est dans l'archive : `LISEZ-MOI-DEMO.md`.
 
-Ce dossier n'est jamais copié sur un serveur de production (`deploy/install.sh`), ni emporté par les mises à
-jour, et le serveur web le refuse.
+Ce dossier est livré dans l'archive de chaque version, et apporté par la mise à jour (en ligne, `./start.sh maj`,
+`Larka.cmd maj`) aux installations de poste ou de développement. Il n'est jamais copié sur un serveur de production
+(`deploy/install.sh`, ni par une mise à jour quand `config.json` est en `env: prod`), et le serveur web le refuse.

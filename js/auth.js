@@ -329,6 +329,53 @@ async function doLoginMicrosoft(forceConsent = false) {
   }
 }
 
+// ── Reprendre la connexion Microsoft SANS quitter Larka ───────────────────────
+/**
+ * Présence, agenda et SharePoint passent par le jeton Microsoft de la session.
+ * S'il manque (ou a expiré sans pouvoir être rafraîchi), on reprend la
+ * connexion Microsoft dans une fenêtre : la session reçoit les nouveaux jetons
+ * (oauth_check + jeton de relais) et l'écran courant continue. La page n'est
+ * rechargée que si le compte choisi n'est pas celui déjà connecté.
+ * apres() : rappel une fois les jetons en place.
+ */
+async function reconnecterMicrosoft(apres) {
+  try {
+    const res  = await fetch('api/index.php?action=oauth_microsoft_url');
+    const data = await res.json();
+    if (!data.success || !data.data || !data.data.url) throw new Error(data.error || 'Microsoft');
+    const popup = openOAuthPopup(data.data.url, 'ms_login');
+    if (!popup) { toast('Popup bloquée — autorisez les popups pour ce site.', 'error'); return; }
+    const app = (typeof App !== 'undefined' && App) || null;
+    const avant = (app && app.currentUser && app.currentUser.Id) || (window._currentUser && window._currentUser.Id) || null;
+    const onMsg = async (evt) => {
+      if (evt.origin !== window.location.origin) return;
+      const d = evt.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === 'MICROSOFT_LOGIN_ERROR') {
+        window.removeEventListener('message', onMsg);
+        toast(d.error || 'Erreur Microsoft', 'error');
+        return;
+      }
+      if (d.type !== 'MICROSOFT_LOGIN_SUCCESS') return;
+      window.removeEventListener('message', onMsg);
+      let id = null;
+      const t = d.user && d.user.oauth_token;
+      try {
+        const r = await fetch('api/index.php?action=oauth_check' + (t ? '&token=' + encodeURIComponent(t) : ''));
+        const j = await r.json();
+        id = j && j.data ? j.data.Id : null;
+      } catch (_e) { /* l'écran dira ce qu'il en est */ }
+      closePopup(popup);
+      if (avant && id && String(avant) !== String(id)) { window.location.reload(); return; }
+      toast('Connexion Microsoft rétablie.', 'success');
+      if (typeof apres === 'function') { try { await apres(); } catch (_e) { /* rien */ } }
+    };
+    window.addEventListener('message', onMsg);
+  } catch (e) {
+    toast(e.message || 'Erreur Microsoft', 'error');
+  }
+}
+
 // ── OAuth Google ──────────────────────────────────────────────────────────────
 async function doLoginGoogle() {
   const errEl = document.getElementById('loginError');

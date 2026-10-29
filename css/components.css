@@ -544,3 +544,12 @@ select.form-control   { cursor: pointer; overflow: hidden; text-overflow: ellips
   .aide-fiche-cat { display: none; }
   .aide-table th { width: 110px; }
 }
+
+/* ── Sélection multiple des listes (renderTable({ selection })) ── */
+.tbl-sel-bar {
+  align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 16px 10px; padding: 8px 12px; border-radius: 8px;
+  background: var(--blue-pale); border: 1px solid var(--blue); font-size: 13px;
+}
+.tbl-sel-bar b { color: var(--blue); }
+tr.tbl-sel-ligne > td { background: var(--blue-pale); }

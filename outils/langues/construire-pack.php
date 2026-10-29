@@ -16,7 +16,7 @@
  *   php outils/langues/construire-pack.php en             met à jour lang/en.json (nouvelles clés
  *                                                         du catalogue en attente de traduction),
  *                                                         puis construit le pack
- *   php outils/langues/construire-pack.php en --version=4.2.0
+ *   php outils/langues/construire-pack.php en --version=4.2.1
  *
  * Produit :
  *   extensions/langues/larka.langue-<code>/extension.json

@@ -1457,6 +1457,64 @@ function cmd_demo(array $o, array $args): int
 //  Raccourcis, diagnostic, menu, aide
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Mise à jour depuis l'archive d'une nouvelle version (LARKA_GMAO-x.y.z.zip).
+ * Ne décompressez plus une nouvelle version par-dessus l'ancienne : cela
+ * remplaçait aussi les réglages des modules et toute copie de config.json ou
+ * de .env contenue dans l'archive. Ici, c'est la mise à jour de Larka qui écrit
+ * (api/outils/mise-a-jour.php --archive) : config.json, .env, data\, php\ et
+ * les réglages des modules restent tels quels ; fichiers et base sauvegardés avant.
+ */
+function cmd_maj(array $o, array $args): int
+{
+    // --cible <dossier> (ou --cible=<dossier>) : l'installation à mettre à jour,
+    // quand on lance la commande depuis la nouvelle version décompressée à côté.
+    $cible = null;
+    if (isset($o['cible'])) $cible = is_string($o['cible']) ? $o['cible'] : array_shift($args);
+    if ($cible !== null) {
+        $r = realpath((string)$cible);
+        if ($r === false || !is_file($r . '/api/index.php')) { alerte('Installation de Larka introuvable : ' . lk_aff((string)$cible)); return 2; }
+        $cible = $r;
+        if ($cible === realpath(LK_RACINE)) $cible = null;
+    }
+    $zip = $args[0] ?? null;
+    if ($zip === null) {
+        $dossiers = [LK_RACINE, dirname(LK_RACINE)];
+        foreach (['USERPROFILE', 'HOME'] as $v) {
+            $h = (string)getenv($v);
+            if ($h !== '') { $dossiers[] = $h . '/Downloads'; $dossiers[] = $h . '/Téléchargements'; }
+        }
+        $meilleur = null; $t = 0;
+        foreach ($dossiers as $d) {
+            foreach (glob($d . '/LARKA_GMAO-*.zip') ?: [] as $f) {
+                if (stripos($f, 'demo-Larkaville') !== false) continue;
+                if (($m = (int)@filemtime($f)) > $t) { $meilleur = $f; $t = $m; }
+            }
+        }
+        $zip = $meilleur;
+    }
+    if ($zip === null || !is_file($zip)) {
+        alerte("Archive introuvable. Usage : Larka.cmd maj LARKA_GMAO-x.y.z.zip [--sans-signature] [--reinstaller]");
+        return 2;
+    }
+    $zip = realpath($zip) ?: $zip;
+    titre('Larka — mise à jour depuis une archive');
+    info('Archive : ' . lk_aff($zip));
+    if ($cible) info('Installation : ' . lk_aff($cible));
+    $enMarche = $cible ? null : lk_en_marche();
+    if ($enMarche) { info('Arrêt de Larka pendant la mise à jour…'); cmd_arreter($o); }
+    $cmd = lk_commande_php(['api/outils/mise-a-jour.php', '--archive', $zip]);
+    if ($cible) { $cmd[] = '--racine'; $cmd[] = $cible; }
+    foreach (['sans-signature', 'reinstaller'] as $opt) if (!empty($o[$opt])) $cmd[] = '--' . $opt;
+    if (!empty($o['oui'])) $cmd[] = '--oui';
+    $p = @proc_open($cmd, [0 => STDIN, 1 => STDOUT, 2 => STDERR], $tubes, LK_RACINE);
+    $code = is_resource($p) ? proc_close($p) : 1;
+    if ($code !== 0) { alerte('Mise à jour non appliquée (détail ci-dessus).'); }
+    else ok('Mise à jour terminée — config.json, .env, data\\ et les réglages des modules sont intacts.');
+    if ($enMarche) return cmd_demarrer($o);
+    return $code === 0 ? 0 : 1;
+}
+
 function cmd_raccourci(array $o): int
 {
     if (!LK_WIN) echec('Les raccourcis sont propres à Windows.');
@@ -1567,6 +1625,9 @@ function cmd_aide(): int
         ['diagnostic',             "vérifie l'installation"],
         ['installer',              'prépare la configuration sans démarrer'],
         ['php [archive.zip]',      'installe ou met à jour PHP (archive locale acceptée)'],
+        ['maj [LARKA_GMAO-x.y.z.zip]', 'met Larka à jour sans toucher config.json, .env ni data'],
+        ['  --cible <dossier>',    "installation à mettre à jour (défaut : celle-ci)"],
+        ['  --sans-signature',     'archive non signée (provenance sûre)'],
         ['aide',                   'cette aide'],
         ['-y, --oui',              'répond « oui » à tout (accepte aussi la licence)'],
     ];
@@ -1638,6 +1699,7 @@ $alias = [
     'stop' => 'arreter', 'arrêter' => 'arreter', 'status' => 'etat', 'état' => 'etat',
     'démo' => 'demo', 'demonstration' => 'demo', 'install' => 'installer', 'setup' => 'installer',
     'doctor' => 'diagnostic', 'help' => 'aide', 'shortcut' => 'raccourci',
+    'update' => 'maj', 'mise-a-jour' => 'maj', 'mettre-a-jour' => 'maj',
 ];
 $commande = $alias[$commande] ?? $commande;
 
@@ -1645,6 +1707,7 @@ exit(match ($commande) {
     'demarrer'   => cmd_demarrer($options),
     'installer'  => cmd_installer($options),
     'demo'       => cmd_demo($options, $arguments),
+    'maj'        => cmd_maj($options, $arguments),
     'arreter'    => cmd_arreter($options),
     'etat'       => cmd_etat($options),
     'raccourci'  => cmd_raccourci($options),

@@ -42,6 +42,8 @@ async function renderEquipements() {
       if (!['Jete/Recycle','Don/Vendu'].includes(e.Etat)) return true;
       return !comptaClotures.has(e.Id);
     });
+    // La recherche porte aussi sur les cases complémentaires des fiches.
+    data.forEach(e => { if (e.ChampsPerso) e._recherche = Object.values(ChampsPerso.valeurs(e)).join(' '); });
     renderTable({
       container: c, data,
       columns: [
@@ -60,9 +62,11 @@ async function renderEquipements() {
         { key:'Batiment',    label:'Bâtiment' },
       ],
       addBtnFn: canEdit() ? 'editEquip' : null,
-      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportEquipements()" title="Importer des équipements depuis un fichier Excel">📥 Importer</button>' : '',
+      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportEquipements()" title="Importer des équipements depuis un fichier Excel">📥 Importer</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="ChampsPerso.ouvrirGestion(\'equipements\', renderEquipements)" title="Cases ajoutées aux fiches (section « Informations complémentaires »)">🗂️ Cases des fiches</button>' : '',
       searchTerm: App.searchTerm, currentFilter: App.currentFilter,
       canEdit: canEdit(), canDelete: canDelete(),
+      selection: { cle: 'equipements', supprimerFn: 'supprimerEquipementsSelection' },
     });
   } catch(e) { c.innerHTML = errorHtml(e.message); }
 }
@@ -71,7 +75,7 @@ async function voirEquip(id) { return editEquip(id, true); }
 
 async function editEquip(id, readOnly = false) {
   const isNew = !id;
-  const [eq, familles, sousFamilles, statuts, etats, batiments, _rf] = await Promise.all([
+  const [eq, familles, sousFamilles, statuts, etats, batiments, _rf, cpDefs] = await Promise.all([
     isNew ? Promise.resolve({}) : EquipementsApi.getAll().then(d => d.find(x => x.Id === id) || {}),
     ListesApi.getByCategorie('FamilleEquipement'),
     ListesApi.getByCategorie('SousFamilleEquipement'),
@@ -79,6 +83,7 @@ async function editEquip(id, readOnly = false) {
     ListesApi.getByCategorie('EtatAsset'),
     ListesApi.getByCategorie('Batiment'),
     getRequiredFields('equipements'),
+    ChampsPerso.charger('equipements', true),
   ]);
   const rf = _rf || [];
   // Forcer readonly si équipement sorti
@@ -185,7 +190,7 @@ async function editEquip(id, readOnly = false) {
       <textarea class="form-control" id="f_observations" rows="2" style="width:100%" ${dis}>${escHtml(eq.Observations||'')}</textarea>
     </div>
 
-    <div id="sortieCommentaireEquip" style="${['Jete/Recycle','Don/Vendu'].includes(eq.Etat)?'':'display:none'}">
+    <div id="sortieCommentaireEquip" style="${(['Jete/Recycle','Don/Vendu'].includes(eq.Etat) || eq.DateSortie || eq.CommentaireSortie)?'':'display:none'}">
       <div class="section-label">💬 Sortie</div>
       <div class="form-grid">
         <div class="form-group">
@@ -198,6 +203,8 @@ async function editEquip(id, readOnly = false) {
         </div>
       </div>
     </div>
+
+    ${ChampsPerso.sectionHtml(cpDefs, ChampsPerso.valeurs(eq), readOnly)}
 
     ${!readOnly ? `<div>
       <div class="section-label">Documents joints</div>
@@ -220,6 +227,7 @@ async function editEquip(id, readOnly = false) {
       observations: gv('f_observations'),
       commentaireSortie: gv('f_commentaireSortie') || '',
       dateSortie: gv('f_dateSortie') || '',
+      champsPerso: ChampsPerso.lireFormulaire(cpDefs),
     };
     try {
       let newId;
@@ -253,12 +261,26 @@ async function editEquip(id, readOnly = false) {
     if (etatEl && !readOnly) {
       const updateSortie = () => {
         const sortieDiv = document.getElementById('sortieCommentaireEquip');
-        if (sortieDiv) sortieDiv.style.display = ['Jete/Recycle','Don/Vendu'].includes(etatEl.value) ? '' : 'none';
+        if (sortieDiv) sortieDiv.style.display = (['Jete/Recycle','Don/Vendu'].includes(etatEl.value) || gv('f_dateSortie') || gv('f_commentaireSortie')) ? '' : 'none';
       };
       etatEl.addEventListener('change', updateSortie);
       etatEl.addEventListener('input', updateSortie);
     }
   }, 150);
+}
+
+// Suppression groupée : cases à cocher de la liste (renderTable → selection).
+function supprimerEquipementsSelection(ids) {
+  if (!ids || !ids.length) return;
+  showConfirm(ids.length > 1 ? `${ids.length} équipements sélectionnés : les supprimer ?` : 'Supprimer cet équipement ?', async () => {
+    try {
+      const r = await EquipementsApi.supprimerLot(ids);
+      const n = (r && r.supprimes) || ids.length;
+      toast(n > 1 ? `${n} équipements supprimés.` : 'Équipement supprimé.', 'success');
+      if (typeof _tblSelVider === 'function') _tblSelVider();
+      renderEquipements();
+    } catch (e) { toast(e.message, 'error'); }
+  });
 }
 
 async function deleteEquip(id) {

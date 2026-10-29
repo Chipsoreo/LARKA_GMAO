@@ -339,6 +339,14 @@ function aide_fiches_serveur(array $env, bool $multi, bool $en, ?array $pre, ?ar
                 'code' => "Larka.cmd php\nLarka.cmd php C:\\chemin\\php-8.3.x-nts-Win32-vs16-x64.zip",
                 'note' => $L('Sans accès à Internet, téléchargez ailleurs l\'archive « VS16 x64 Non Thread Safe » de windows.php.net et donnez son chemin. Le dossier php\\ n\'est jamais touché par une mise à jour de Larka.', 'Without Internet access, download the “VS16 x64 Non Thread Safe” zip from windows.php.net elsewhere and give its path. The php\\ folder is never touched by a Larka update.')];
     }
+    // Mise à jour depuis une archive (zip reçu) : jamais « décompresser par-dessus ».
+    $f[] = ['id' => 'srv-maj-archive', 'titre' => $L('Mettre à jour depuis une archive (zip)', 'Update from an archive (zip)'),
+            'mots' => $L('mise à jour archive zip nouvelle version décompresser config env écrasé', 'update archive zip new version unzip config env overwritten'),
+            'texte' => $L('Ne décompressez pas une nouvelle version par-dessus l\'installation : la configuration et les réglages des modules seraient écrasés. Larka applique l\'archive lui-même — config.json, .env, data et réglages des modules intacts, sauvegarde avant écriture :',
+                          'Do not unzip a new version over the installation: configuration and module settings would be overwritten. Larka applies the archive itself — config.json, .env, data and module settings untouched, backup before writing:'),
+            'code' => $win ? "Larka.cmd maj LARKA_GMAO-x.y.z.zip" : ($prod ? "sudo bash $r/start.sh maj LARKA_GMAO-x.y.z.zip" : "./start.sh maj LARKA_GMAO-x.y.z.zip"),
+            'note' => $L('Archive sans fichier .sig : ajoutez --sans-signature si vous êtes sûr de sa provenance. Retour arrière : php api/outils/mise-a-jour.php --restaurer <sauvegarde>.',
+                         'Archive without a .sig file: add --sans-signature if you trust its origin. Roll back: php api/outils/mise-a-jour.php --restaurer <backup>.')];
     if ($prod) {
         $f[] = ['id' => 'srv-maj-cli', 'titre' => $L('Mettre Larka à jour sans l\'interface', 'Update Larka without the interface'),
                 'mots' => $L('mise à jour ligne de commande serveur installer version terminal', 'update command line server install version terminal'),

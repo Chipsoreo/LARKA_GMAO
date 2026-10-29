@@ -46,6 +46,8 @@ async function renderBiens() {
       if (!['Jete/Recycle','Don/Vendu'].includes(b.Etat)) return true;
       return !comptaClotures.has(b.Id); // sorti mais pas encore clôturé → garder
     });
+    // La recherche porte aussi sur les cases complémentaires des fiches.
+    data.forEach(b => { if (b.ChampsPerso) b._recherche = Object.values(ChampsPerso.valeurs(b)).join(' '); });
     renderTable({
       container: c, data,
       columns: [
@@ -63,9 +65,11 @@ async function renderBiens() {
         { key:'NomPrenom',   label:'Affecté à' },
       ],
       addBtnFn: canEdit() ? 'editBien' : null,
-      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportBiens()" title="Importer des biens depuis un fichier Excel">📥 Importer</button>' : '',
+      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportBiens()" title="Importer des biens depuis un fichier Excel">📥 Importer</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="ChampsPerso.ouvrirGestion(\'biens\', renderBiens)" title="Cases ajoutées aux fiches (section « Informations complémentaires »)">🗂️ Cases des fiches</button>' : '',
       searchTerm: App.searchTerm, currentFilter: App.currentFilter,
       canEdit: canEdit(), canDelete: canDelete(),
+      selection: { cle: 'biens', supprimerFn: 'supprimerBiensSelection' },
     });
   } catch(e) { c.innerHTML = errorHtml(e.message); }
 }
@@ -74,7 +78,7 @@ async function voirBien(id) { return editBien(id, true); }
 
 async function editBien(id, readOnly = false) {
   const isNew = !id;
-  const [b, familles, sousFamilles, statuts, etats, batiments, etages, _rf] = await Promise.all([
+  const [b, familles, sousFamilles, statuts, etats, batiments, etages, _rf, cpDefs] = await Promise.all([
     isNew ? Promise.resolve({}) : BiensApi.getAll().then(d => d.find(x => x.Id === id) || {}),
     ListesApi.getByCategorie('FamilleBien'),
     ListesApi.getByCategorie('SousFamilleBien'),
@@ -83,6 +87,7 @@ async function editBien(id, readOnly = false) {
     ListesApi.getByCategorie('Batiment'),
     ListesApi.getByCategorie('Etage'),
     getRequiredFields('biens'),
+    ChampsPerso.charger('biens', true),
   ]);
   const rf = _rf || [];
   // Afficher un bandeau info si bien sorti (mais fiche reste éditable)
@@ -159,7 +164,7 @@ async function editBien(id, readOnly = false) {
       </div>
     </div>
 
-    <div id="sortieCommentaireBien" style="${['Jete/Recycle','Don/Vendu'].includes(b.Etat)?'':'display:none'}">
+    <div id="sortieCommentaireBien" style="${(['Jete/Recycle','Don/Vendu'].includes(b.Etat) || b.DateSortie || b.CommentaireSortie)?'':'display:none'}">
       <div class="section-label">💬 Sortie</div>
       <div class="form-grid">
         <div class="form-group">
@@ -191,6 +196,8 @@ async function editBien(id, readOnly = false) {
       </div>
     </div>
 
+    ${ChampsPerso.sectionHtml(cpDefs, ChampsPerso.valeurs(b), readOnly)}
+
     ${!readOnly ? `<div>
       <div class="section-label">Documents joints</div>
       ${isNew ? docsPanelHtml('Bien', 0, 'Bien') : docsPanelHtml('Bien', id)}
@@ -220,6 +227,7 @@ async function editBien(id, readOnly = false) {
       infoProduit: gv('f_infoProduit'),
       commentaireSortie: gv('f_commentaireSortie') || '',
       dateSortie: gv('f_dateSortie') || '',
+      champsPerso: ChampsPerso.lireFormulaire(cpDefs),
     };
     try {
       let newId;
@@ -253,12 +261,26 @@ async function editBien(id, readOnly = false) {
     if (etatEl && !readOnly) {
       const updateSortie = () => {
         const sortieDiv = document.getElementById('sortieCommentaireBien');
-        if (sortieDiv) sortieDiv.style.display = ['Jete/Recycle','Don/Vendu'].includes(etatEl.value) ? '' : 'none';
+        if (sortieDiv) sortieDiv.style.display = (['Jete/Recycle','Don/Vendu'].includes(etatEl.value) || gv('f_dateSortie') || gv('f_commentaireSortie')) ? '' : 'none';
       };
       etatEl.addEventListener('change', updateSortie);
       etatEl.addEventListener('input', updateSortie);
     }
   }, 150);
+}
+
+// Suppression groupée : cases à cocher de la liste (renderTable → selection).
+function supprimerBiensSelection(ids) {
+  if (!ids || !ids.length) return;
+  showConfirm(ids.length > 1 ? `${ids.length} biens sélectionnés : les supprimer ?` : 'Supprimer ce bien ?', async () => {
+    try {
+      const r = await BiensApi.supprimerLot(ids);
+      const n = (r && r.supprimes) || ids.length;
+      toast(n > 1 ? `${n} biens supprimés.` : 'Bien supprimé.', 'success');
+      if (typeof _tblSelVider === 'function') _tblSelVider();
+      renderBiens();
+    } catch (e) { toast(e.message, 'error'); }
+  });
 }
 
 async function deleteBien(id) {

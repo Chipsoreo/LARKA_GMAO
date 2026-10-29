@@ -1338,27 +1338,61 @@ return json_decode(<<<'JSON'
    "fr": {
     "titre": "Importer des biens ou des équipements depuis Excel",
     "mots": "importer import excel csv fichier tableur reprise données masse colonnes",
-    "texte": "Le bouton **📥 Importer** des rubriques Biens et Équipements lit un fichier Excel ou CSV, en quatre étapes :",
+    "texte": "Le bouton **📥 Importer** des rubriques Biens et Équipements lit un fichier Excel ou CSV, en cinq étapes :",
     "etapes": [
      "**Cible** : biens ou équipements (Larka propose selon les familles).",
-     "**Fichier** : le fichier, la feuille et la ligne des en-têtes.",
-     "**Correspondance** : pour chaque colonne, le champ Larka à remplir, et la conversion des valeurs de statut ou d'état.",
-     "**Aperçu** : vérifiez le résultat simulé, puis importez."
+     "**Fichier** : le fichier et la feuille ; la ligne des en-têtes est détectée, modifiable.",
+     "**Correspondance** : pour chaque colonne, le champ Larka à remplir (détecté, retenu de votre dernier import, ou **🤖 proposé par l'IA** si l'assistant est configuré), et la conversion des valeurs de statut ou d'état. Une colonne sans équivalent (ex. « Date de sortie administrative ») devient une **case de la fiche** : choix « ➕ Nouvelle case », ou **🗂️ Créer les cases** pour toutes les colonnes restantes.",
+     "**Sélection** : une case par ligne. Tout cocher ou décocher, par famille, **seuil de prix** (ex. 500 € minimum), sans les biens sortis ; les lignes en erreur et les avertissements (date ou montant illisible, doublon, ligne de total) sont signalés avec la valeur en cause.",
+     "**Aperçu** : vérifiez le résultat simulé, choisissez les nouvelles valeurs de listes à créer, puis importez. Le rapport se télécharge en CSV pour corriger le fichier."
     ],
-    "note": "Les biens déjà présents sont mis à jour plutôt que dupliqués.",
+    "note": "Les biens déjà présents sont mis à jour plutôt que dupliqués. Seules les lignes cochées sont importées.",
     "bouton": "Ouvrir les biens"
    },
    "en": {
     "titre": "Import assets or equipment from Excel",
     "mots": "import excel csv file spreadsheet migration bulk data columns",
-    "texte": "The **📥 Import** button in Assets and Equipment reads an Excel or CSV file, in four steps:",
+    "texte": "The **📥 Import** button in Assets and Equipment reads an Excel or CSV file, in five steps:",
     "etapes": [
      "**Target**: assets or equipment (Larka suggests one from the families).",
-     "**File**: the file, the sheet and the header row.",
-     "**Mapping**: for each column, the Larka field to fill, and how status or condition values convert.",
-     "**Preview**: check the simulated result, then import."
+     "**File**: the file and the sheet; the header row is detected, and can be changed.",
+     "**Mapping**: for each column, the Larka field to fill (detected, remembered from your last import, or **🤖 suggested by AI** when the assistant is configured), and how status or condition values convert. A column with no equivalent (e.g. “Administrative disposal date”) becomes a **record field**: choose “➕ New field”, or **🗂️ Create fields** for all remaining columns.",
+     "**Selection**: one checkbox per row. Check or uncheck all, by family, by **price threshold** (e.g. €500 minimum), without disposed assets; rows in error and warnings (unreadable date or amount, duplicate, total row) are flagged with the value at fault.",
+     "**Preview**: check the simulated result, choose which new list values to create, then import. The report downloads as CSV to fix the file."
     ],
-    "note": "Assets already present are updated rather than duplicated.",
+    "note": "Assets already present are updated rather than duplicated. Only checked rows are imported.",
+    "bouton": "Open assets"
+   }
+  },
+  {
+   "id": "cases-fiches",
+   "pour": [
+    "gestionnaire"
+   ],
+   "cat": "patrimoine",
+   "page": "biens",
+   "fr": {
+    "titre": "Ajouter des cases aux fiches des biens et équipements",
+    "mots": "case champ personnalisé supplémentaire information complémentaire fiche colonne fourre-tout date sortie administrative",
+    "texte": "Une information que Larka ne prévoit pas (date de sortie administrative, code analytique, n° de l'ancien logiciel…) peut devenir une case des fiches, dans la section **🗂️ Informations complémentaires**.",
+    "etapes": [
+     "Bouton **🗂️ Cases des fiches** des listes Biens ou Équipements : ajoutez, renommez, ordonnez les cases, et choisissez leur type (texte, texte long, date, nombre).",
+     "Ou à l'import : une colonne du fichier sans champ Larka devient une case (**➕ Nouvelle case**), remplie pour chaque ligne importée.",
+     "La recherche des listes porte aussi sur ces cases."
+    ],
+    "note": "Retirer une case ne supprime pas les valeurs déjà saisies : recréée sous le même nom, elle les retrouve.",
+    "bouton": "Ouvrir les biens"
+   },
+   "en": {
+    "titre": "Add fields to asset and equipment records",
+    "mots": "field custom extra additional information record column catch-all administrative disposal date",
+    "texte": "Information Larka does not provide (administrative disposal date, cost code, number from the previous software…) can become a record field, in the **🗂️ Additional information** section.",
+    "etapes": [
+     "**🗂️ Record fields** button in the Assets or Equipment lists: add, rename and order fields, and choose their type (text, long text, date, number).",
+     "Or when importing: a file column with no Larka field becomes a record field (**➕ New field**), filled for each imported row.",
+     "List search also covers these fields."
+    ],
+    "note": "Removing a field does not delete values already entered: recreated with the same name, it finds them again.",
     "bouton": "Open assets"
    }
   },

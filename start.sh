@@ -208,14 +208,25 @@ save_server_settings() {
     [[ "$HOST_EXPLICIT" == "true" || "$PORT_EXPLICIT" == "true" ]] || return 0
     [[ -f config.json ]] || return 0
     command -v php >/dev/null 2>&1 || return 0
-    if php -r '
-$f="config.json"; $c=json_decode(@file_get_contents($f),true);
-if(!is_array($c)) exit(1);
-if(!isset($c["serveur"])||!is_array($c["serveur"])) $c["serveur"]=[];
-$c["serveur"]["host"]=$argv[1]; $c["serveur"]["port"]=(int)$argv[2];
-exit(file_put_contents($f,json_encode($c,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE))===false?1:0);
-' "$HOST" "$PORT" 2>/dev/null; then
-        ok "Adresse mémorisée : ${HOST}:${PORT} (config.json — nouveau défaut)"
+    # Clé par clé, en place, avec copie préalable : api/outils/config-json.php
+    # (l'ancienne réécriture complète transformait les « {} » en « [] »).
+    local r
+    r="$(config_json ecrire config.json "serveur.host=\"${HOST//\"/}\"" "serveur.port=${PORT}" 2>/dev/null)" || return 0
+    [[ "$r" == modifie* ]] && ok "Adresse mémorisée : ${HOST}:${PORT} (config.json — nouveau défaut)"
+    return 0
+}
+
+# config_json <commande> <fichier> … : modification NON destructive de config.json
+# (ou copie d'un .env) — voir l'en-tête de api/outils/config-json.php.
+# Propriétaire et droits conservés (écriture en place), copie horodatée dans
+# data/backups/config/ avant toute écriture, rien d'écrit si rien ne change.
+config_json() {
+    local outil="${SCRIPT_DIR}/api/outils/config-json.php" f="$2"
+    [[ -f "$outil" ]] || { warn "api/outils/config-json.php absent"; return 1; }
+    if [[ -e "$f" && ! -w "$f" ]] || [[ ! -e "$f" && ! -w "$(dirname "$f")" ]]; then
+        as_root php "$outil" "$@"
+    else
+        php "$outil" "$@"
     fi
 }
 
@@ -524,8 +535,21 @@ env_get() {
     sed -n "s/^[[:space:]]*$1=//p" .env | tail -1
 }
 
+ENV_SAUVEGARDE_FAITE=false
 env_set() {
+    # ⚠️ FIX : le .env était REMPLACÉ (mktemp + mv) à chaque complément : le
+    # fichier changeait de propriétaire (root, quand le script tourne en sudo)
+    # et passait en 600 — PHP-FPM (www-data) ne pouvait plus le lire après une
+    # relance ou une mise à jour, et l'application perdait ses secrets.
+    # Désormais : valeur identique → rien n'est écrit ; sinon copie horodatée
+    # (data/backups/config/, une fois par lancement) puis réécriture EN PLACE
+    # (même fichier : propriétaire et droits conservés).
     local k="$1" v="$2" tmp found=0 line
+    [[ -f .env && "$(env_get "$k")" == "$v" ]] && grep -q "^[[:space:]]*${k}=" .env 2>/dev/null && return 0
+    if [[ -f .env && "$ENV_SAUVEGARDE_FAITE" != "true" ]]; then
+        config_json sauvegarder .env >/dev/null 2>&1 || true
+        ENV_SAUVEGARDE_FAITE=true
+    fi
     tmp="$(mktemp)"
     if [[ -f .env ]]; then
         while IFS= read -r line || [[ -n "$line" ]]; do
@@ -537,8 +561,12 @@ env_set() {
         done < .env
     fi
     (( found == 0 )) && printf '%s=%s\n' "$k" "$v" >> "$tmp"
-    mv "$tmp" .env
-    chmod 600 .env 2>/dev/null || true
+    if [[ -f .env ]]; then
+        cat "$tmp" > .env 2>/dev/null || as_root sh -c 'cat "$1" > "$2"' _ "$tmp" "$PWD/.env"
+    else
+        cp "$tmp" .env && chmod 600 .env 2>/dev/null || true
+    fi
+    rm -f "$tmp"
 }
 
 generate_env() {
@@ -575,19 +603,31 @@ generate_env() {
     ok ".env prêt (chmod 600)"
 }
 
+CONFIG_CREEE=false
 generate_config() {
     if [[ -f config.json ]] && ! grep -q "CHANGER_CE_MOT_DE_PASSE\|GENERER_UNE_CLE" config.json 2>/dev/null; then
         ok "config.json existant conservé"
         return
     fi
-    # ⚠️ FIX : ne jamais détruire un config.json sans filet. L'ancien code faisait
-    # « rm -f config.json » : tout paramétrage OAuth/SMTP/présence était perdu
-    # sans retour possible.
+    # ⚠️ FIX : un config.json existant n'est plus jamais régénéré en entier.
+    # Il l'était dès qu'il contenait une valeur modèle (« CHANGER_CE_MOT_DE_PASSE »,
+    # « GENERER_UNE_CLE ») — un seul champ oublié suffisait à perdre tout le
+    # paramétrage (Microsoft, SMTP, présence, SharePoint…). Seules ces valeurs
+    # sont désormais vidées (les secrets vivent dans .env), le reste est gardé.
+    # Exception : le fichier est une copie intacte de config.example.json — il
+    # ne contient alors aucun réglage, et la configuration de développement
+    # ci-dessous lui convient mieux (copie gardée dans data/backups/config/).
     if [[ -f config.json ]]; then
-        local bak; bak="config.json.bak-$(date +%Y%m%d-%H%M%S)"
-        cp -p config.json "$bak" 2>/dev/null || true
-        warn "config.json contenait des placeholders → régénéré (sauvegarde : ${bak})"
+        if [[ -f config.example.json ]] && cmp -s config.json config.example.json; then
+            config_json sauvegarder config.json >/dev/null 2>&1 || true
+            warn "config.json était une copie de config.example.json → configuration de développement générée"
+        else
+            local r; r="$(config_json nettoyer config.json 2>&1)" || { warn "config.json : ${r}"; return; }
+            ok "config.json existant conservé (valeurs modèles vidées : les secrets sont dans .env)"
+            return
+        fi
     fi
+    CONFIG_CREEE=true
     info "Génération de config.json (dev, sans secret)..."
     # Aligné sur config.example.json : aucun secret, aucune clé pilotée par .env
     # (client_id/secret OAuth, mots de passe…), et aucune valeur qui ne fasse que
@@ -656,11 +696,9 @@ sp_state() {
 sp_write() {
     local v="$1" f; f="$(sp_config_file)"
     [[ -f "$f" ]] || { warn "config.json absent — lancez d'abord ./start.sh setup"; return 1; }
-    local -a run=(php); [[ -w "$f" ]] || run=(as_root php)
-    "${run[@]}" -r '$f=$argv[1]; $c=json_decode(file_get_contents($f),true);
-        if (!is_array($c)) { fwrite(STDERR, "config.json illisible\n"); exit(1); }
-        $c["sharepoint"]=["actif"=>$argv[2]==="true"];
-        file_put_contents($f, json_encode($c, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n");' "$f" "$v" \
+    # Seule la clé sharepoint.actif est touchée (les autres réglages de la
+    # section, s'il y en a, restent), en place, après copie.
+    config_json ecrire "$f" "sharepoint.actif=${v}" >/dev/null \
         || { warn "Impossible d'écrire ${f}"; return 1; }
     if [[ "$v" == "true" ]]; then
         ok "SharePoint activé (${f})"
@@ -674,6 +712,17 @@ ask_sharepoint() {
     # Ne demande qu'une fois : si le choix figure déjà dans config.json, rien à faire.
     [[ -n "$(sp_state)" ]] && return 0
     [[ -f "$(sp_config_file)" ]] || return 0
+    # ⚠️ FIX « SharePoint a disparu » : sur une configuration EXISTANTE qui ne
+    # précise pas le choix, SharePoint est ACTIF (comportement historique, cf.
+    # api/config.php). Ce script y inscrivait pourtant « false » dès qu'il
+    # tournait sans terminal (démarrage automatique, -y) — à la première relance
+    # après une mise à jour, SharePoint disparaissait. On ne pose donc la
+    # question que pour une configuration créée à l'instant (ou sur demande
+    # explicite depuis la console : ask_sharepoint --demander), et l'on n'écrit
+    # jamais rien sans réponse.
+    if [[ "${1:-}" != "--demander" && "$CONFIG_CREEE" != "true" ]]; then
+        return 0
+    fi
     local v=false rep=""
     if [[ -t 0 && "$ASSUME_YES" != "true" ]]; then
         echo
@@ -683,8 +732,10 @@ ask_sharepoint() {
         echo    "      (exige la connexion Microsoft ; accès aux fichiers autorisé par chaque utilisateur)."
         read -r -p "  Activer SharePoint ? [o/N] " rep || true
         [[ "$rep" =~ ^[OoYy] ]] && v=true
+    elif [[ "$CONFIG_CREEE" == "true" ]]; then
+        info "SharePoint désactivé par défaut (nouvelle installation, mode non interactif) — ./start.sh sharepoint on pour l'activer."
     else
-        info "SharePoint désactivé par défaut (mode non interactif) — ./start.sh sharepoint on pour l'activer."
+        return 0      # pas de réponse : on n'écrit rien
     fi
     sp_write "$v" || true
 }
@@ -697,7 +748,7 @@ cmd_sharepoint() {
             case "$(sp_state)" in
                 true)  ok "SharePoint : activé   ($(sp_config_file))" ;;
                 false) ok "SharePoint : désactivé — documents stockés dans Larka   ($(sp_config_file))" ;;
-                *)     info "SharePoint : pas encore choisi (actif par défaut avec la connexion Microsoft)."
+                *)     info "SharePoint : actif par défaut avec la connexion Microsoft (aucun choix inscrit)."
                        info "Choisir : ./start.sh sharepoint on   ou   ./start.sh sharepoint off" ;;
             esac ;;
         *) die 2 "Usage : ./start.sh sharepoint [on|off|etat]" ;;
@@ -939,6 +990,74 @@ offer_demo() {
     command -v php >/dev/null 2>&1 || return 0
     php deploy/windows/larka.php demo --sans-demarrer --proposer \
         || info "Démonstration non installée. Plus tard : ${BOLD}./start.sh demo${NC}"
+}
+
+# ── Mise à jour depuis une archive (zip d'une nouvelle version) ─────────────
+# Remplace la décompression « par-dessus » l'installation, qui écrasait les
+# réglages des modules (extensions/config/) et toute copie de config.json ou
+# de .env glissée dans l'archive. Le travail est fait par la mise à jour de
+# Larka elle-même (api/outils/mise-a-jour.php --archive) : chemins protégés
+# (config.json, .env, config.key, data/, php/), réglages des modules ajoutés
+# seulement s'ils manquent, prérequis vérifiés, fichiers ET bases sauvegardés
+# avant écriture, retour arrière automatique en cas d'échec.
+maj_archive_trouver() {
+    local d f best="" t bt=0
+    for d in "$SCRIPT_DIR" "$(dirname "$SCRIPT_DIR")" "$HOME/Téléchargements" "$HOME/Downloads"; do
+        for f in "$d"/LARKA_GMAO-*.zip; do
+            [[ -f "$f" ]] || continue
+            [[ "$f" == *demo-Larkaville* ]] && continue
+            t="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+            (( t > bt )) && { best="$f"; bt="$t"; }
+        done
+    done
+    [[ -n "$best" ]] && echo "$best"
+}
+
+cmd_maj() {
+    command -v php >/dev/null 2>&1 || die 10 "PHP introuvable."
+    # Arguments : [--cible <dossier de l'installation>] [archive.zip] [--sans-signature] [--reinstaller]
+    local zip="" cible="" a attendre=""
+    local -a opts=() run=(php)
+    for a in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
+        if [[ "$attendre" == "cible" ]]; then cible="$a"; attendre=""; continue; fi
+        case "$a" in
+            --cible|--racine)               attendre=cible ;;
+            --sans-signature|--reinstaller) opts+=("$a") ;;
+            -*)                             : ;;
+            *)                              [[ -z "$zip" ]] && zip="$a" ;;
+        esac
+    done
+    [[ -n "$cible" ]] || cible="$(larka_racine_config)"
+    [[ -d "$cible" ]] && cible="$(cd "$cible" && pwd)"
+    [[ -f "$cible/api/index.php" && -f "$cible/version.json" ]] || die 2 "Installation de Larka introuvable : ${cible}\n   → ./start.sh maj --cible /chemin/de/larka LARKA_GMAO-x.y.z.zip"
+    [[ -n "$zip" ]] || zip="$(maj_archive_trouver)" || true
+    [[ -n "$zip" && -f "$zip" ]] || die 2 "Archive introuvable.\n   Usage : ./start.sh maj [--cible <dossier>] LARKA_GMAO-x.y.z.zip [--sans-signature] [--reinstaller]\n   (sans archive : la plus récente LARKA_GMAO-*.zip posée ici, dans le dossier parent ou Téléchargements)"
+    zip="$(cd "$(dirname "$zip")" && pwd)/$(basename "$zip")"
+    title "Larka — Mise à jour depuis une archive"
+    info "Installation : ${cible}"
+    info "Archive      : ${zip}"
+    [[ "$ASSUME_YES" == "true" ]] && opts+=(--oui)
+    # L'outil de CE dossier fait le travail (il sait lire une archive, même si
+    # l'installation visée est d'une version qui ne le savait pas encore).
+    local outil="${SCRIPT_DIR}/api/outils/mise-a-jour.php"
+    [[ "$cible" != "$SCRIPT_DIR" ]] && opts+=(--racine "$cible")
+    # Lancé par root : on écrit avec le propriétaire des fichiers (www-data en
+    # production), pour que le service puisse toujours les lire.
+    local proprio; proprio="$(stat -c %U "$cible/api/index.php" 2>/dev/null || echo "")"
+    if [[ $EUID -eq 0 && -n "$proprio" && "$proprio" != "root" ]]; then
+        if command -v runuser >/dev/null 2>&1; then run=(runuser -u "$proprio" -- php)
+        elif command -v sudo >/dev/null 2>&1; then run=(sudo -u "$proprio" php); fi
+    elif [[ ! -w "$cible/api/index.php" ]]; then
+        run=(as_root php)
+    fi
+    local etait=false
+    if [[ "$cible" == "$SCRIPT_DIR" ]] && is_running; then etait=true; fi
+    "${run[@]}" "$outil" --archive "$zip" "${opts[@]}" || die 31 "Mise à jour non appliquée (détail ci-dessus) — rien n'a été modifié, ou la version précédente a été restaurée."
+    if [[ "$etait" == "true" ]]; then info "Redémarrage du serveur de développement…"; cmd_stop; DAEMON=true; cmd_start; fi
+    if [[ "$cible" == /var/www/* ]] || { prod_installed 2>/dev/null && [[ "$cible" == "$(prod_dir)" ]]; }; then
+        info "Production : pour recharger PHP-FPM → ${BOLD}sudo ./start.sh prod-restart${NC}"
+    fi
+    ok "Mise à jour terminée. config.json, .env, data/ et les réglages des modules n'ont pas été modifiés."
 }
 
 cmd_install() {
@@ -1399,6 +1518,55 @@ cmd_reset() {
     ok "Bases réinitialisées. Relancez : ./start.sh start"
 }
 
+# Séquelles des versions ≤ 2.1.0 (corrigées en 2.1.1, mais pas réparées d'elles-mêmes) :
+#  - .env / config.json / config.key passés à root après un « sudo ./start.sh … » ou une
+#    mise à jour lancée en root : PHP (PHP-FPM, www-data) ne les lit plus → erreurs de base ;
+#  - SharePoint désactivé d'office par un lancement sans terminal ;
+#  - config.json régénéré : la copie « config.json.bak-… » est la seule trace des réglages.
+# doctor le signale ; doctor --fix rend les fichiers à leur propriétaire (rien d'autre).
+doctor_fichiers_reglages() {
+    local r attendu f prop grp
+    r="$(larka_racine_config)"
+    if prod_installed 2>/dev/null && [[ "$r" == "$(prod_dir)" ]] && id -u www-data >/dev/null 2>&1; then
+        attendu="www-data"
+    else
+        attendu="$(stat -c %U "$r" 2>/dev/null || echo "")"
+    fi
+    [[ -n "$attendu" ]] || return 0
+    grp="$(id -gn "$attendu" 2>/dev/null || echo "$attendu")"
+    for f in .env config.json config.key; do
+        [[ -f "$r/$f" ]] || continue
+        prop="$(stat -c %U "$r/$f" 2>/dev/null || echo "?")"
+        if [[ "$prop" == "$attendu" ]]; then
+            ok "$f appartient à ${attendu}"
+        elif [[ "$DOCTOR_FIX" == "true" ]]; then
+            if as_root chown "${attendu}:${grp}" "$r/$f"; then
+                case "$f" in
+                    config.json) [[ "$attendu" == "www-data" ]] && as_root chmod 640 "$r/$f" || as_root chmod 600 "$r/$f" ;;
+                    *) as_root chmod 600 "$r/$f" ;;
+                esac
+                ok "$f rendu à ${attendu} (il appartenait à ${prop})"
+            else
+                warn "$f appartient à ${prop} au lieu de ${attendu} : correction impossible (sudo requis)"
+            fi
+        else
+            warn "$f appartient à ${prop}, pas à ${attendu} : Larka risque de ne plus le lire  [GMAO-E35]\n   Réparer : ./start.sh doctor --fix   (ou : sudo chown ${attendu}:${grp} $(printf %q "$r/$f"))"
+        fi
+    done
+    # SharePoint coupé alors que la connexion Microsoft est active : choix délibéré, ou séquelle de la 2.1.0.
+    if [[ -f "$r/config.json" ]] && command -v php >/dev/null 2>&1; then
+        local sp
+        sp="$(php -r '$c=json_decode(@file_get_contents($argv[1]),true);
+                      $ms=!empty($c["microsoft_oauth"]["actif"]); $sp=$c["sharepoint"]["actif"]??null;
+                      echo ($ms && $sp===false) ? "coupe" : "";' "$r/config.json" 2>/dev/null || true)"
+        [[ "$sp" == "coupe" ]] && info "SharePoint désactivé alors que la connexion Microsoft est active. S'il a disparu tout seul après une relance\n   (défaut des versions ≤ 2.1.0) : ${BOLD}./start.sh sharepoint on${NC}"
+    fi
+    local baks
+    baks="$(ls -1t "$r"/config.json.bak-* 2>/dev/null | head -3 || true)"
+    [[ -n "$baks" ]] && info "Anciennes copies de config.json (réglages perdus ? comparez-les avec l'actuel) :\n$(sed 's/^/     /' <<< "$baks")"
+    return 0
+}
+
 cmd_doctor() {
     title "Larka — Diagnostic$( [[ "$DOCTOR_FIX" == "true" ]] && echo ' (avec auto-réparation)' )"
     if command -v php >/dev/null 2>&1; then
@@ -1437,6 +1605,7 @@ cmd_doctor() {
 
     [[ -f .env ]]        && ok ".env présent"        || warn ".env absent  [GMAO-E30] (./start.sh install)"
     [[ -f config.json ]] && ok "config.json présent" || warn "config.json absent  [GMAO-E30] (./start.sh install)"
+    doctor_fichiers_reglages
 
     if [[ -f .env && -f config.json ]] && command -v php >/dev/null 2>&1; then
         local out; out="$(test_db_connection)"
@@ -1803,6 +1972,11 @@ ${BOLD}Démarrage automatique au boot (systemd)${NC}
 
 ${BOLD}Maintenance${NC}
   setup        Prépare base + .env + config.json (sans installer de paquet système)
+  maj [zip]    Met Larka à jour depuis l'archive d'une nouvelle version (LARKA_GMAO-x.y.z.zip),
+               SANS toucher à config.json, .env, data/ ni aux réglages des modules ;
+               fichiers et bases sauvegardés avant. --sans-signature : archive non signée.
+               --cible <dossier> : installation à mettre à jour (défaut : celle-ci)
+               (ne décompressez plus une nouvelle version par-dessus l'ancienne)
   demo [zip]   Installe la démonstration « Ville de Larkaville » (met la base actuelle de côté)
                — aussi proposée au premier démarrage (start) si son archive est là
   reset        Recrée les bases depuis zéro (DESTRUCTIF)
@@ -2595,7 +2769,7 @@ menu_maint() {
         case "$(sp_state)" in
             true)  labels+=("SharePoint : ${GREEN}activé${NC} — désactiver");  actions+=(sp_off) ;;
             false) labels+=("SharePoint : désactivé — activer");              actions+=(sp_on) ;;
-            *)     labels+=("SharePoint : à choisir");                        actions+=(sp_ask) ;;
+            *)     labels+=("SharePoint : actif par défaut (avec Microsoft) — choisir"); actions+=(sp_ask) ;;
         esac
         demo_package >/dev/null && { labels+=("Installer la démonstration « Ville de Larkaville »"); actions+=(demo); }
         if [[ -f "$(larka_racine_config)/config.json" ]] && command -v php >/dev/null 2>&1; then
@@ -2625,7 +2799,7 @@ menu_maint() {
             collation) ( sys_pg_collation_reparer "$(larka_racine_config)" ) || true ;;
             sp_on)   sp_write true  || true ;;
             sp_off)  sp_write false || true ;;
-            sp_ask)  ask_sharepoint || true ;;
+            sp_ask)  ask_sharepoint --demander || true ;;
             back)    return 0 ;;
         esac
         menu_pause
@@ -2696,6 +2870,7 @@ case "$COMMAND" in
     journal)            SUBCOMMAND="${SUBCOMMAND:-suivre}"; cmd_journal ;;
     reset)              cmd_reset ;;
     demo|demonstration) cmd_demo ;;
+    maj|mise-a-jour|update) cmd_maj ;;
     doctor)             cmd_doctor ;;
     epreuves|test)      title "Vérification des protections"; cmd_epreuves && ok "Toutes les protections répondent." || die 60 "Une protection ne répond plus. → bash outils/epreuves/toutes.sh" ;;
     autostart)          cmd_autostart ;;

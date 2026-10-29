@@ -130,11 +130,10 @@ if ($action === 'me' && $method === 'GET') {
 
 // ── Vérification OAuth (postMessage + polling) ────────────────────────────────
 if ($action === 'oauth_check' && $method === 'GET') {
-    // 1. Session déjà initialisée (même cookie) → connexion directe
-    if (!empty($_SESSION['user'])) {
-        json_ok($_SESSION['user']);
-    }
-    // 2. Token fichier transmis via postMessage (cross-window)
+    // 1. Token fichier transmis via postMessage (cross-window). Traité EN
+    //    PREMIER, même si la session a déjà un utilisateur : il porte aussi les
+    //    jetons Microsoft (présence, agenda, SharePoint), que la session de
+    //    cette fenêtre n'a pas forcément (cf. writeOAuthResult, oauth/microsoft.php).
     $oauthToken = $_GET['token'] ?? '';
     if ($oauthToken && preg_match('/^[a-f0-9]{48}$/', $oauthToken)) {
         $tokenFile = __DIR__ . '/../../data/oauth_result_' . $oauthToken . '.json';
@@ -149,9 +148,17 @@ if ($action === 'oauth_check' && $method === 'GET') {
                 if (!empty($data['tenant_key'])) {
                     $_SESSION['tenant_key'] = $data['tenant_key'];
                 }
+                // Jetons Microsoft de la connexion (sinon : « reconnectez-vous via Microsoft »).
+                foreach (['ms_access_token', 'ms_refresh_token', 'ms_token_expires'] as $k) {
+                    if (isset($data['ms'][$k]) && $data['ms'][$k] !== '') $_SESSION[$k] = $data['ms'][$k];
+                }
                 json_ok($data['user']);
             }
         }
+    }
+    // 2. Session déjà initialisée (même cookie) → connexion directe
+    if (!empty($_SESSION['user'])) {
+        json_ok($_SESSION['user']);
     }
     json_error('En attente', 202);
 }

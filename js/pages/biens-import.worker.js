@@ -53,9 +53,18 @@
  */
 function lireCsv(octets) {
   let texte;
-  try { texte = new TextDecoder('utf-8', { fatal: true }).decode(octets); }
-  catch (_) { texte = new TextDecoder('windows-1252').decode(octets); }
-  return XLSX.read(texte.replace(/^\uFEFF/, ''), { type: 'string', raw: true });
+  // UTF-16 (« Texte Unicode » d'Excel, tabulations) : reconnu à son BOM.
+  if (octets.length >= 2 && octets[0] === 0xFF && octets[1] === 0xFE) texte = new TextDecoder('utf-16le').decode(octets);
+  else if (octets.length >= 2 && octets[0] === 0xFE && octets[1] === 0xFF) texte = new TextDecoder('utf-16be').decode(octets);
+  else {
+    try { texte = new TextDecoder('utf-8', { fatal: true }).decode(octets); }
+    catch (_) { texte = new TextDecoder('windows-1252').decode(octets); }
+  }
+  texte = texte.replace(/^\uFEFF/, '');
+  // « sep=; » en première ligne (Excel) : indication de séparateur, pas une donnée.
+  const sep = texte.match(/^sep=(.)\r?\n/i);
+  if (sep) texte = texte.slice(sep[0].length);
+  return XLSX.read(texte, { type: 'string', raw: true, FS: sep ? sep[1] : undefined });
 }
 
 self.onmessage = (e) => {

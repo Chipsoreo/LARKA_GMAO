@@ -251,10 +251,16 @@ if ($action === 'annuaire_presence') {
             . 'ou présence masquée (MasquerPresence=1).');
         json_ok(['enabled' => true, 'available' => false, 'reason' => 'no_ms_id', 'presences' => []]);
     }
-    try { $token = ensureMsToken(); }
+    // Jeton expiré et non rafraîchissable : « reconnecter Microsoft » (et non
+    // une erreur qui couperait la réponse).
+    try { $token = function_exists('msTokenOuNull') ? (string)(msTokenOuNull() ?? '') : ensureMsToken(); }
     catch (\Throwable $e) {
         error_log('[Larka][presence] échec de récupération/rafraîchissement du token : ' . $e->getMessage());
         json_ok(['enabled' => true, 'available' => false, 'reason' => 'token_error', 'presences' => []]);
+    }
+    if ($token === '') {
+        error_log('[Larka][presence] jeton Microsoft expiré et non rafraîchissable (' . ($user['Login'] ?? '?') . ').');
+        json_ok(['enabled' => true, 'available' => false, 'reason' => 'no_ms_token', 'presences' => []]);
     }
     $presences = [];
     foreach (array_chunk($msIds, 640) as $chunk) {
@@ -334,7 +340,7 @@ if ($action === 'annuaire_agenda') {
     $token = '';
     $schedulePath = 'me/calendar/getSchedule';
     if (!empty($_SESSION['ms_access_token'] ?? '')) {
-        try { $token = ensureMsToken(); }
+        try { $token = function_exists('msTokenOuNull') ? (string)(msTokenOuNull() ?? '') : ensureMsToken(); }
         catch (\Throwable $e) { $token = ''; }
     }
     if ($token === '') {

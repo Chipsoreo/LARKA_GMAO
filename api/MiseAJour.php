@@ -60,14 +60,23 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-require_once __DIR__ . '/Version.php';
-require_once __DIR__ . '/Chemins.php';
-require_once __DIR__ . '/Prerequis.php';
+// Gardés : « mise-a-jour.php --racine » charge la configuration d'une AUTRE
+// installation (qui a déjà déclaré ces classes et fonctions) avant ce fichier.
+if (!class_exists('LarkaVersion')) require_once __DIR__ . '/Version.php';
+if (!function_exists('larka_chemin_absolu')) require_once __DIR__ . '/Chemins.php';
+if (!class_exists('LarkaPrerequis')) require_once __DIR__ . '/Prerequis.php';
 
 class LarkaMiseAJour
 {
     /** Jamais écrits par une mise à jour (« php » : le PHP que Larka.cmd installe sous Windows). */
     private const PROTEGES = ['data', 'config.json', '.env', 'config.key', '.git', '.github', 'php'];
+    /**
+     * Fichiers de configuration du SERVEUR, à la racine : jamais écrits non plus,
+     * quelle que soit leur variante (« .env.local », « config.json.bak-… »,
+     * « config.key.old »…). Une archive préparée à la main peut en contenir une
+     * copie ; l'écrire remplaçait silencieusement le réglage en service.
+     */
+    private const PROTEGES_MOTIF = '#^(\.env($|\.)|config\.json($|\.)|config\.key($|\.)|Caddyfile$)#';
     /** Écrits seulement s'ils n'existent pas encore (réglages de modules). */
     private const AJOUT_SEUL = ['extensions/config/'];
     /**
@@ -83,7 +92,19 @@ class LarkaMiseAJour
     private const DERNIERE_SANS_SIGNATURE = '2.0.2';
     /** Dossiers de développement : mis à jour seulement s'ils sont déjà présents
      *  (deploy/install.sh ne les copie pas en production). */
-    private const SI_PRESENTS = ['outils', 'Documentations', 'deploy', 'tests'];
+    private const SI_PRESENTS = ['outils', 'Documentations', 'deploy', 'tests', 'demo'];
+    /**
+     * La démonstration (demo/) fait exception : apportée aussi là où elle manque
+     * — une installation de poste ou de développement faite depuis une archive
+     * qui ne la contenait pas (2.1.0) —, sauf en production (« env: prod » ou
+     * code sous /var/www), où elle n'a rien à faire.
+     */
+    private function demoBienvenue(): bool
+    {
+        if (is_dir($this->racine . '/demo')) return true;
+        $env = function_exists('cfg') ? strtolower((string)(cfg('serveur', 'env') ?? '')) : '';
+        return $env !== 'prod' && !str_starts_with(str_replace('\\', '/', $this->racine), '/var/www/');
+    }
     private const TAILLE_MAX = 250 * 1024 * 1024;
     /** Version de PHP minimale de Larka (start.sh vérifie la même). Une version publiée peut en exiger une plus récente (« php_min »). */
     public const PHP_MIN = '8.1';
@@ -541,6 +562,98 @@ class LarkaMiseAJour
     }
 
     /**
+     * Installe une ARCHIVE LOCALE (zip d'une version de Larka déposé sur le
+     * serveur) — en ligne de commande seulement : « ./start.sh maj <zip> »,
+     * « Larka.cmd maj <zip> », « php api/outils/mise-a-jour.php --archive <zip> ».
+     *
+     * Remplace la décompression « à la main » par-dessus l'installation, qui
+     * écrasait ce que la mise à jour en ligne protège : réglages des modules
+     * (extensions/config/), variantes de config.json / .env, et le reste. Ici,
+     * mêmes règles qu'installer() : chemins protégés, ajout seul pour les
+     * réglages de modules, prérequis vérifiés, sauvegarde des fichiers ET des
+     * bases avant écriture, retour arrière automatique en cas d'échec.
+     *
+     * Signature : si « <zip>.sig » est présent, elle est vérifiée comme en
+     * ligne (refus si elle est fausse). Sans signature, il faut le dire
+     * (--sans-signature) : l'archive vient alors de quelqu'un en qui
+     * l'administrateur du serveur a confiance — il pourrait de toute façon
+     * écrire ces fichiers lui-même. Jamais depuis l'interface web.
+     */
+    public function installerArchive(string $zipPath, string $parQui = 'cli', bool $sansSignature = false,
+                                     bool $memeVersion = false): array
+    {
+        if (PHP_SAPI !== 'cli') throw new RuntimeException('Installation d\'une archive locale : en ligne de commande seulement.');
+        @set_time_limit(0);
+        if (!is_file($zipPath)) throw new RuntimeException("Archive introuvable : $zipPath");
+        $verrou = fopen($this->dossier . '/verrou', 'c');
+        if (!$verrou || !flock($verrou, LOCK_EX | LOCK_NB)) throw new RuntimeException('Une installation est déjà en cours.');
+        try {
+            $sha = hash_file('sha256', $zipPath);
+            $signee = false;
+            $fSig = $zipPath . '.sig';
+            if (is_file($fSig)) {
+                $signee = $this->verifierSignature(['signature' => (string)file_get_contents($fSig)], $sha);
+            } elseif (!$sansSignature) {
+                throw new RuntimeException("Archive sans signature (" . basename($fSig) . " absent). "
+                    . "Si vous êtes sûr de sa provenance, relancez avec --sans-signature.");
+            }
+            $zip = new ZipArchive();
+            if ($zip->open($zipPath) !== true) throw new RuntimeException('Archive illisible.');
+            $prefixe = $this->prefixeRacine($zip);
+            $nv = json_decode((string)$zip->getFromName($prefixe . 'version.json'), true);
+            if (!is_array($nv) || !preg_match('/^\d+\.\d+\.\d+/', (string)($nv['version'] ?? ''))) {
+                throw new RuntimeException('version.json absent ou illisible dans l\'archive.');
+            }
+            $vNouvelle = (string)$nv['version'];
+            $vLocale = (string)$this->locale()['version'];
+            $cmp = version_compare($vNouvelle, $vLocale);
+            if ($cmp < 0) throw new RuntimeException("L'archive contient la version $vNouvelle, plus ancienne que celle installée ($vLocale). "
+                . 'Pour revenir en arrière : --restaurer <sauvegarde>.');
+            if ($cmp === 0 && !$memeVersion) throw new RuntimeException("La version $vNouvelle est déjà installée. Pour la réappliquer : --reinstaller.");
+            $phpMin = preg_match('/^\d+\.\d+/', (string)($nv['php_min'] ?? ''), $x) ? $x[0] : null;
+            if ($phpMin && version_compare(PHP_VERSION, $phpMin, '<')) {
+                throw new RuntimeException("Cette version demande PHP $phpMin ou plus récent ; ce serveur a PHP " . PHP_VERSION . ". Rien n'a été installé.");
+            }
+            if ($bloquants = $this->prerequisBloquants($nv)) {
+                throw new RuntimeException('Cette version n\'est pas compatible avec ce serveur : ' . implode(' ', $bloquants) . ' Rien n\'a été installé.');
+            }
+            $plan = $this->planifier($zip, $prefixe);
+            $idSauv = date('Ymd-His') . '_' . $vLocale . '_vers_' . $vNouvelle;
+            $sauv = $this->sauvegarder($idSauv, $plan);
+            $ecrits = 0;
+            try {
+                foreach ($plan as $p) { $this->ecrireFichier($p['cible'], (string)$zip->getFromIndex($p['index'])); $ecrits++; }
+            } catch (\Throwable $ex) {
+                try { $this->retablir($idSauv); }
+                catch (\Throwable $ex2) {
+                    throw new RuntimeException("Échec pendant l'écriture ($ecrits fichier(s)) : " . $ex->getMessage()
+                        . " — ET le retour arrière automatique a échoué (" . $ex2->getMessage() . "). "
+                        . "Sur le serveur : php api/outils/mise-a-jour.php --restaurer $idSauv");
+                }
+                throw new RuntimeException("Échec pendant l'écriture ($ecrits fichier(s)) — version précédente restaurée. Détail : " . $ex->getMessage());
+            }
+            $zip->close();
+            if (function_exists('opcache_reset')) @opcache_reset();
+            $res = [
+                'ok' => true, 'de' => $vLocale, 'vers' => $vNouvelle,
+                'libelle' => LarkaVersion::libelle($nv), 'fichiers' => $ecrits,
+                'nouveaux' => count(array_filter($plan, fn($p) => !$p['existait'])),
+                'sauvegarde' => $idSauv, 'sauvegarde_base' => $sauv['base'], 'signee' => $signee,
+                'source' => 'archive locale : ' . basename($zipPath), 'sha256' => $sha,
+                'par' => $parQui, 'le' => date('c'),
+            ];
+            $this->historiser($res);
+            if (class_exists('Journal')) {
+                try { Journal::log(Journal::AUDIT, 'mise_a_jour', "Mise à jour {$vLocale} → {$vNouvelle} depuis une archive locale ($ecrits fichiers) par $parQui."); } catch (\Throwable $_) {}
+            }
+            return $res;
+        } finally {
+            flock($verrou, LOCK_UN);
+            fclose($verrou);
+        }
+    }
+
+    /**
      * Clé publique de l'éditeur (32 octets bruts), lue dans api/CleEditeur.php,
      * ou null si elle est absente ou mal formée.
      *
@@ -630,10 +743,12 @@ class LarkaMiseAJour
             }
             $tete = explode('/', $rel)[0];
             if (in_array($tete, self::PROTEGES, true) || in_array($rel, self::PROTEGES, true)) continue;
+            if (!str_contains($rel, '/') && preg_match(self::PROTEGES_MOTIF, $rel)) continue;
             // Clés et certificats : jamais apportés par une mise à jour (config.key
             // chiffre les secrets de config.json et les mots de passe des tenants).
             if (str_ends_with($rel, '.pem') || str_ends_with($rel, '.key')) continue;
-            if (in_array($tete, self::SI_PRESENTS, true) && !is_dir($this->racine . '/' . $tete)) continue;
+            if ($tete === 'demo') { if (!$this->demoBienvenue()) continue; }
+            elseif (in_array($tete, self::SI_PRESENTS, true) && !is_dir($this->racine . '/' . $tete)) continue;
             $cible = $this->racine . '/' . $rel;
             $existe = file_exists($cible);
             foreach (self::AJOUT_SEUL as $a) if (str_starts_with($rel, $a) && $existe) continue 2;
@@ -744,6 +859,13 @@ class LarkaMiseAJour
         $tmp = $dir . '/.maj-' . bin2hex(random_bytes(4));
         if (@file_put_contents($tmp, $contenu) === false) throw new RuntimeException("Écriture impossible : $cible");
         @chmod($tmp, $mode);
+        // Lancé par root (ligne de commande) : le fichier garde le propriétaire de
+        // celui qu'il remplace — sinon root:root 0640, et PHP-FPM (www-data) ne
+        // pouvait plus le lire : le site tombait après une mise à jour.
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            $ref = file_exists($cible) ? $cible : $this->racine . '/api/index.php';
+            if (file_exists($ref)) { @chown($tmp, fileowner($ref)); @chgrp($tmp, filegroup($ref)); }
+        }
         if (!@rename($tmp, $cible)) { @unlink($tmp); throw new RuntimeException("Remplacement impossible : $cible"); }
     }
 
@@ -834,6 +956,7 @@ class LarkaMiseAJour
                 || str_contains($rel, '\\') || preg_match('#^[A-Za-z]:#', $rel)) continue;
             $tete = explode('/', $rel)[0];
             if (in_array($tete, self::PROTEGES, true)) continue;
+            if (!str_contains($rel, '/') && preg_match(self::PROTEGES_MOTIF, $rel)) continue;
             if ($garderChaine && in_array($rel, self::JAMAIS_RESTAURES, true)) continue;
             $this->ecrireFichier($this->racine . '/' . $rel, (string)$zip->getFromIndex($i));
             $n++;

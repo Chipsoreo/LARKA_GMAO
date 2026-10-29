@@ -66,7 +66,9 @@ function graphApi(string $endpoint, string $accessToken): array {
 
     if ($curlErr) json_error('Erreur réseau Graph : ' . $curlErr, 502);
     $data = json_decode($resp, true);
-    if ($httpCode === 401) json_error('Token Microsoft expiré. Reconnectez-vous.', 401);
+    // 428 et non 401 : un 401 est pris par l'écran pour la fin de la session
+    // LARKA, et déconnectait l'utilisateur — alors que seul le jeton Microsoft manque.
+    if ($httpCode === 401) json_error('Jeton Microsoft expiré : reprenez la connexion Microsoft.', 428);
     if ($httpCode === 403) json_error('Accès refusé. Votre compte n\'a pas les permissions SharePoint nécessaires.', 403);
     if ($httpCode >= 400)  json_error($data['error']['message'] ?? "Erreur Graph HTTP $httpCode", $httpCode);
     return $data;
@@ -123,13 +125,21 @@ function graphPost(string $endpoint, string $jsonBody, string $accessToken): arr
 }
 
 // ── Helper : rafraîchir le token si expiré ───────────────────────────────────
-function ensureMsToken(): string {
+/**
+ * Jeton Microsoft valide de la session (rafraîchi s'il expire), ou null.
+ * ⚠️ FIX : un jeton EXPIRÉ dont le rafraîchissement échouait était rendu tel
+ * quel. Graph répondait alors 401 à chaque appel : SharePoint disparaissait de
+ * l'écran et la présence restait « indisponible », sans jamais proposer de se
+ * reconnecter (la session croyait avoir un jeton). Il est désormais retiré de
+ * la session : l'écran sait qu'il faut reprendre la connexion Microsoft.
+ */
+function msTokenOuNull(): ?string {
     if (session_status() !== PHP_SESSION_ACTIVE) session_start();
     $token   = $_SESSION['ms_access_token']  ?? '';
     $refresh = $_SESSION['ms_refresh_token'] ?? '';
     $expires = $_SESSION['ms_token_expires'] ?? 0;
 
-    if (!$token) json_error('Aucun token Microsoft en session. Reconnectez-vous via Microsoft.', 401);
+    if (!$token) return null;
 
     // Si le token expire dans moins de 5 minutes, tenter un refresh
     if ($refresh && time() > ($expires - 300)) {
@@ -141,7 +151,12 @@ function ensureMsToken(): string {
                 'client_secret' => MICROSOFT_CLIENT_SECRET,
                 'refresh_token' => $refresh,
                 'grant_type'    => 'refresh_token',
-                'scope'         => 'openid profile email offline_access User.Read User.ReadBasic.All Files.Read.All Sites.Read.All'
+                // Mêmes portées qu'à la connexion (api/routes/auth.php, oauth/microsoft.php) :
+                // demander Files/Sites alors que SharePoint est désactivé faisait échouer le
+                // rafraîchissement (portée jamais consentie) — au bout d'une heure, le jeton
+                // expiré était gardé et présence / agenda tombaient en « indisponible ».
+                'scope'         => 'openid profile email offline_access User.Read User.ReadBasic.All'
+                                   . ((defined('SHAREPOINT_ENABLED') && SHAREPOINT_ENABLED) ? ' Files.Read.All Sites.Read.All' : '')
                                    . ((defined('PLANS_PRESENCE_ENABLED') && PLANS_PRESENCE_ENABLED) ? ' Presence.Read.All Calendars.Read.Shared' : ''),
             ]),
             CURLOPT_RETURNTRANSFER => true,
@@ -166,7 +181,19 @@ function ensureMsToken(): string {
         }
     }
 
+    if ($expires && time() >= (int)$expires) {
+        // Expiré, et pas de rafraîchissement possible : on l'oublie.
+        unset($_SESSION['ms_access_token'], $_SESSION['ms_refresh_token'], $_SESSION['ms_token_expires']);
+        return null;
+    }
     return $token;
+}
+
+function ensureMsToken(): string {
+    $t = msTokenOuNull();
+    // 428 et non 401 : voir graphApi() — un 401 déconnecterait l'utilisateur de Larka.
+    if ($t === null) json_error('Aucun jeton Microsoft valide en session (absent ou expiré) : reprenez la connexion Microsoft.', 428);
+    return $t;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -179,23 +206,30 @@ require_once __DIR__ . '/../DocumentsAcl.php';
 // ── Statut : est-ce que SharePoint est utilisable pour cet utilisateur ? ──────
 if ($action === 'sharepoint_status') {
     require_auth();
-    $hasToken = !empty($_SESSION['ms_access_token'] ?? '');
+    $t = (SHAREPOINT_ENABLED && !empty($_SESSION['ms_access_token'] ?? '')) ? msTokenOuNull() : null;
+    $hasToken = SHAREPOINT_ENABLED ? ($t !== null) : !empty($_SESSION['ms_access_token'] ?? '');
 
     // Tester rapidement si le token donne accès à SharePoint
     $hasAccess = false;
-    if ($hasToken && SHAREPOINT_ENABLED) {
-        try {
-            $t = ensureMsToken();
-            graphApi('sites/root?$select=id', $t);
-            $hasAccess = true;
-        } catch (\Exception $e) {
-            // Pas d'accès SharePoint (permissions ou tenant sans SP)
-            $hasAccess = false;
+    if ($t !== null) {
+        // ⚠️ graphApi() TERMINE la requête sur toute erreur (json_error) : un
+        // Graph injoignable ou un 403 (tenant sans SharePoint) faisait échouer
+        // ce statut entier, et l'écran masquait SharePoint sans rien dire. Ici,
+        // un simple essai : l'accès est là, ou il ne l'est pas.
+        $essai = graphTry('sites/root?$select=id', $t);
+        $hasAccess = ($essai['status'] ?? 0) === 200;
+        if (!$hasAccess && ($essai['status'] ?? 0) === 401) {
+            // Jeton refusé par Microsoft : on l'oublie, l'écran proposera de se reconnecter.
+            unset($_SESSION['ms_access_token'], $_SESSION['ms_refresh_token'], $_SESSION['ms_token_expires']);
+            $hasToken = false;
         }
     }
 
     json_ok([
         'enabled'   => SHAREPOINT_ENABLED && $hasAccess,
+        // Activé dans la configuration (même sans jeton dans CETTE session) :
+        // l'écran propose alors de reprendre la connexion Microsoft.
+        'actif'     => SHAREPOINT_ENABLED,
         'hasToken'  => $hasToken,
         'hasAccess' => $hasAccess,
         // Mode consultation seule : l'UI masque les boutons de téléchargement
@@ -637,7 +671,7 @@ if ($action === 'sharepoint_resolve' && $method === 'GET') {
 
     $res   = graphTry("drives/$driveId/items/$itemId?\$select=id,name,webUrl,deleted", $token);
 
-    if ($res['status'] === 401) json_error('Token Microsoft expiré. Reconnectez-vous via Microsoft.', 401);
+    if ($res['status'] === 401) json_error('Jeton Microsoft expiré : reprenez la connexion Microsoft.', 428);
     if ($res['status'] === 404 || isset($res['data']['deleted'])) {
         json_error('Ce fichier n\'existe plus sur SharePoint (déplacé ou supprimé).', 404);
     }

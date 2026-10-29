@@ -6,7 +6,7 @@
 Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans build, installable en PWA.
 **Extensible par des modules qui ne contiennent aucun code.**
 
-[![Version](https://img.shields.io/badge/version-2.1.0%20(stable)-0a1628.svg)](Documentations/)
+[![Version](https://img.shields.io/badge/version-2.1.1%20(stable)-0a1628.svg)](Documentations/)
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir%20le%20projet-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chipsoreo)
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
@@ -59,7 +59,7 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-**Version 2.1.0 (V2.1.0) — première version stable.** Larka s'installe sur un serveur Linux comme sur un poste
+**Version 2.1.1 (V2.1.1) — correctifs de la première version stable (2.1.0).** Larka s'installe sur un serveur Linux comme sur un poste
 Windows (d'un double-clic), avec une démonstration complète ; sauvegardes automatiques, politique de protection
 des données personnalisable par organisation, prérequis vérifiés avant toute installation ou mise à jour, aide
 intégrée propre à chaque rôle, interface en français et en anglais. Les nouveautés de chaque version sont
@@ -68,10 +68,10 @@ de Larka les affiche aussi.
 
 | Élément | Valeur | Où |
 |---|---|---|
-| Version applicative | `2.1.0` | `version.json` — source unique, lue par `api/Version.php` |
-| Libellé affiché | `V2.1.0` (une préversion : `V.Beta x.y.z`) | `LARKA_VERSION_LABEL`, bas de la page de connexion |
-| Service Worker | `2.1.0` | `SW_VERSION` (`sw.js`) |
-| Manifeste PWA | `2.1.0` | `manifest.webmanifest` |
+| Version applicative | `2.1.1` | `version.json` — source unique, lue par `api/Version.php` |
+| Libellé affiché | `V2.1.1` (une préversion : `V.Beta x.y.z`) | `LARKA_VERSION_LABEL`, bas de la page de connexion |
+| Service Worker | `2.1.1` | `SW_VERSION` (`sw.js`) |
+| Manifeste PWA | `2.1.1` | `manifest.webmanifest` |
 | Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.3`) |
 | Documentation | manuels v2.1 · DAT 2.1 | `Documentations/` ; l'écran **Aide** de l'application en reprend l'essentiel pour chaque rôle |
 
@@ -86,7 +86,15 @@ de Larka les affiche aussi.
 **Métier**
 
 - 🏢 **Multi-tenant** — une base PostgreSQL par client, routage automatique selon le domaine (web ou e-mail).
-- 🧰 **Parc** — biens, équipements, parc matériel, déclarations d'inventaire.
+- 🧰 **Parc** — biens, équipements, parc matériel, déclarations d'inventaire ; suppression groupée (cases à cocher,
+  Maj+clic pour une plage, « tous les résultats filtrés »).
+- 🗂️ **Cases complémentaires des fiches** — informations que Larka ne prévoit pas (date de sortie administrative,
+  code analytique…) : créées à l'import depuis les colonnes du fichier, ou à la main ; section « Informations
+  complémentaires » des fiches, prises en compte par la recherche.
+- 📥 **Import Excel / CSV** — colonnes reconnues par libellé et contenu (en-tête détecté, mémoire du dernier import,
+  proposition de l'IA si l'assistant est configuré), puis **une case par ligne** : tout, rien, par famille, seuil de
+  prix, sans les biens sortis ; contrôle ligne par ligne (dates, montants « 1.234,56 », doublons, lignes de total)
+  et rapport d'erreurs téléchargeable.
 - 🛠️ **Maintenance** — interventions préventives et correctives, devis, lignes de stock liées, demandes d'intervention.
 - 📄 **Contrats** de maintenance et listes de référence.
 - 📦 **Stock** avec seuils et mouvements.
@@ -116,7 +124,7 @@ de Larka les affiche aussi.
 - 💾 **Sauvegardes automatiques** — base et fichiers, déclenchées par Larka lui-même (production, Linux autonome, Windows), état visible à l'écran.
 - ✅ **Prérequis vérifiés** avant l'installation, au démarrage et avant chaque mise à jour : une version incompatible ne s'installe pas.
 - 🪟 **Linux ou Windows** — serveur de production Nginx + PHP-FPM, ou poste autonome d'un double-clic (`Larka.cmd`).
-- ⬆️ **Mises à jour depuis l'interface** — nouvelle version détectée, installation validée à la main, archive signée (Ed25519), sauvegarde avant d'écrire et retour arrière.
+- ⬆️ **Mises à jour depuis l'interface** — nouvelle version détectée, installation validée à la main, archive signée (Ed25519), sauvegarde avant d'écrire et retour arrière ; ou depuis une archive (`./start.sh maj`, `Larka.cmd maj`), sans jamais réécrire `config.json` ni `.env`.
 - 🎬 **Démonstration « Ville de Larkaville »** — cinq ans d'activité fictive dans tous les modules, livrée dans `demo/` et proposée à l'installation.
 - 🧪 **24 suites d'épreuves automatisées** (≈ 1 900 contrôles) ; les plus rapides tournent avant chaque mise en production et refusent le déploiement si une protection tombe.
 
@@ -225,7 +233,7 @@ php outils/langues/verifier-traduction.php extensions/langues/larka.langue-en/ex
 version du pack. `lang/complements.json` recense les libellés que le code assemble ou reçoit du serveur, et que
 l'extraction ne peut pas voir.
 
-Le pack anglais (`extensions/langues/larka.langue-en`, 4.2.0) est **livré et proposé à tous** : chaque utilisateur
+Le pack anglais (`extensions/langues/larka.langue-en`, 4.2.1) est **livré et proposé à tous** : chaque utilisateur
 le choisit (*Interface → Langue*), il s'applique aussi à l'écran de connexion, et il ne demande pas d'activer la
 couche de modules — ce ne sont que des libellés. Une version plus récente remplace d'elle-même un pack déjà installé.
 
@@ -642,7 +650,7 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ## ⬆️ Mises à jour
 
-La version installée est dans `version.json` (affichée sur la page de connexion : « V2.1.0 »).
+La version installée est dans `version.json` (affichée sur la page de connexion : « V2.1.1 »).
 
 **Détection automatique, installation validée.** Larka vérifie la source des versions (GitHub Releases de
 `mises_a_jour.depot`, ou un manifeste `latest.json`) au plus toutes les 12 h. Quand une version plus récente existe,
@@ -690,6 +698,36 @@ sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --verifier
 sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --installer
 ```
 
+**Mettre à jour depuis une archive** (zip d'une version reçu ou téléchargé) : ne la décompressez plus par-dessus
+l'installation — cela remplaçait aussi les réglages des modules (`extensions/config/`) et toute copie de
+`config.json` ou de `.env` présente dans l'archive. Utilisez :
+
+```bash
+./start.sh maj LARKA_GMAO-2.1.1.zip            # Linux (dev ou production : écrit avec le propriétaire des fichiers)
+Larka.cmd maj LARKA_GMAO-2.1.1.zip             # Windows
+php api/outils/mise-a-jour.php --archive LARKA_GMAO-2.1.1.zip   # directement
+```
+
+Mêmes protections que la mise à jour en ligne (config.json, `.env`, `config.key`, `data/`, `php/` et les réglages
+de modules existants ne sont jamais écrits ; fichiers et bases sauvegardés avant ; retour arrière automatique en cas
+d'échec ; `--restaurer <sauvegarde>` ensuite). Sans le fichier `<zip>.sig`, l'archive doit être acceptée
+explicitement : `--sans-signature`. Sans argument, `maj` prend la plus récente `LARKA_GMAO-*.zip` posée dans le
+dossier de Larka, son dossier parent ou Téléchargements.
+
+> **Depuis une 2.1.0** (son outil ne sait pas encore lire une archive) : décompressez la nouvelle version **à côté**,
+> puis, depuis ce nouveau dossier, désignez l'installation à mettre à jour :
+> `./start.sh maj --cible /chemin/de/larka LARKA_GMAO-2.1.1.zip --sans-signature`
+> (Windows : `Larka.cmd maj --cible C:\chemin\de\Larka LARKA_GMAO-2.1.1.zip --sans-signature`).
+> Le dossier décompressé peut ensuite être supprimé. Les versions suivantes : `./start.sh maj` dans l'installation.
+
+**Les scripts ne réécrivent plus la configuration.** `./start.sh` (setup, start, sharepoint, --host/--port) et
+`deploy/install.sh` (relancé pour une mise à jour) modifient `config.json` clé par clé, en place (propriétaire et
+droits conservés), après une copie horodatée dans `data/backups/config/` (10 dernières), et seulement si une
+valeur change ; `.env` est complété sans être remplacé. Un choix SharePoint n'est plus jamais inscrit sans
+réponse : sur une configuration existante qui ne le précise pas, SharePoint reste actif (avec Microsoft). Les
+fichiers système régénérés par `deploy/install.sh` (vhost Nginx, pool PHP-FPM, cron) gardent leur version
+précédente en `*.bak-larka`.
+
 ---
 
 ## 🧪 Diagnostic & dépannage
@@ -727,6 +765,7 @@ penser à lancer n'est jamais lancée.
 | `GMAO-E32` | Configuration Nginx invalide | Corriger la conf — **rien n'a été redémarré** |
 | `GMAO-E33` | Échec de démarrage de PHP-FPM / du service | Lire le journal affiché |
 | `GMAO-E34` | Échec de démarrage / rechargement de Nginx | Lire le journal affiché |
+| `GMAO-E35` | `.env`, `config.json` ou `config.key` n'appartient pas à l'utilisateur de Larka (resté à root après un `sudo` en 2.1.0 ou avant) : PHP ne le lit plus | `./start.sh doctor --fix` |
 | `GMAO-E40` | Port déjà utilisé | `./start.sh start --port 9001` |
 | `GMAO-E41` | Le serveur n'a pas démarré | `data/logs/server.log` ou `journalctl` |
 | `GMAO-E50` | Droits root ou systemd requis | Passer en root, ou installer `sudo` |
@@ -742,7 +781,7 @@ Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 larka/
 ├── index.html              Coquille SPA / PWA (porte le ?v= des assets)
 ├── manifest.webmanifest    Métadonnées PWA
-├── sw.js                   Service Worker (push) — v2.1.0
+├── sw.js                   Service Worker (push) — v2.1.1
 ├── router.php              Routeur du serveur PHP intégré (dev / autonome / Windows)
 ├── start.sh  Makefile      Lanceur unifié + raccourcis
 ├── Larka.cmd               Lanceur Windows (double-clic) — voir deploy/windows/
@@ -807,7 +846,7 @@ larka/
 
 Dépôt : <https://github.com/Chipsoreo/LARKA_GMAO>. `config.json`, `.env`, les clés (`*.key`), les bases et les
 données d'exécution sont exclus par `.gitignore` : ils ne partent jamais sur GitHub. L'archive « GitHub » d'une
-version (`LARKA_GMAO-2.1.0-github.zip`, dossier `LARKA_GMAO/`) contient exactement ce que le dépôt doit suivre,
+version (`LARKA_GMAO-2.1.1-github.zip`, dossier `LARKA_GMAO/`) contient exactement ce que le dépôt doit suivre,
 démonstration comprise (`demo/`) — mais ni PHP pour Windows, ni base, journaux ou sauvegardes.
 
 **Mettre à jour le dépôt** (il contient déjà une version) : on remplace son contenu, l'historique est conservé ;
@@ -816,30 +855,30 @@ Depuis le dossier où se trouve le zip :
 
 ```powershell
 # Windows (PowerShell) — Git pour Windows installé
-Expand-Archive LARKA_GMAO-2.1.0-github.zip -DestinationPath larka-2.1.0
+Expand-Archive LARKA_GMAO-2.1.1-github.zip -DestinationPath larka-2.1.1
 git clone https://github.com/Chipsoreo/LARKA_GMAO.git depot-larka
 cd depot-larka
 git rm -r -q .                                  # retire l'ancienne version (l'historique reste)
-Get-ChildItem -Force ..\larka-2.1.0\LARKA_GMAO | Copy-Item -Destination . -Recurse -Force
+Get-ChildItem -Force ..\larka-2.1.1\LARKA_GMAO | Copy-Item -Destination . -Recurse -Force
 git add -A
-git commit -m "Larka V2.1.0"
+git commit -m "Larka V2.1.1"
 git push
 ```
 
 ```bash
 # Linux, macOS ou Git Bash (Nobara, Fedora : sudo dnf install git unzip gh)
-unzip -q LARKA_GMAO-2.1.0-github.zip -d larka-2.1.0
+unzip -q LARKA_GMAO-2.1.1-github.zip -d larka-2.1.1
 git clone https://github.com/Chipsoreo/LARKA_GMAO.git depot-larka
 cd depot-larka
 git rm -r -q .                                  # retire l'ancienne version (l'historique reste)
-cp -a ../larka-2.1.0/LARKA_GMAO/. .
+cp -a ../larka-2.1.1/LARKA_GMAO/. .
 git add -A
-git commit -m "Larka V2.1.0"
+git commit -m "Larka V2.1.1"
 git push
 ```
 
 **Premier envoi** (dépôt GitHub vide) : dans le dossier `LARKA_GMAO` décompressé,
-`git init`, `git add .`, `git commit -m "Larka V2.1.0"`, `git branch -M main`,
+`git init`, `git add .`, `git commit -m "Larka V2.1.1"`, `git branch -M main`,
 `git remote add origin https://github.com/Chipsoreo/LARKA_GMAO.git`, puis `git push -u origin main`.
 
 Au premier `git push`, Git demande de se connecter à GitHub : fenêtre du navigateur sous Windows ; sous Linux,
@@ -855,16 +894,16 @@ caractères : préférez des listes simples aux tableaux.
 # paquet + empreinte + signature (OBLIGATOIRE : les serveurs refusent toute version
 # non signée), puis release. Une seule fois, avant la première publication :
 # php outils/publier-version.php --generer-cles
-# (--reconstruire : 2.1.0 est déjà la version inscrite dans version.json ; inutile pour les suivantes.
+# (--reconstruire : 2.1.1 est déjà la version inscrite dans version.json ; inutile pour les suivantes.
 #  Le canal est celui de version.json : Stable. Une préversion : --canal Beta, et gh … --prerelease)
-php outils/publier-version.php --version 2.1.0 --notes notes.md --reconstruire
-git commit -am "Publication 2.1.0" && git push      # l'outil rafraîchit le ?v= d'index.html
-gh release create v2.1.0 dist/LARKA_GMAO-2.1.0.zip dist/LARKA_GMAO-2.1.0.zip.sha256 \
-    dist/LARKA_GMAO-2.1.0.zip.sig --title "Larka V2.1.0" --notes-file notes.md
-# (gh crée l'étiquette v2.1.0 ; sans le .sig, la version est refusée par tous les serveurs)
+php outils/publier-version.php --version 2.1.1 --notes notes.md --reconstruire
+git commit -am "Publication 2.1.1" && git push      # l'outil rafraîchit le ?v= d'index.html
+gh release create v2.1.1 dist/LARKA_GMAO-2.1.1.zip dist/LARKA_GMAO-2.1.1.zip.sha256 \
+    dist/LARKA_GMAO-2.1.1.zip.sig --title "Larka V2.1.1" --notes-file notes.md
+# (gh crée l'étiquette v2.1.1 ; sans le .sig, la version est refusée par tous les serveurs)
 ```
 
-Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.1.0`, joindre le `.zip`,
+Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.1.1`, joindre le `.zip`,
 le `.sha256` **et le `.sig`** — et rien d'autre. Version stable : ne cochez pas *Set as a pre-release* (à cocher
 pour une préversion).
 

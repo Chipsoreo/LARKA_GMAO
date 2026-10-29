@@ -56,7 +56,7 @@ bash outils/epreuves/toutes.sh
 
 ```bash
 php outils/langues/extraire-libelles.php
-php outils/langues/construire-pack.php en --version=4.2.0
+php outils/langues/construire-pack.php en --version=4.2.1
 php outils/langues/verifier-traduction.php extensions/langues/acme.langue-de/extension.json
 ```
 

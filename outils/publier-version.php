@@ -267,9 +267,14 @@ $zipF = "$sortie/$nom.zip";
 @unlink($zipF);
 $zip = new ZipArchive();
 $zip->open($zipF, ZipArchive::CREATE);
-// demo/ : la démonstration (≈ 14 Mo) sert à l'installation, pas à une mise à jour.
+// demo/ : la démonstration (≈ 14 Mo) est LIVRÉE dans l'archive — sans elle,
+// « ./start.sh » et « Larka.cmd » ne pouvaient pas la proposer (elle manquait à
+// la 2.1.0). La mise à jour l'apporte aux installations de poste ou de
+// développement, jamais en production (LarkaMiseAJour::demoBienvenue) ;
+// deploy/install.sh ne la copie jamais en production.
 // php/ : le PHP qu'installe Larka.cmd sous Windows.
-$exclus = '#^(\.git/|\.github/|dist/|node_modules/|demo/|php/|config\.json$|\.env$|.*\.pem$|.*\.key$)#';
+// Variantes de config.json / .env (copies, sauvegardes) : jamais publiées.
+$exclus = '#^(\.git/|\.github/|dist/|node_modules/|php/|data/backups/config/|config\.json($|\.)|\.env($|\.(?!example$))|config\.key|.*\.pem$|.*\.key$)#';
 $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($racine, FilesystemIterator::SKIP_DOTS));
 $n = 0;
 foreach ($it as $f) {

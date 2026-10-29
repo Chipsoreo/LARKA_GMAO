@@ -124,11 +124,25 @@ function popupHtml(string $jsPayloadJson): string {
 function writeOAuthResult(array $user): string {
     $token = bin2hex(random_bytes(24));
     $file  = __DIR__ . '/../data/oauth_result_' . $token . '.json';
+    // ⚠️ FIX « connecté avec Microsoft, mais la présence demande de l'être » :
+    // ce relais ne transmettait que l'utilisateur. Quand la fenêtre principale
+    // ouvre sa session par lui (cookie de la popup non partagé, ou écrasé par
+    // une interrogation oauth_check en vol pendant session_regenerate_id —
+    // session.use_strict_mode), elle n'avait AUCUN jeton Microsoft : présence,
+    // agenda et SharePoint répondaient « reconnectez-vous via Microsoft ».
+    // Les jetons voyagent donc avec l'utilisateur (fichier hors web, lisible du
+    // seul propriétaire, effacé à la lecture, valable 5 minutes).
+    $ms = [];
+    foreach (['ms_access_token', 'ms_refresh_token', 'ms_token_expires'] as $k) {
+        if (isset($_SESSION[$k])) $ms[$k] = $_SESSION[$k];
+    }
     file_put_contents($file, json_encode([
         'user' => $user,
         'ts' => time(),
         'tenant_key' => $_SESSION['tenant_key'] ?? null,
-    ]));
+        'ms' => $ms,
+    ]), LOCK_EX);
+    @chmod($file, 0600);
     return $token;
 }
 

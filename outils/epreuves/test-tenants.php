@@ -117,9 +117,14 @@ verif(fnmatch('*demo-Larkaville*.zip', basename($demo)) && preg_match('/demo-Lar
     'nom reconnu par start.sh et par Larka.cmd');
 verif(str_contains($sh, 'for d in "$SCRIPT_DIR" "$(dirname "$SCRIPT_DIR")" "$SCRIPT_DIR/demo"; do')
     && str_contains($lk, "\$dossiers = [LK_RACINE, LK_RACINE . LK_SEP . 'demo'];"), 'cherchée dans demo/ (start.sh, Larka.cmd)');
+// 2.1.1 : la démonstration est LIVRÉE dans l'archive de chaque version (sans
+// elle, start.sh et Larka.cmd ne pouvaient pas la proposer) ; jamais copiée en
+// production, ni par deploy/install.sh ni par une mise à jour (demoBienvenue).
+$pub = (string)file_get_contents("$racine/outils/publier-version.php");
 verif(preg_match("/^\s*'php' 'demo' /m", (string)file_get_contents("$racine/deploy/install.sh")) === 1
-    && str_contains((string)file_get_contents("$racine/outils/publier-version.php"), '|demo/|'),
-    'ni copiée en production, ni emportée par les mises à jour');
+    && preg_match('/\$exclus = \'[^\']*\|demo\//', $pub) === 0
+    && str_contains((string)file_get_contents("$racine/api/MiseAJour.php"), "\$env !== 'prod' && !str_starts_with("),
+    'livrée dans l\'archive, jamais copiée en production (installation ni mise à jour)');
 verif(str_contains((string)file_get_contents("$racine/router.php"), "'demo/',")
     && str_contains((string)file_get_contents("$racine/deploy/nginx.conf"), 'location ^~ /demo/ '),
     'refusée par le serveur web (routeur intégré, nginx)');

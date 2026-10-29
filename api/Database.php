@@ -206,7 +206,7 @@ class Database {
             'TelMobile','TelPro','MustChangePassword',
             'Numero','Famille','SousFamille','Statut','NumeroSerie','Etat','DateCommande','DateLivraison',
             'DateSuppression','Prix','InfoProduit','Batiment','Etage','NumeroBureau','NomPrenom','Documents',
-            'CommentaireSortie','DateSortie','CreatedAt','CreatedBy','UpdatedAt','UpdatedBy',
+            'CommentaireSortie','DateSortie','CreatedAt','CreatedBy','UpdatedAt','UpdatedBy','ChampsPerso',
             'DateInstallation','Marque','Modele','Fournisseur','Observations',
             'Societe','Type','Perimetre','EquipementsIds','DateDebut','DateFin','AlerteJoursAvant',
             'MontantAnnuel','Frequence','ContactNom','ContactTel','ContactEmail','ContactsJSON','Commentaire',
@@ -509,7 +509,11 @@ class Database {
     //       gros montants, totaux faux). Le bump déclenche convertirReelsPg()
     //       sur les bases déjà déployées. Sans effet sous SQLite et MariaDB,
     //       où REAL est déjà un double.
-    private const SCHEMA_VERSION = 13;
+    // v14 : cases complémentaires des fiches (« fourre-tout ») — colonne JSON
+    //       ChampsPerso sur Biens et Equipements, définitions dans Configuration
+    //       (champs_perso_biens / champs_perso_equipements). Créées par l'import
+    //       (colonnes du fichier sans champ Larka) ou à la main depuis les listes.
+    private const SCHEMA_VERSION = 14;
 
     /**
      * Fichier sentinelle utilisé pour court-circuiter initTables() quand
@@ -1130,6 +1134,10 @@ class Database {
             // Date de réception du devis (ajout v4)
             ["IntervDevisLignes", "DateReception", "TEXT DEFAULT ''"],
 
+            // Cases complémentaires des fiches (v14) : { "cle": "valeur", … }
+            ["Biens",       "ChampsPerso", "TEXT"],
+            ["Equipements", "ChampsPerso", "TEXT"],
+
             // Archives : colonnes des boîtes ajoutées après coup (elles n'étaient
             // créées que par ensureArchivesBoiteColumns(), propre à SQLite).
             ["ArchivesBoite", "AgentResponsable", "TEXT"],
@@ -1235,6 +1243,86 @@ class Database {
         // refaire toutes les CREATE TABLE IF NOT EXISTS au prochain boot.
         // Best-effort — un échec ici n'a aucune conséquence fonctionnelle.
         $this->markSchemaCurrent();
+    }
+
+    // ══ CASES COMPLÉMENTAIRES DES FICHES (biens, équipements) ══
+    // Définitions : Configuration « champs_perso_<cible> » = [{cle, libelle, type}]
+    // (type : texte | texte_long | date | nombre). Valeurs : colonne JSON
+    // ChampsPerso de la fiche. Supprimer une case ne touche pas aux valeurs :
+    // recréée sous le même nom, elle les retrouve.
+    public const CHAMPS_PERSO_TYPES = ['texte', 'texte_long', 'date', 'nombre'];
+
+    public static function champsPersoCle(string $libelle): string {
+        $t = function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $libelle) : $libelle;
+        $t = strtolower(preg_replace('/[^A-Za-z0-9]+/', '_', $t));
+        $t = trim($t, '_');
+        return substr($t !== '' ? $t : 'case', 0, 60);
+    }
+
+    public function getChampsPersoDefs(string $cible): array {
+        if (!in_array($cible, ['biens', 'equipements'], true)) return [];
+        $j = json_decode($this->getConfig('champs_perso_' . $cible), true);
+        if (!is_array($j)) return [];
+        $out = [];
+        foreach ($j as $d) {
+            if (!is_array($d) || !preg_match('/^[a-z0-9_]{1,60}$/', (string)($d['cle'] ?? ''))) continue;
+            $out[] = ['cle' => $d['cle'], 'libelle' => mb_substr(trim((string)($d['libelle'] ?? $d['cle'])), 0, 80),
+                      'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+        }
+        return $out;
+    }
+
+    /** Enregistre les définitions (normalisées, clés uniques, 100 au plus). */
+    public function setChampsPersoDefs(string $cible, array $defs): array {
+        if (!in_array($cible, ['biens', 'equipements'], true)) throw new \InvalidArgumentException('Cible inconnue.');
+        $out = []; $vues = [];
+        foreach ($defs as $d) {
+            if (!is_array($d)) continue;
+            $lib = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($d['libelle'] ?? ''))), 0, 80);
+            if ($lib === '') continue;
+            $cle = (string)($d['cle'] ?? '');
+            if (!preg_match('/^[a-z0-9_]{1,60}$/', $cle)) $cle = self::champsPersoCle($lib);
+            $base = $cle; $n = 2;
+            while (isset($vues[$cle])) $cle = substr($base, 0, 56) . '_' . $n++;
+            $vues[$cle] = true;
+            $out[] = ['cle' => $cle, 'libelle' => $lib,
+                      'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+            if (count($out) >= 100) break;
+        }
+        $this->setConfig('champs_perso_' . $cible, json_encode($out, JSON_UNESCAPED_UNICODE));
+        return $out;
+    }
+
+    /** Ajoute les cases absentes (import), sans toucher aux existantes. */
+    public function ajouterChampsPersoDefs(string $cible, array $nouvelles): array {
+        $defs = $this->getChampsPersoDefs($cible);
+        $cles = array_column($defs, 'cle');
+        foreach ($nouvelles as $d) {
+            if (!is_array($d)) continue;
+            $cle = (string)($d['cle'] ?? '');
+            if ($cle !== '' && in_array($cle, $cles, true)) continue;
+            $defs[] = $d; $cles[] = $cle;
+        }
+        return $this->setChampsPersoDefs($cible, $defs);
+    }
+
+    /**
+     * Valeurs des cases d'une fiche, FUSIONNÉES avec celles déjà enregistrées
+     * (une case absente de $vals n'est pas effacée ; une valeur vide l'efface).
+     */
+    public function setChampsPersoValeurs(string $cible, int $id, array $vals): void {
+        $table = $cible === 'equipements' ? 'Equipements' : 'Biens';
+        $row = $this->fetchOne("SELECT ChampsPerso FROM $table WHERE Id = :id", ['id' => $id]);
+        if (!$row) return;
+        $cur = json_decode((string)($row['ChampsPerso'] ?? ''), true);
+        if (!is_array($cur)) $cur = [];
+        foreach ($vals as $k => $v) {
+            if (!is_string($k) || !preg_match('/^[a-z0-9_]{1,60}$/', $k)) continue;
+            $v = is_scalar($v) ? trim((string)$v) : '';
+            if ($v === '') unset($cur[$k]); else $cur[$k] = mb_substr($v, 0, 2000);
+        }
+        $this->execute("UPDATE $table SET ChampsPerso = :v WHERE Id = :id",
+            ['v' => $cur ? json_encode($cur, JSON_UNESCAPED_UNICODE) : null, 'id' => $id]);
     }
 
     // ══ CONFIGURATION ══
@@ -1587,10 +1675,18 @@ class Database {
         catch (\Throwable $e) { $this->_dernierIdInsere = 0; }
 
         $this->auditerEcriture($sql, $params, $this->_dernierIdInsere);
+        $this->_idApresAudit = $this->idCourant();
     }
 
     /** Dernier identifiant auto-généré, figé avant l'écriture du journal. */
     private int $_dernierIdInsere = 0;
+    /** lastInsertId() juste après l'audit : s'il a bougé depuis, une insertion directe ($this->pdo) a suivi. */
+    private ?int $_idApresAudit = null;
+
+    private function idCourant(): ?int
+    {
+        try { return (int)$this->pdo->lastInsertId(); } catch (\Throwable $e) { return null; }
+    }
 
     /**
      * Inscrit une écriture au journal. Best-effort absolu : une panne de
@@ -1704,8 +1800,11 @@ class Database {
      * décale sinon lastInsertId() vers la table Journal.
      */
     private function lastId(): int {
-        if ($this->_dernierIdInsere > 0) return $this->_dernierIdInsere;
-        return (int) $this->pdo->lastInsertId();
+        $courant = $this->idCourant();
+        // Valeur figée par execute(), sauf si une insertion directe (pdo->prepare) a eu lieu depuis :
+        // sans ce contrôle, un add*() qui n'emprunte pas execute() rendait l'identifiant d'une écriture précédente.
+        if ($this->_dernierIdInsere > 0 && $courant === $this->_idApresAudit) return $this->_dernierIdInsere;
+        return (int)$courant;
     }
     private function isPg(): bool    { return $this->driver === 'pgsql'; }
     private function isMysql(): bool { return $this->driver === 'mariadb' || $this->driver === 'mysql'; }
