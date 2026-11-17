@@ -168,7 +168,7 @@ est un problème qu'on perd ; ne jamais en accepter est un problème qu'on n'a p
 | | |
 |---|---|
 | **15 types de champ** | texte, texte long, entier, décimal, pourcentage, note, durée, date, horodatage, heure, booléen, choix, choix multiple, couleur, lien |
-| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… vérifiés à l'écriture |
+| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… |
 | **91 fonctions de formule** | champs calculés, qui n'atteignent jamais PHP |
 | **33 opérateurs de condition** | une grammaire unique, partagée par l'affichage conditionnel, le surlignage et les filtres |
 | **5 ancrages** | compteur et jauge au tableau de bord, liste liée sur une fiche, marqueurs sur un plan, formulaire de demande |
