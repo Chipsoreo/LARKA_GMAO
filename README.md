@@ -195,7 +195,7 @@ est un problème qu'on perd ; ne jamais en accepter est un problème qu'on n'a p
 | | |
 |---|---|
 | **15 types de champ** | texte, texte long, entier, décimal, pourcentage, note, durée, date, horodatage, heure, booléen, choix, choix multiple, couleur, lien |
-| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… vérifiés à l'écriture |
+| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… |
 | **91 fonctions de formule** | champs calculés, qui n'atteignent jamais PHP |
 | **33 opérateurs de condition** | une grammaire unique, partagée par l'affichage conditionnel, le surlignage et les filtres |
 | **5 ancrages** | compteur et jauge au tableau de bord, liste liée sur une fiche, marqueurs sur un plan, formulaire de demande |
@@ -504,35 +504,6 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ---
 
-## ⬆️ Mises à jour
-
-La version installée est dans `version.json` (affichée sur la page de connexion : « V.Beta 2.0.0 »).
-
-**Détection automatique, installation validée.** Larka vérifie la source des versions (GitHub Releases de
-`mises_a_jour.depot`, ou un manifeste `latest.json`) au plus toutes les 12 h. Quand une version plus récente existe,
-un bandeau la propose à l'administrateur du serveur (Super Admin ; Admin/Gestionnaire en mono-tenant), qui lit les
-nouveautés et coche une confirmation avant d'installer. Aussi : *Configuration → Version et mises à jour*.
-
-**Les données ne sont jamais touchées** : `data/` (base SQLite, plans, médias, modules installés, sauvegardes),
-`config.json`, `.env` et les réglages de modules existants restent tels quels ; aucun fichier n'est supprimé.
-Avant d'écrire, les fichiers remplacés (et la base SQLite) sont sauvegardés dans `data/maj/sauvegardes/` ; une erreur en
-cours d'installation restaure automatiquement la version précédente, et l'historique permet de revenir en arrière.
-
-**Intégrité** : HTTPS uniquement, empreinte SHA-256 obligatoire, et signature Ed25519 exigée dès qu'une
-`cle_publique` est configurée (recommandé).
-
-```bash
-# Éditeur — une fois : paire de clés (la publique va dans mises_a_jour.cle_publique)
-php outils/publier-version.php --generer-cles
-# Éditeur — à chaque version : version.json, ?v=, zip, .sha256, .sig, latest.json
-php outils/publier-version.php --version 2.0.3 --canal Beta --notes notes.md
-gh release create v2.0.3 dist/LARKA_GMAO-2.0.3.zip dist/LARKA_GMAO-2.0.3.zip.sha256 dist/LARKA_GMAO-2.0.3.zip.sig --notes-file notes.md --prerelease
-
-# Serveur — sans interface (ou si les fichiers ne sont pas inscriptibles par PHP)
-sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --verifier
-sudo -u www-data php /var/www/gmao/api/outils/mise-a-jour.php --installer
-```
-
 ---
 
 ## 🧪 Diagnostic & dépannage
@@ -619,52 +590,6 @@ larka/
 └── data/                   Runtime hors web : backups, logs, sessions, security,
                             urgences (médias), extensions (modules installés), run (PID)
 ```
-
----
-
-## 🐙 Publier sur GitHub
-
-Dépôt : <https://github.com/Chipsoreo/LARKA_GMAO>. `config.json`, `.env` et les données d'exécution sont
-exclus par `.gitignore` : ils ne partent jamais sur GitHub.
-
-**Premier envoi** (dépôt GitHub vide) :
-
-```bash
-cd LARKA_GMAO-2.0.0
-git init
-git add .
-git commit -m "Larka V.Beta 2.0.0"
-git branch -M main
-git remote add origin https://github.com/Chipsoreo/LARKA_GMAO.git
-git push -u origin main
-```
-
-**Dépôt qui contient déjà une version** : on remplace son contenu, l'historique est conservé.
-
-```bash
-git clone https://github.com/Chipsoreo/LARKA_GMAO.git
-cd LARKA_GMAO
-rsync -a --delete --exclude .git ../LARKA_GMAO-2.0.0/ ./     # contenu de l'archive, sans toucher à .git
-git add -A
-git commit -m "Larka V.Beta 2.0.0"
-git push
-```
-
-**Release** (c'est elle que les serveurs détectent pour la mise à jour automatique). `notes.md` : reprenez les
-notes de version ci-dessus.
-
-```bash
-# paquet + empreinte (+ signature si une clé a été générée), puis release en « pré-version » (bêta)
-# (--reconstruire : 2.0.0 est déjà la version inscrite dans version.json ; inutile pour les suivantes)
-php outils/publier-version.php --version 2.0.0 --canal Beta --notes notes.md --reconstruire
-git commit -am "Publication 2.0.0" && git push      # l'outil rafraîchit le ?v= d'index.html
-gh release create v2.0.0 dist/LARKA_GMAO-2.0.0.zip dist/LARKA_GMAO-2.0.0.zip.sha256 \
-    --title "Larka V.Beta 2.0.0" --notes-file notes.md --prerelease
-# (ajouter dist/LARKA_GMAO-2.0.0.zip.sig si le paquet est signé ; gh crée l'étiquette v2.0.0)
-```
-
-Sans l'outil `gh` : GitHub → *Releases* → *Draft a new release*, choisir l'étiquette `v2.0.0`, joindre le `.zip`
-et le `.sha256` (et le `.sig`), cocher *Set as a pre-release*.
 
 ---
 
