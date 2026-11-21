@@ -6,7 +6,7 @@
 Backend PHP sans framework, base PostgreSQL par client, frontend JavaScript sans build, installable en PWA.
 **Extensible par des modules qui ne contiennent aucun code.**
 
-[![Version](https://img.shields.io/badge/version-2.1.1%20(stable)-0a1628.svg)](Documentations/)
+[![Version](https://img.shields.io/badge/version-3.0.0%20(stable)-0a1628.svg)](Documentations/)
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir%20le%20projet-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chipsoreo)
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
@@ -59,7 +59,7 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-**Version 2.1.1 (V2.1.1) — correctifs de la première version stable (2.1.0).** Larka s'installe sur un serveur Linux comme sur un poste
+**Version 3.0.0 (V3.0.0) — succède à la 2.1.1 : Larka Connect (bâtiments connectés), préventif et contrôles réglementaires par plans, import d'interventions, confirmation d'identité, codes d'erreur.** Les nouveautés sont résumées juste en dessous, dans la [présentation des nouveautés](#-larka-v300--présentation-des-nouveautés). Larka s'installe sur un serveur Linux comme sur un poste
 Windows (d'un double-clic), avec une démonstration complète ; sauvegardes automatiques, politique de protection
 des données personnalisable par organisation, prérequis vérifiés avant toute installation ou mise à jour, aide
 intégrée propre à chaque rôle, interface en français et en anglais. Les nouveautés de chaque version sont
@@ -68,12 +68,12 @@ de Larka les affiche aussi.
 
 | Élément | Valeur | Où |
 |---|---|---|
-| Version applicative | `2.1.1` | `version.json` — source unique, lue par `api/Version.php` |
-| Libellé affiché | `V2.1.1` (une préversion : `V.Beta x.y.z`) | `LARKA_VERSION_LABEL`, bas de la page de connexion |
-| Service Worker | `2.1.1` | `SW_VERSION` (`sw.js`) |
-| Manifeste PWA | `2.1.1` | `manifest.webmanifest` |
-| Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.3`) |
-| Documentation | manuels v2.1 · DAT 2.1 | `Documentations/` ; l'écran **Aide** de l'application en reprend l'essentiel pour chaque rôle |
+| Version applicative | `3.0.0` | `version.json` — source unique, lue par `api/Version.php` |
+| Libellé affiché | `V3.0.0` (une préversion : `V.Beta x.y.z`) | `LARKA_VERSION_LABEL`, bas de la page de connexion |
+| Service Worker | `3.0.0` | `SW_VERSION` (`sw.js`) |
+| Manifeste PWA | `3.0.0` | `manifest.webmanifest` |
+| Format des modules | `declaratif/1` · API d'extensions `1` | `ExtCapacites::VERSION_API` (révision interne `1.4` : connectivité des bâtiments) |
+| Documentation | manuels v3.0 · DAT 3.0 · référence du format 3.0 | `Documentations/` ; l'écran **Aide** de l'application en reprend l'essentiel pour chaque rôle |
 
 > Le paramètre `?v=` d'`index.html` n'est **pas** un numéro de version : c'est un
 > horodatage de cache navigateur, régénéré automatiquement à chaque déploiement
@@ -95,13 +95,22 @@ de Larka les affiche aussi.
   proposition de l'IA si l'assistant est configuré), puis **une case par ligne** : tout, rien, par famille, seuil de
   prix, sans les biens sortis ; contrôle ligne par ligne (dates, montants « 1.234,56 », doublons, lignes de total)
   et rapport d'erreurs téléchargeable.
-- 🛠️ **Maintenance** — interventions préventives et correctives, devis, lignes de stock liées, demandes d'intervention.
+- 🛠️ **Maintenance** — interventions curatives, devis, lignes de stock liées, demandes d'intervention, lieu / bâtiment.
+  **Préventif et contrôles réglementaires** par plans annuels : passages générés, prix par passage, réparti ou au
+  forfait, reconduction, onglet *Hors plan* pour l'historique (recherche, filtres, vue par matériel, export CSV).
+  **Import d'interventions** depuis Excel / CSV (historique d'une autre GMAO : préventif, curatif, contrôles), avec
+  aperçu ligne par ligne, noms usuels reconnus (« correctif », « VGP », « Terminée »…) et sans doublon au réimport.
 - 📄 **Contrats** de maintenance et listes de référence.
 - 📦 **Stock** avec seuils et mouvements.
 - ⚡ **Énergie & carbone** — compteurs, relevés, réseaux de chaleur, bilan carbone (facteurs d'émission).
-- 🗺️ **Plans** de bâtiments (étages, éléments, liens cartographiques).
+- 🗺️ **Bâtiments** — plans d'étages (éléments, liens cartographiques) et, avec Larka Connect, les équipements raccordés.
+- 📡 **Larka Connect** — GTB/GTC (BACnet/IP, Modbus TCP, API REST, exports CSV), capteurs MQTT, capteurs LoRaWAN (serveur
+  intégré : les passerelles parlent directement à Larka), compteurs radio wM-Bus (clé USB), bornes de recharge OCPP 1.6J : supervision et courbes, alarmes techniques qui ouvrent des demandes d'intervention, relevés automatiques vers
+  le module Énergie (« chaque jour à 23 h 55, cet index va dans ce compteur »), consignes modifiables avec confirmation
+  d'identité. Collecte faite par le serveur, pare-feu vérifié par le test de connexion ; supervision possible sur un
+  **serveur séparé** du réseau technique, relié par un lien chiffré par Larka — voir la section dédiée.
 - 🗃️ **Archives** physiques (dossiers, boîtes, bordereaux) et **documents** (PDF/images, déduplication SHA-256).
-- 📊 **Tableau de bord** et statistiques avancées.
+- 📊 **Tableau de bord** (interventions prévues, en retard, en cours, par type) et statistiques avancées.
 - 🇫🇷 **Connecteurs réglementaires** — Légifrance et Chorus Pro via la plateforme PISTE ; SharePoint/OneDrive.
 - 🚨 **Procédures d'urgence** — fiches de conduite à tenir, avec photos et vidéos servies sous contrôle d'accès.
 - 🧭 **Annuaire cartographié** — localiser une personne ou un service sur un plan d'étage (consentement individuel).
@@ -112,12 +121,15 @@ de Larka les affiche aussi.
 - 🛡️ **Protection des données** — politique RGPD intégrée, adaptée à l'installation et personnalisable par organisation, avec la mention « Personnalisé par l'entreprise ».
 - ❓ **Aide intégrée** — fiches pratiques propres à chaque rôle, avec recherche ; pour l'exploitant, procédures propres au système détecté.
 - 🌐 **Français et anglais** — interface et écran de connexion, au choix de chaque utilisateur ; autres langues par pack.
-- 🧩 **Modules déclaratifs** — ajouter un registre métier, un formulaire de demande, un thème ou une traduction en déposant un fichier `.larka`. Aucun code n'est exécuté ; voir la section dédiée.
+- 🧩 **Modules déclaratifs** — ajouter un registre métier, un formulaire de demande, un thème ou une traduction en déposant un fichier `.larka`. Aucun code n'est exécuté ; voir la section dédiée. Un module peut aussi lire les mesures de Larka Connect et recevoir ses alarmes techniques.
 
 **Technique**
 
 - 🔐 **Sécurité par défaut** — HTTPS/HSTS, CSP, chiffrement AES-256-GCM des secrets, RBAC, journal de sécurité.
 - 🔑 **Authentification fédérée** — OAuth 2.0 / OpenID Connect (Microsoft Entra ID, Google) + comptes locaux (bcrypt).
+- 🔏 **Confirmation d'identité** — avant un geste sensible, mot de passe redemandé (compte local, ou fenêtre Microsoft /
+  Google), pour une durée réglée par le gestionnaire.
+- 🧾 **Codes d'erreur** — 85 codes, chacun avec sa marche à suivre, à l'écran (« Que faire ? ») et dans les journaux.
 - 📱 **PWA** installable (poste et mobile), notifications push iOS 16.4+ en mode écran d'accueil.
 - ⚡ **Chargement paresseux** du frontend (lazy-loading) avec préchargement intelligent selon le rôle.
 - 🎨 **Écran de connexion personnalisable** par le super-administrateur (couleurs, fond animé, CSS filtré — voir plus bas).
@@ -126,7 +138,7 @@ de Larka les affiche aussi.
 - 🪟 **Linux ou Windows** — serveur de production Nginx + PHP-FPM, ou poste autonome d'un double-clic (`Larka.cmd`).
 - ⬆️ **Mises à jour depuis l'interface** — nouvelle version détectée, installation validée à la main, archive signée (Ed25519), sauvegarde avant d'écrire et retour arrière ; ou depuis une archive (`./start.sh maj`, `Larka.cmd maj`), sans jamais réécrire `config.json` ni `.env`.
 - 🎬 **Démonstration « Ville de Larkaville »** — cinq ans d'activité fictive dans tous les modules, livrée dans `demo/` et proposée à l'installation.
-- 🧪 **24 suites d'épreuves automatisées** (≈ 1 900 contrôles) ; les plus rapides tournent avant chaque mise en production et refusent le déploiement si une protection tombe.
+- 🧪 **36 épreuves automatisées** (≈ 2 400 contrôles, volets PostgreSQL et MariaDB compris) ; les plus rapides tournent avant chaque mise en production et refusent le déploiement si une protection tombe.
 
 ---
 
@@ -167,11 +179,12 @@ est un problème qu'on perd ; ne jamais en accepter est un problème qu'on n'a p
 
 | | |
 |---|---|
-| **15 types de champ** | texte, texte long, entier, décimal, pourcentage, note, durée, date, horodatage, heure, booléen, choix, choix multiple, couleur, lien |
-| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… |
+| **16 types de champ** | texte, texte long, entier, décimal, pourcentage, note, durée, date, horodatage, heure, booléen, choix, choix multiple, couleur, lien, **mesure** (lue en direct sur le bâtiment connecté) |
+| **16 formats de saisie** | immatriculation, SIRET, IBAN, code postal, téléphone… vérifiés à l'écriture |
 | **91 fonctions de formule** | champs calculés, qui n'atteignent jamais PHP |
 | **33 opérateurs de condition** | une grammaire unique, partagée par l'affichage conditionnel, le surlignage et les filtres |
-| **5 ancrages** | compteur et jauge au tableau de bord, liste liée sur une fiche, marqueurs sur un plan, formulaire de demande |
+| **5 ancrages, 7 emplacements** | compteur et jauge au tableau de bord ou dans la supervision des bâtiments, liste liée sur une fiche ou sous la courbe d'un point, marqueurs sur un plan, formulaire de demande |
+| **Bâtiment connecté** | liens vers les points, équipements raccordés et bâtiments de Larka Connect ; mesures en direct (valeur, état, alarmes, min/max/moyenne 24 h, consommations) ; registre alimenté par les alarmes techniques — lecture seule, jamais d'écriture vers un équipement |
 | **Mise en page** | grille de 1 à 24 colonnes, sections en carte ou panneau, images, responsive par palier |
 | **Habillage** | thèmes et packs de langue, choisis par chaque utilisateur |
 
@@ -188,10 +201,20 @@ chaque appel.
 
 ### Ce qui est livré
 
-`extensions/` contient **7 modules**, 2 thèmes et 2 packs de langue prêts à
-installer : registre de clés, contrôles réglementaires, habilitations, annuaire
-de prestataires, réservation de bornes de recharge, démonstration d'images et
-moteur d'habillage. Ils servent autant d'exemples que d'outils.
+`extensions/` contient **6 modules**, 2 thèmes et 2 packs de langue prêts à
+installer. Chaque module montre une facette différente du format :
+
+| Module | Ce qu'il montre |
+|---|---|
+| **Moteur d'apparence** | Le vocabulaire des thèmes : variables, bornes, aperçu — sans lui, pas de thème |
+| **Gestion des clés** | Repères sur les **plans** des bâtiments, données **partagées** avec d'autres modules, logo, liste liée à la fiche équipement |
+| **Prestataires et habilitations** | **Deux jeux** de données et deux écrans, une **image**, trois **langues**, des **réglages** (dont la couleur de l'écran), des **formules** qui lisent un réglage, des champs **conditionnels**, choix multiples, couleurs par valeur, totaux, listes liées aux fiches **équipement et bien**, tuiles et **jauge** au tableau de bord |
+| **Bornes de recharge** | Une déclaration en **plusieurs fichiers** (`$ref`), un **type de demande** pour les demandeurs, un **calendrier**, des actions rapides, un planning imprimable |
+| **Qualité de l'air intérieur** | **Larka Connect** : CO₂ lu en direct sur les sondes, registre des dépassements tenu par les **alarmes techniques**, tuiles en tête de la supervision |
+| **Compteurs et santé des installations** | **Larka Connect**, l'autre versant : consommations du jour et du mois des **compteurs** face à un objectif, **état des automates et passerelles**, registre des **pannes de communication et défauts d'équipement** (alarmes filtrées par origine) rattaché à la fiche équipement, **jauge** et tuiles en tête de la supervision |
+
+Ils servent autant d'exemples que d'outils : ouvrez leur `extension.json` à
+côté de la référence du format.
 
 ### Écrire le sien
 
@@ -214,26 +237,28 @@ annonce ce qu'elle produira. Aucune base n'est nécessaire, rien n'est exécuté
   — spécification écrite à la main, complétée par les catalogues extraits du
   code ; une épreuve vérifie que les deux ne divergent pas.
 - **Exemples** : [`Documentations/exemples-declaratifs/`](Documentations/exemples-declaratifs/)
-  — 9 modules complets, du registre le plus simple à l'interface entièrement
-  mise en page, revalidés à chaque passage de la suite d'épreuves.
+  — 10 modules complets, du registre le plus simple à l'interface entièrement
+  mise en page et au bâtiment connecté, revalidés à chaque passage de la suite
+  d'épreuves.
 
 ### Traduire l'interface
 
-Les libellés français sont recensés dans **`lang/fr.json`** (le catalogue, extrait du code) ; **`lang/en.json`**
-porte la traduction anglaise : mêmes clés, même ordre, donc exactement le même nombre de lignes — un écart se
-voit d'un coup d'œil. On traduit les valeurs, jamais les clés.
+Toutes les traductions de l'interface tiennent dans **un seul fichier, `lang/traductions.json`** : une ligne par
+libellé, la clé est le texte français affiché (extrait du code, jamais modifié), la valeur porte une traduction par
+langue — `"Enregistrer": {"en": "Save"}`. Une langue absente d'une ligne = pas encore traduite ; `"fr"` corrige un
+libellé sans toucher au code. Seuls les packs de langue (`extensions/langues/`) sont des fichiers à part.
 
 ```bash
-php outils/langues/extraire-libelles.php      # met lang/fr.json à jour depuis le code (+ lang/complements.json)
-php outils/langues/construire-pack.php en     # aligne lang/en.json (nouvelles clés en attente), construit le pack
+php outils/langues/extraire-libelles.php      # met lang/traductions.json à jour depuis le code (nouvelles lignes à traduire)
+php outils/langues/construire-pack.php en     # construit le pack anglais depuis lang/traductions.json
 php outils/langues/verifier-traduction.php extensions/langues/larka.langue-en/extension.json
 ```
 
 `construire-pack.php` signale les libellés restés en français (code de sortie 1) ; `--version=X.Y.Z` fixe la
-version du pack. `lang/complements.json` recense les libellés que le code assemble ou reçoit du serveur, et que
+version du pack. La liste `complements` du fichier recense les libellés que le code assemble ou reçoit du serveur, et que
 l'extraction ne peut pas voir.
 
-Le pack anglais (`extensions/langues/larka.langue-en`, 4.2.1) est **livré et proposé à tous** : chaque utilisateur
+Le pack anglais (`extensions/langues/larka.langue-en`, 4.3.2) est **livré et proposé à tous** : chaque utilisateur
 le choisit (*Interface → Langue*), il s'applique aussi à l'écran de connexion, et il ne demande pas d'activer la
 couche de modules — ce ne sont que des libellés. Une version plus récente remplace d'elle-même un pack déjà installé.
 
@@ -648,6 +673,34 @@ Le port du moteur local (`11434`) **ne doit jamais être exposé** au réseau.
 
 ---
 
+## 📡 Larka Connect — équipements du bâtiment raccordés
+
+Larka Connect relie la GMAO à la GTB/GTC, aux compteurs, aux capteurs et aux bornes de recharge, **en usage
+interne** : Larka interroge des équipements du réseau de l'organisation, rien n'est ouvert vers l'extérieur (seules
+les bornes OCPP et les passerelles LoRaWAN du bâtiment appellent Larka, sur un port choisi). Guide complet : `Documentations/LARKA-CONNECT.md`.
+
+| | |
+| --- | --- |
+| **Protocoles** | Modbus TCP · BACnet/IP · MQTT 3.1.1 · API REST JSON · exports CSV · OCPP 1.6J · LoRaWAN (serveur intégré, Semtech UDP 1700, OTAA/ABP) · wM-Bus OMS (clé USB IMST iM871A, Amber AMB8465, CUL — sur le serveur ou un PC releveur) |
+| **Courbes** | période au choix, style (ligne, aire, barres, points, escalier, consommation), export PDF des courbes choisies — sans bibliothèque |
+| **Écrans** | menu **Bâtiments** (dépliable) : *Supervision* (valeurs, courbes), *Alarmes techniques*, *Connexions* (connexions, points, règles d'alarme, relevés automatiques, bornes de recharge, journal) |
+| **Collecte** | par le **serveur**, jamais par le navigateur : cron chaque minute (production), `larka-connect.timer` (`./start.sh autostart on`), planificateur de `./start.sh start`, lanceur Windows ; chaque connexion à son rythme |
+| **Bornes** | service OCPP permanent (`larka-ocpp.service`, ou lancé par start.sh / Larka.cmd) ; `ws://<serveur>:9000/ocpp/<borne>`, ou `wss://` derrière Nginx (`location ^~ /ocpp/` de `deploy/nginx.conf`) |
+| **Sécurité** | lecture sans identité ; écriture (consigne, commande de borne) réservée aux gestionnaires, sur un point déclaré inscriptible, dans sa plage, après **confirmation d'identité** (5 min) — chaque tentative va au journal de sécurité ; identifiants des équipements chiffrés (AES-256-GCM) ; dossiers CSV bornés par `connect.csv_racines` |
+| **Pare-feu** | le bouton *🧪 Tester la connexion* distingue « refusé » de « sans réponse » et rédige le message pour le service informatique |
+
+Activation : *Configuration → 🖥️ Serveur → 📡 Larka Connect* (en multi-tenant, le Super Admin l'active puis l'ouvre
+par organisation, 🧩 modules). Fermé par défaut.
+
+```bash
+php api/outils/connect-collecte.php --etat      # dernier passage, état des connexions, alarmes
+php api/outils/connect-ocpp.php --etat          # service permanent : bornes OCPP, passerelles et capteurs LoRaWAN
+./start.sh connect-demo --activer                # bâtiments simulés : 60 jours de courbes, alarmes et relevés, en quelques secondes
+cd outils/simulateurs && ./installer.sh && ./lancer.sh start   # équipements simulés en temps réel, vrais protocoles réseau
+```
+
+---
+
 ## 🧪 Diagnostic & dépannage
 
 `start.sh` signale les échecs avec un code **`GMAO-Exx`** (également le code de sortie : `echo $?`).
@@ -691,6 +744,23 @@ penser à lancer n'est jamais lancée.
 
 Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 
+### Codes d'erreur de l'application
+
+Les codes `GMAO-Exx` ci-dessus sont ceux du lanceur. **Dans l'application**, chaque incident porte un code de
+la forme `CXR-002` (trois lettres de domaine, trois chiffres) — erreur renvoyée à l'écran, entrée du **Journal**,
+évènement de la supervision (**Connexions → Journal**), ligne des fichiers `data/logs/activite-*.txt`. Un clic sur
+le code (ou « Que faire ? » dans le message d'erreur) ouvre sa fiche : ce que cela veut dire, les causes probables,
+**comment y remédier** dans l'ordre, et qui peut agir ; *Copier pour le support* prépare le message à transmettre.
+
+```bash
+php api/outils/codes-erreur.php                  # tous les codes
+php api/outils/codes-erreur.php CXR-002          # la fiche d'un code
+php api/outils/codes-erreur.php --message="database is locked"   # le code d'un message reçu
+php api/outils/codes-erreur.php --journal=7      # incidents des 7 derniers jours, par code
+```
+
+Référence complète : `Documentations/CODES-ERREUR.md` (générée depuis `api/CodesErreur.php`).
+
 ---
 
 ## 📁 Structure du projet
@@ -699,7 +769,7 @@ Repartir de zéro (**destructif**) : `./start.sh reset && ./start.sh start`.
 larka/
 ├── index.html              Coquille SPA / PWA (porte le ?v= des assets)
 ├── manifest.webmanifest    Métadonnées PWA
-├── sw.js                   Service Worker (push) — v2.1.1
+├── sw.js                   Service Worker (push) — v3.0.0
 ├── router.php              Routeur du serveur PHP intégré (dev / autonome / Windows)
 ├── start.sh  Makefile      Lanceur unifié + raccourcis
 ├── Larka.cmd               Lanceur Windows (double-clic) — voir deploy/windows/
@@ -720,9 +790,16 @@ larka/
 │   ├── AideFiches.php      Contenu de l'écran Aide : fiches FR / EN par rôle, mots-clés de recherche
 │   ├── AssistantTools.php  Outils de l'assistant IA
 │   ├── Assistant*.php      Moteur « fiable » : Langue, Comprehension, Moteur, Demandeur,
-│   │                       Interprete (recours au modèle, contraint), Fiable (enchaînement), LLM
-│   ├── routes/             26 modules (auth, inventaire, maintenance, urgences, assistant, rgpd, aide, …)
-│   ├── outils/             En ligne de commande : sauvegarde-auto, prerequis, mise-a-jour, postgresql
+│   │                       Interprete (recours au modèle, contraint), Fiable (enchaînement), LLM, Supervision
+│   ├── SupervisionLien.php Serveur de supervision séparé et lien chiffré (sodium)
+│   ├── IdentiteConfirmee.php  Confirmation d'identité (durée réglable, Microsoft / Google)
+│   ├── CodesErreur.php     Catalogue des codes d'erreur et de leur marche à suivre
+│   ├── ImportInterventions.php  Import d'interventions et de plannings (Excel / CSV)
+│   ├── routes/             32 modules (auth, inventaire, maintenance, connect, supervision, assistant, rgpd, aide, …)
+│   ├── connect/            Larka Connect : pilotes (Modbus, BACnet, MQTT, REST, CSV, OCPP, wM-Bus, simulateur), collecte,
+│   │                       alarmes, relevés automatiques, services OCPP et LoRaWAN, PC releveurs
+│   ├── outils/             En ligne de commande : sauvegarde-auto, prerequis, mise-a-jour, postgresql, codes-erreur,
+│   │                       connect-collecte, connect-ocpp, connect-demo, supervision, supervision-pont
 │   └── extensions/         Couche des modules déclaratifs
 │       ├── Registre.php    Installation, activation, rôles accordés, exécution
 │       ├── Manifeste.php   Chargement et validation d'une déclaration
@@ -730,36 +807,37 @@ larka/
 │       ├── declaratif/     Schema · Moteur · Expression (91 fn) · Condition (33 op)
 │       ├── securite/       Médiation des requêtes, politique de données, surveillance
 │       └── outils/         construire-paquet.php (fabrique un .larka)
-├── js/                     Frontend : cœur + 36 pages + filtres (lazy-loadés)
+├── js/                     Frontend : cœur + 40 pages + filtres (lazy-loadés)
 │   ├── declaratif.js       Rendu des écrans décrits par un module
 │   ├── extensions.js       Chargement des modules côté client
 │   └── vendor/             Leaflet (cartes) · pdf.js (plans PDF) · SheetJS (import Excel)
 │                           — servis par Larka, aucun CDN tiers (ZXing : js/zxing-browser.min.js)
 ├── css/                    10 feuilles de style + polices WOFF2 embarquées
-├── lang/                   fr.json (catalogue des libellés) · en.json (traduction, ligne pour ligne)
-│                           · complements.json (libellés que l'extraction ne voit pas)
+├── lang/                   traductions.json : toutes les traductions de l'interface, une ligne par libellé
 ├── oauth/                  Callbacks OAuth (microsoft.php, google.php)
 ├── extensions/             Modules livrés : modules/ · themes/ · langues/ · config/
 ├── outils/                 Développement uniquement — NON déployé
 │   ├── verifier-module.php Valide une déclaration contre le schéma du serveur
-│   ├── epreuves/           22 suites PHP + 2 JS, ≈ 1 900 contrôles (voir epreuves/README.md)
-│   └── langues/            Extraction des libellés, construction et vérification des packs de langue
+│   ├── epreuves/           30 suites PHP + 3 JS, ≈ 2 400 contrôles (voir epreuves/README.md)
+│   ├── langues/            Extraction des libellés, construction et vérification des packs de langue
+│   └── simulateurs/        Équipements simulés pour Larka Connect (Modbus, BACnet, MQTT, REST, CSV, OCPP)
 ├── demo/                   Démonstration « Ville de Larkaville » (données fictives) — NON déployée
 ├── deploy/                 install.sh · nginx.conf · php-fpm-gmao.conf · gmao.service
 │   │                       ollama-larka.conf · Modelfile.larka   (assistant IA local)
 │   └── windows/            larka.php (lanceur) · installer-php.ps1 (PHP pour Windows) · larka.ico
-├── Documentations/         DAT + manuels (.docx) + référence du format déclaratif
-│                           + 9 modules d'exemple vérifiés
+├── Documentations/         DAT + manuels (.docx, version 3.0) + référence du format déclaratif
+│                           + 9 modules d'exemple vérifiés + LARKA-CONNECT.md + CODES-ERREUR.md
+│                           + NOTES-3.0.0.md (notes de version détaillées)
 ├── licenses/               Textes des licences tierces (Apache-2.0, OFL-1.1, MIT, BSD)
 ├── version.json            Version, canal, date et prérequis de la version
 ├── php/                    (Windows) PHP installé par Larka.cmd — absent de l'archive
 └── data/                   Runtime hors web : backups, logs, sessions, security,
                             urgences (médias), extensions (modules installés),
-                            run (PID, état des sauvegardes automatiques)
+                            run (PID, état des sauvegardes et de la collecte),
+                            connect/imports (exports CSV des GTB)
 ```
 
 ---
-
 
 ## 🤝 Contribuer
 
@@ -767,10 +845,11 @@ Les contributions sont les bienvenues. Quelques points utiles :
 
 - Lancez `./start.sh doctor` avant d'ouvrir une issue d'installation.
 - Avant un commit : `php -l` sur les fichiers PHP modifiés et `node --check` sur les fichiers JS.
-- Avant une livraison : `bash outils/epreuves/toutes.sh` (≈ 1 900 contrôles ;
+- Avant une livraison : `bash outils/epreuves/toutes.sh` (≈ 2 400 contrôles ;
   huit suites demandent une base configurée, SQLite suffit ;
   `LARKA_EPREUVE_PG="host=…;port=…;dbname=…;user=…;password=…"` ajoute les volets
-  PostgreSQL). `./start.sh prod` lance les plus rapides tout seul et **refuse de
+  PostgreSQL, `LARKA_EPREUVE_MYSQL="…"` le volet MariaDB / MySQL — chacun sur une base
+  vide dédiée). `./start.sh prod` lance les plus rapides tout seul et **refuse de
   déployer** si l'une échoue.
 - En ajoutant un libellé à l'interface : `php outils/langues/extraire-libelles.php`,
   puis `php outils/langues/construire-pack.php en` — voir
