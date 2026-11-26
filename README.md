@@ -59,7 +59,7 @@ public, et l'ergonomie s'en ressent.
 
 ### Version
 
-**Version 3.0.1 bêta (V.Beta 3.0.1) — correctifs de sécurité et retours d'usage de la 3.0.0**. **La 3.0.0** succède à la 2.1.1 : Larka Connect (bâtiments connectés), préventif et contrôles réglementaires par plans, import d'interventions, confirmation d'identité, codes d'erreur — résumés dans la [présentation des nouveautés](#-larka-vbeta-300--la-mise-à-jour-connectée). Larka s'installe sur un serveur Linux comme sur un poste
+**Version 3.0.1 bêta (V.Beta 3.0.1) — correctifs de sécurité et retours d'usage de la 3.0.1**. **La 3.0.1** succède à la 2.1.1 : Larka Connect (bâtiments connectés), préventif et contrôles réglementaires par plans, import d'interventions, confirmation d'identité, codes d'erreur — résumés dans la [présentation des nouveautés](#-larka-vbeta-300--la-mise-à-jour-connectée). Larka s'installe sur un serveur Linux comme sur un poste
 Windows (d'un double-clic), avec une démonstration complète ; sauvegardes automatiques, politique de protection
 des données personnalisable par organisation, prérequis vérifiés avant toute installation ou mise à jour, aide
 intégrée propre à chaque rôle, interface en français et en anglais. Les nouveautés de chaque version sont
