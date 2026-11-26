@@ -2797,6 +2797,7 @@
   "Image de plan (PNG, JPG, GIF, WebP, PDF)": {"en":"Plan image (PNG, JPG, GIF, WebP, PDF)"},
   "Image introuvable": {"en":"Image not found"},
   "Images de fond": {"en":"Background images"},
+  "Images de fond — dossier data/plans": {"en":"Background images — data/plans folder"},
   "Image trop lourde (max 3 Mo)": {"en":"Image too large (max 3 MB)"},
   "Image trop volumineuse (max 500 Ko).": {"en":"Image too large (max 500 KB)."},
   "Image téléversée": {"en":"Image uploaded"},

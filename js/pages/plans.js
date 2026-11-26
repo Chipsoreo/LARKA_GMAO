@@ -1444,7 +1444,7 @@ async function _planShowFonds() {
     html += linked.map(renderRow).join('');
   }
 
-  openModal((lk('image') + ' Images de fond — dossier <code>data/plans</code>'), html);
+  openModal('Images de fond — dossier data/plans', html);   // titre en texte : ni icône ni balise
 }
 
 // Rattacher un fichier orphelin à un étage existant

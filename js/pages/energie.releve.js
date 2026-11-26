@@ -164,7 +164,10 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
     }
   }
 
-  openModal(isNew ? `Nouvelle saisie ${cfg.icon} ${type}` : `Modifier saisie`, `
+  // Le titre d'une fenêtre est posé en TEXTE (openModal → textContent) : une
+  // icône (balise <i>) s'y affichait en clair. Nom du fluide en toutes lettres.
+  const nomFluide = ({ Electricite: 'Électricité' })[type] || type;
+  openModal(isNew ? `Nouvelle saisie — ${nomFluide}` : `Modifier saisie`, `
   <div style="display:flex;flex-direction:column;gap:16px">
 
     <div>
