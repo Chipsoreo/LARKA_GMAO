@@ -23,7 +23,7 @@
  *      env de conteneur…) lue via getenv()
  *   2. valeur du fichier .env
  *
- * ⚠️ IMPORTANT — robustesse PHP-FPM :
+ * IMPORTANT — robustesse PHP-FPM :
  * On n'appelle volontairement PAS putenv() pour les valeurs du fichier .env.
  * En effet, putenv() modifie l'environnement du PROCESSUS, et un worker FPM
  * réutilisé conserverait alors une ancienne valeur d'une requête à l'autre

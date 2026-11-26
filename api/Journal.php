@@ -45,6 +45,8 @@
  *      Journal::erreur('api', 'Échec Graph', ['exception' => $e]);
  */
 
+require_once __DIR__ . '/CodesErreur.php';
+
 final class Journal
 {
     // ── Niveaux, du plus bavard au plus grave ────────────────────────────────
@@ -190,7 +192,11 @@ final class Journal
             // 2. Base — si disponible, sinon mise en tampon pour plus tard.
             if (self::$pdo !== null && self::$tablePrete) {
                 self::ecrireBase($entree);
-            } else {
+            } elseif (!self::$detache) {
+                // Avant l'ouverture de la base (démarrage) : gardée pour elle. Base
+                // détachée exprès (service permanent, entre deux organisations) :
+                // fichiers seulement — sinon l'entrée irait dans la base de
+                // l'organisation suivante.
                 if (count(self::$tampon) < 200) self::$tampon[] = $entree;
             }
         } catch (\Throwable $e) {
@@ -209,7 +215,7 @@ final class Journal
         // Contexte utilisateur : lu depuis la session, sans la démarrer si elle
         // ne l'est pas (on ne veut aucun effet de bord ici).
         //
-        // ⚠️ LE JOURNAL D'AUDIT N'A JAMAIS ENREGISTRÉ SON AUTEUR.
+        // LE JOURNAL D'AUDIT N'A JAMAIS ENREGISTRÉ SON AUTEUR.
         // Ce bloc lisait $_SESSION['user_login'], ['user_role'] et ['user_id'],
         // clés que l'application n'a jamais posées : l'utilisateur connecté vit
         // dans $_SESSION['user'] (Id, Login, Role — voir routes/auth.php), le
@@ -262,9 +268,21 @@ final class Journal
         $apres = $ctx['_apres'] ?? null;
         unset($ctx['_avant'], $ctx['_apres']);
 
+        // Code d'erreur (api/CodesErreur.php) : posé par l'appelant quand il sait
+        // précisément ce qui s'est passé, sinon reconnu d'après le message. Il
+        // donne à l'écran l'explication complète et la marche à suivre.
+        $code = isset($ctx['code']) && is_string($ctx['code']) && CodesErreur::existe($ctx['code']) ? $ctx['code'] : null;
+        if ($code === null && !array_key_exists('code', $ctx)) {
+            try {
+                $code = CodesErreur::reconnaitre((string)$message, $canal, $niveau,
+                    isset($ctx['codeHttp']) ? (int)$ctx['codeHttp'] : null,
+                    (string)($exception['message'] ?? ''), (string)($exception['type'] ?? ''));
+            } catch (\Throwable $x) { $code = null; }
+        }
+
         // Le reste du contexte, nettoyé des clés déjà promues en colonnes.
         $extra = $ctx;
-        foreach (['login','role','utilisateurId','action','entiteType','entiteId','codeHttp','dureeMs'] as $k) {
+        foreach (['login','role','utilisateurId','action','entiteType','entiteId','codeHttp','dureeMs','code'] as $k) {
             unset($extra[$k]);
         }
         if ($exception) $extra['exception'] = $exception;
@@ -292,13 +310,14 @@ final class Journal
             // contenant un mot de passe ou un token dans le contexte libre.
             'Contexte'      => self::encoder(self::nettoyer($extra) ?: null),
             'RequestId'     => self::requestId(),
+            'Code'          => $code,
         ];
     }
 
     /** IP réelle du client, en tenant compte d'un éventuel reverse proxy. */
     private static function ip(): string
     {
-        // ⚠️ FIX : X-Forwarded-For était cru quelle que soit la provenance —
+        // FIX : X-Forwarded-For était cru quelle que soit la provenance —
         // n'importe quel client pouvait inscrire l'IP de son choix au journal.
         // client_ip() (config.php) ne le lit que derrière un proxy de confiance.
         if (function_exists('client_ip')) return substr(client_ip(), 0, 45);
@@ -371,10 +390,10 @@ final class Journal
     {
         $sql = "INSERT INTO Journal
                 (DateHeure,Niveau,Canal,Action,Message,UtilisateurId,Login,Role,Ip,UserAgent,
-                 Methode,Route,CodeHttp,DureeMs,EntiteType,EntiteId,Avant,Apres,Contexte,RequestId)
+                 Methode,Route,CodeHttp,DureeMs,EntiteType,EntiteId,Avant,Apres,Contexte,RequestId,Code)
                 VALUES
                 (:DateHeure,:Niveau,:Canal,:Action,:Message,:UtilisateurId,:Login,:Role,:Ip,:UserAgent,
-                 :Methode,:Route,:CodeHttp,:DureeMs,:EntiteType,:EntiteId,:Avant,:Apres,:Contexte,:RequestId)";
+                 :Methode,:Route,:CodeHttp,:DureeMs,:EntiteType,:EntiteId,:Avant,:Apres,:Contexte,:RequestId,:Code)";
         $st = self::$pdo->prepare($sql);
         foreach ($e as $k => $v) $st->bindValue(':' . $k, $v);
         $st->execute();
@@ -408,15 +427,23 @@ final class Journal
             $corps = trim(($e['Methode'] ?? '') . ' ' . ($e['Route'] ?? ''));
             if ($e['CodeHttp'] !== null) $corps .= ' → ' . $e['CodeHttp'];
             if ($e['DureeMs'] !== null)  $corps .= ' (' . $e['DureeMs'] . ' ms)';
+            // Requête refusée : la raison donnée à l'utilisateur (« route — raison »).
+            $p = strpos((string)$e['Message'], ' — ');
+            if ($p !== false) $corps .= ' : ' . substr((string)$e['Message'], $p + strlen(' — '));
         }
 
+        $code = (string)($e['Code'] ?? '');
         $ligne = sprintf(
-            "%s  %-8s %-10s %-26s %s",
-            $heure, $niveau, $canal, self::couper($qui, 28), $corps
+            "%s  %-8s %-10s %-26s %s%s",
+            $heure, $niveau, $canal, self::couper($qui, 28), $code !== '' ? "[$code] " : '', $corps
         );
 
         // Lignes de détail, indentées sous l'évènement.
         $details = [];
+        // Un incident codé : ce que c'est, et la première chose à faire.
+        if ($code !== '' && in_array($e['Niveau'], ['warning', 'error', 'critique'], true) && ($f = CodesErreur::fiche($code))) {
+            $details[] = $f['titre'] . ' — à faire : ' . (string)($f['remedes'][0] ?? '');
+        }
 
         // Modifications : « champ : ancien → nouveau », le plus utile au
         // quotidien pour savoir qui a changé quoi.
@@ -534,11 +561,26 @@ final class Journal
     //  Table et rétention
     // ═════════════════════════════════════════════════════════════════════════
 
+    /** Connexions déjà préparées (table créée, colonnes à jour) : le service permanent passe d'une base à l'autre. */
+    private static array $preparees = [];
+
     private static function assurerTable(): void
     {
-        self::creerTable(self::$pdo);
+        $id = spl_object_id(self::$pdo);
+        if (!isset(self::$preparees[$id])) { self::creerTable(self::$pdo); self::$preparees[$id] = true; }
         self::$tablePrete = true;
     }
+
+    /** Détache la base : les entrées suivantes vont aux fichiers seulement (service permanent, entre deux organisations). */
+    public static function detacherBase(): void
+    {
+        self::viderTampon();
+        self::$pdo = null;
+        self::$tablePrete = false;
+        self::$detache = true;
+    }
+
+    private static bool $detache = false;
 
     /**
      * Crée la table Journal (et ses index) sur une connexion donnée.
@@ -564,8 +606,12 @@ final class Journal
                 UtilisateurId INTEGER, Login TEXT, Role TEXT, Ip TEXT, UserAgent TEXT,
                 Methode TEXT, Route TEXT, CodeHttp INTEGER, DureeMs INTEGER,
                 EntiteType TEXT, EntiteId INTEGER,
-                Avant $txt, Apres $txt, Contexte $txt, RequestId TEXT)"
+                Avant $txt, Apres $txt, Contexte $txt, RequestId TEXT, Code TEXT)"
         );
+        // Code d'erreur (3.0.0) : ajouté aux journaux créés avant lui.
+        if (!self::aLaColonne($pdo, 'Code')) {
+            try { $pdo->exec('ALTER TABLE Journal ADD COLUMN Code ' . ($driver === 'mysql' ? 'VARCHAR(12)' : 'TEXT')); } catch (\Throwable $e) { /* déjà là */ }
+        }
         foreach ([
             'CREATE INDEX IF NOT EXISTS idx_journal_date    ON Journal(DateHeure)',
             'CREATE INDEX IF NOT EXISTS idx_journal_niveau  ON Journal(Niveau)',
@@ -573,9 +619,23 @@ final class Journal
             'CREATE INDEX IF NOT EXISTS idx_journal_login   ON Journal(Login)',
             'CREATE INDEX IF NOT EXISTS idx_journal_entite  ON Journal(EntiteType, EntiteId)',
             'CREATE INDEX IF NOT EXISTS idx_journal_request ON Journal(RequestId)',
+            'CREATE INDEX IF NOT EXISTS idx_journal_code    ON Journal(Code)',
         ] as $sql) {
             try { $pdo->exec($sql); } catch (\Throwable $e) { /* index optionnel */ }
         }
+    }
+
+    /** La table Journal a-t-elle cette colonne ? (sans erreur si la table manque) */
+    private static function aLaColonne(PDO $pdo, string $col): bool
+    {
+        try {
+            $st = $pdo->query('SELECT * FROM Journal WHERE 1 = 0');
+            for ($i = 0, $n = $st ? $st->columnCount() : 0; $i < $n; $i++) {
+                $m = $st->getColumnMeta($i);
+                if (strcasecmp((string)($m['name'] ?? ''), $col) === 0) return true;
+            }
+        } catch (\Throwable $e) {}
+        return false;
     }
 
     /**

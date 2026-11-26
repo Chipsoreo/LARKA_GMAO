@@ -1,0 +1,6 @@
+# App mobile Larka (déposée par « npm run apk » dans mobile/) : téléchargement direct.
+AddType application/vnd.android.package-archive .apk
+<FilesMatch "\.apk$">
+    Header set Content-Disposition "attachment; filename=larka.apk"
+</FilesMatch>
+Options -Indexes

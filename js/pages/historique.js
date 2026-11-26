@@ -25,6 +25,8 @@ const HistoriqueState = {
   showSuppressions:   true,
   showDemandes:       true,
   showInterventions:  true,
+  showPreventif:      true,
+  showControles:      true,
   showComptaClotures: true,
   showSorties:        true,
   module:             '',
@@ -32,6 +34,19 @@ const HistoriqueState = {
   dateFin:            '',
   statutDemande:      '',
 };
+
+// Interventions archivées, en trois blocs : les interventions (curatives,
+// divers…), le préventif et les contrôles réglementaires — comme le menu
+// Maintenance. `garde` dit à quel bloc revient une fiche archivée.
+const _HISTO_NATURES = ['Préventive', 'Contrôle réglementaire'];
+const _HISTO_GROUPES_INTERV = [
+  { cle: 'interv', etat: 'showInterventions', case: (lk('wrench') + ' Interventions archivées'), titre: (lk('wrench') + ' Interventions archivées'),
+    vide: 'Aucune intervention archivée.', garde: r => !_HISTO_NATURES.includes(r.Type) },
+  { cle: 'prev',   etat: 'showPreventif',     case: (lk('calendar-days') + ' Préventif archivé'),       titre: (lk('calendar-days') + ' Préventif archivé'),
+    vide: 'Aucun passage préventif archivé.', garde: r => r.Type === 'Préventive' },
+  { cle: 'ctrl',   etat: 'showControles',     case: (lk('circle-check', 'ok') + ' Contrôles archivés'),      titre: (lk('circle-check', 'ok') + ' Contrôles réglementaires archivés'),
+    vide: 'Aucun contrôle réglementaire archivé.', garde: r => r.Type === 'Contrôle réglementaire' },
+];
 
 async function renderHistorique() {
   document.getElementById('topbarActions').innerHTML = '';
@@ -87,7 +102,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
     <div style="padding:14px 20px;border-bottom:1px solid var(--gray-border)">
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
         <div class="search-input-wrap" style="flex:1;min-width:200px">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon">${lk('search')}</span>
           <input class="search-input" type="text" placeholder="Rechercher…"
             value="${App.searchTerm||''}" oninput="App.handleSearch(this.value)" onkeydown="App.handleSearchKey(event)">
         </div>
@@ -103,28 +118,29 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
         ${isManager ? `
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none">
           <input type="checkbox" id="chkSup" ${st.showSuppressions?'checked':''} onchange="toggleHisto('sup',this.checked)" style="width:15px;height:15px">
-          <span>🗑️ Suppressions</span>
+          <span>${lk('trash')} Suppressions</span>
           <span style="background:var(--gray-border);border-radius:10px;padding:1px 8px;font-size:11px">${suppressions.length}</span>
         </label>` : ''}
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none">
           <input type="checkbox" id="chkDem" ${st.showDemandes?'checked':''} onchange="toggleHisto('dem',this.checked)" style="width:15px;height:15px">
-          <span>📁 Demandes clôturées</span>
+          <span>${lk('folder')} Demandes clôturées</span>
           <span style="background:var(--gray-border);border-radius:10px;padding:1px 8px;font-size:11px">${demandes.length}</span>
         </label>
         ${isManager ? `
+        ${_HISTO_GROUPES_INTERV.map(g => `
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none">
-          <input type="checkbox" id="chkInterv" ${st.showInterventions?'checked':''} onchange="toggleHisto('interv',this.checked)" style="width:15px;height:15px">
-          <span>🔧 Interventions archivées</span>
-          <span style="background:var(--gray-border);border-radius:10px;padding:1px 8px;font-size:11px">${interventionsArchivees.length}</span>
-        </label>
+          <input type="checkbox" id="chk_${g.cle}" ${st[g.etat]?'checked':''} onchange="toggleHisto('${g.cle}',this.checked)" style="width:15px;height:15px">
+          <span>${g.case}</span>
+          <span style="background:var(--gray-border);border-radius:10px;padding:1px 8px;font-size:11px">${interventionsArchivees.filter(g.garde).length}</span>
+        </label>`).join('')}
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none">
           <input type="checkbox" id="chkCompta" ${st.showComptaClotures?'checked':''} onchange="toggleHisto('compta',this.checked)" style="width:15px;height:15px">
-          <span>🔒 Fiches compta clôturées</span>
+          <span>${lk('lock')} Fiches compta clôturées</span>
           <span style="background:var(--gray-border);border-radius:10px;padding:1px 8px;font-size:11px">${comptaClotures.length}</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none">
           <input type="checkbox" id="chkSorties" ${st.showSorties?'checked':''} onchange="toggleHisto('sorties',this.checked)" style="width:15px;height:15px">
-          <span>📋 Inventaire complet</span>
+          <span>${lk('clipboard-list')} Inventaire complet</span>
           <span style="background:var(--gray-border);border-radius:10px;padding:1px 8px;font-size:11px">${tousBiens.length + tousEquipements.length}</span>
         </label>` : ''}
       </div>
@@ -135,19 +151,20 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
 
   let hasContent = false;
 
-  // ── Bloc interventions archivées ───────────────────────────────────────────────
-  if (isManager && st.showInterventions) {
-    let rows = interventionsArchivees;
+  // ── Blocs interventions archivées : interventions, préventif, contrôles ────────
+  if (isManager) _HISTO_GROUPES_INTERV.forEach(groupe => {
+    if (!st[groupe.etat]) return;
+    let rows = interventionsArchivees.filter(groupe.garde);
     if (feFrom) rows = rows.filter(r => (r.DateArchivage||r.DateValidation||r.DateRealisation) >= feFrom);
     if (feTo)   rows = rows.filter(r => (r.DateArchivage||r.DateValidation||r.DateRealisation) <= feTo + 'T23:59:59');
     if (feTypeInterv) rows = rows.filter(r => r.Type === feTypeInterv);
     if (feAuteur)     rows = rows.filter(r => [r.SocieteManuelle, r.TechnicienNom, r.CreatedBy].some(v=>(v||'').toLowerCase().includes(feAuteur)));
     if (search) rows = rows.filter(r =>
-      [r.Numero, r.Description, r.SocieteManuelle, r.BienNumero, r.DemandeTitre, r.Type].some(v=>(v||'').toLowerCase().includes(search))
+      [r.Numero, r.Description, r.SocieteManuelle, r.BienNumero, r.DemandeTitre, r.Type, r.PlanNumero, r.PlanTitre].some(v=>(v||'').toLowerCase().includes(search))
     );
 
     // Pagination
-    const keyInterv = 'historique_interv';
+    const keyInterv = 'historique_' + groupe.cle;
     const totalInterv = rows.length;
     const totalPagesInterv = (perPage === 'all') ? 1 : Math.max(1, Math.ceil(totalInterv / perPage));
     let pageInterv = App.getPage(keyInterv);
@@ -164,7 +181,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
     html += `
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
-        <div class="card-title">🔧 Interventions archivées</div>
+        <div class="card-title">${groupe.titre}</div>
         <span style="font-size:12px;color:var(--gray-text)">${totalInterv} entrée${totalInterv>1?'s':''}</span>
       </div>
       <div class="table-wrap"><table><thead><tr>
@@ -172,7 +189,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
       </tr></thead><tbody>`;
 
     if (!totalInterv) {
-      html += `<tr><td colspan="7" class="no-results">Aucune intervention archivée.</td></tr>`;
+      html += `<tr><td colspan="7" class="no-results">${groupe.vide}</td></tr>`;
     } else {
       pageRowsInterv.forEach(r => {
         const coutTotal = (parseFloat(r.MontantPieces)||0) + (parseFloat(r.MontantMainOeuvre)||0) + (parseFloat(r.Montant)||0) + (parseFloat(r.MontantHT)||0);
@@ -181,7 +198,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
           onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">
           <td style="font-family:monospace;font-size:12px">${escHtml(r.Numero||'—')}</td>
           <td><span class="badge badge-${color}">${escHtml(r.Type||'—')}</span></td>
-          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.Description||'—')}</td>
+          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.Description||'—')}${r.PlanNumero ? `<div style="font-size:11px;color:var(--gray-text)" title="Plan">${lk('calendar-days')} ${escHtml(r.PlanNumero)}${r.PlanTitre ? ' — ' + escHtml(r.PlanTitre) : ''}</div>` : ''}</td>
           <td style="color:var(--gray-text);font-size:12px">${r.BienNumero?`${escHtml(r.BienNumero||'')}${r.BienLabel?' — '+r.BienLabel:''}` : '—'}</td>
           <td style="font-weight:600;color:var(--blue)">${coutTotal>0?fmtMon(coutTotal):'—'}</td>
           <td style="color:var(--gray-text);font-size:12px">${r.DateRealisation ? new Date(r.DateRealisation).toLocaleDateString('fr-FR') : '—'}</td>
@@ -205,7 +222,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
           </div>` : ''}
       </div>
     </div>`;
-  }
+  });
 
   // ── Bloc suppressions ──────────────────────────────────────────────────────────
   if (isManager && st.showSuppressions) {
@@ -233,7 +250,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
     html += `
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
-        <div class="card-title">🗑️ Historique des suppressions</div>
+        <div class="card-title">${lk('trash')} Historique des suppressions</div>
         <span style="font-size:12px;color:var(--gray-text)">${totalSup} entrée${totalSup>1?'s':''}</span>
       </div>
       <div class="table-wrap"><table><thead><tr>
@@ -305,7 +322,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
     html += `
     <div class="card">
       <div class="card-header">
-        <div class="card-title">📁 Demandes clôturées ${!isManager ? '— Mes demandes' : ''}</div>
+        <div class="card-title">${lk('folder')} Demandes clôturées ${!isManager ? '— Mes demandes' : ''}</div>
         <span style="font-size:12px;color:var(--gray-text)">${totalDem} demande${totalDem>1?'s':''}</span>
       </div>
       <div class="table-wrap"><table><thead><tr>
@@ -362,7 +379,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
     html += `
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
-        <div class="card-title">🔒 Fiches comptables clôturées</div>
+        <div class="card-title">${lk('lock')} Fiches comptables clôturées</div>
         <span style="font-size:12px;color:var(--gray-text)">${rows.length} fiche${rows.length>1?'s':''}</span>
       </div>
       <div class="table-wrap"><table><thead><tr>
@@ -373,7 +390,7 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
       html += `<tr><td colspan="9" class="no-results">Aucune fiche clôturée.</td></tr>`;
     } else {
       rows.forEach(r => {
-        const asset = `${r.AssetType === 'Bien' ? '🏢' : '⚙️'} ${escHtml(r.AssetNumero||'')} ${escHtml(r.AssetLabel||'')}`.trim();
+        const asset = `${r.AssetType === 'Bien' ? lk('building-complex') : lk('settings')} ${escHtml(r.AssetNumero||'')} ${escHtml(r.AssetLabel||'')}`.trim();
         const amort = r.DureeAmortissement ? `${r.DureeAmortissement} ans` : '—';
         html += `<tr style="cursor:pointer" onclick="voirFicheComptaCloture(${r.Id})" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">
           <td style="font-weight:600;font-size:12px;font-family:monospace">${escHtml(r.NumeroImmo||'—')}</td>
@@ -394,8 +411,8 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
   // ── Bloc inventaire complet (biens + équipements) — lecture seule ─────────────
   if (isManager && st.showSorties) {
     const allItems = [
-      ...tousBiens.map(b => ({...b, _type:'Bien', _icon:'🏢', _label:b.Numero, _detail:b.InfoProduit||b.Famille||'', _dateSortie:b.DateSortie||'', _commentaire:b.CommentaireSortie||'', _prix:b.Prix, _compta: comptaAssetKeys.has(`Bien-${b.Id}`), _dateRef: b.DateSortie||b.UpdatedAt||b.CreatedAt||''})),
-      ...tousEquipements.map(e => ({...e, _type:'Équipement', _icon:'⚙️', _label:e.Numero, _detail:[e.Marque,e.Modele].filter(Boolean).join(' ')||e.Famille||'', _dateSortie:e.DateSortie||'', _commentaire:e.CommentaireSortie||'', _prix:e.Prix, _compta: comptaAssetKeys.has(`Equipement-${e.Id}`), _dateRef: e.DateSortie||e.UpdatedAt||e.CreatedAt||''})),
+      ...tousBiens.map(b => ({...b, _type:'Bien', _icon:lk('building-complex'), _label:b.Numero, _detail:b.InfoProduit||b.Famille||'', _dateSortie:b.DateSortie||'', _commentaire:b.CommentaireSortie||'', _prix:b.Prix, _compta: comptaAssetKeys.has(`Bien-${b.Id}`), _dateRef: b.DateSortie||b.UpdatedAt||b.CreatedAt||''})),
+      ...tousEquipements.map(e => ({...e, _type:'Équipement', _icon:lk('settings'), _label:e.Numero, _detail:[e.Marque,e.Modele].filter(Boolean).join(' ')||e.Famille||'', _dateSortie:e.DateSortie||'', _commentaire:e.CommentaireSortie||'', _prix:e.Prix, _compta: comptaAssetKeys.has(`Equipement-${e.Id}`), _dateRef: e.DateSortie||e.UpdatedAt||e.CreatedAt||''})),
     ];
     let rows = allItems;
     if (feFrom) rows = rows.filter(r => (r._dateRef||'') >= feFrom);
@@ -418,9 +435,9 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
     html += `
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
-        <div class="card-title">📋 Inventaire complet — Biens & Équipements</div>
+        <div class="card-title">${lk('clipboard-list')} Inventaire complet — Biens & Équipements</div>
         <div style="display:flex;gap:12px;align-items:center">
-          ${nbNonCompta > 0 ? `<span style="font-size:12px;color:var(--red);font-weight:600">⚠️ ${nbNonCompta} non comptabilisé${nbNonCompta>1?'s':''}</span>` : ''}
+          ${nbNonCompta > 0 ? `<span style="font-size:12px;color:var(--red);font-weight:600">${lk('triangle-exclamation-point', 'warn')} ${nbNonCompta} non comptabilisé${nbNonCompta>1?'s':''}</span>` : ''}
           <span style="font-size:12px;color:var(--gray-text)">${rows.length} élément${rows.length>1?'s':''}</span>
         </div>
       </div>
@@ -436,20 +453,20 @@ function _renderHistorique(c, suppressions, demandes, interventionsArchivees, co
         const isSorti = ['Jete/Recycle','Don/Vendu'].includes(r.Etat);
         const rowStyle = isSorti ? 'opacity:0.65;' : '';
         const comptaBadge = r._compta
-          ? '<span class="badge badge-teal" style="font-size:10px">✅ Oui</span>'
-          : '<span class="badge badge-red" style="font-size:10px">⚠️ Non</span>';
+          ? ('<span class="badge badge-teal" style="font-size:10px">' + lk('circle-check', 'ok') + ' Oui</span>')
+          : ('<span class="badge badge-red" style="font-size:10px">' + lk('triangle-exclamation-point', 'warn') + ' Non</span>');
         html += `<tr style="cursor:pointer;${rowStyle}" onclick="${viewFn}(${r.Id})"
           onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">
           <td>${r._icon} ${r._type}</td>
           <td style="font-family:monospace;font-weight:600;font-size:12px">${r._label||'—'}</td>
-          <td style="font-size:12px">${r._detail||'—'}</td>
+          <td style="font-size:12px">${escHtml(r._detail||'—')}</td>
           <td>${etatBadge(r.Etat)}</td>
           <td>${comptaBadge}</td>
           <td style="text-align:right;font-weight:600;color:var(--blue);font-size:12px">${fmtMon3(r._prix)}</td>
           <td style="font-size:12px;color:var(--gray-text)">${escHtml(r.Batiment||'—')}</td>
           <td style="font-size:11px;color:var(--gray-text)">${escHtml(r.CreatedBy||'—')}</td>
           <td style="font-size:11px;color:var(--gray-text)">${escHtml(r.UpdatedBy||'—')}</td>
-          <td><button class="icon-btn" onclick="event.stopPropagation();${viewFn}(${r.Id})" title="Consulter la fiche">👁️</button></td>
+          <td><button class="icon-btn" onclick="event.stopPropagation();${viewFn}(${r.Id})" title="Consulter la fiche">${lk('eye')}</button></td>
         </tr>`;
       });
     }
@@ -470,6 +487,8 @@ function toggleHisto(type, val) {
   if (type === 'sup')   HistoriqueState.showSuppressions  = val;
   if (type === 'dem')   HistoriqueState.showDemandes      = val;
   if (type === 'interv') HistoriqueState.showInterventions = val;
+  if (type === 'prev')   HistoriqueState.showPreventif     = val;
+  if (type === 'ctrl')   HistoriqueState.showControles     = val;
   if (type === 'compta') HistoriqueState.showComptaClotures = val;
   if (type === 'sorties') HistoriqueState.showSorties = val;
   App.renderCurrentPage();
@@ -485,12 +504,12 @@ async function voirFicheComptaCloture(id) {
 
     const fmtM = v => v ? parseFloat(v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}) : '—';
     const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '—';
-    const asset = `${r.AssetType === 'Bien' ? '🏢 Bien' : '⚙️ Équipement'} — ${escHtml(r.AssetNumero||'')} ${escHtml(r.AssetLabel||'')}`.trim();
+    const asset = `${r.AssetType === 'Bien' ? (lk('building-complex') + ' Bien') : (lk('settings') + ' Équipement')} — ${escHtml(r.AssetNumero||'')} ${escHtml(r.AssetLabel||'')}`.trim();
 
-    openModal(`🔒 Fiche compta clôturée — ${escHtml(r.NumeroImmo||'N/A')}`, `
+    openModal(`Fiche compta clôturée — ${escHtml(r.NumeroImmo||'N/A')}`, `
     <div style="display:flex;flex-direction:column;gap:16px;font-size:13px">
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📋 Identification</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('clipboard-list')} Identification</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>N° Immobilisation :</strong> ${escHtml(r.NumeroImmo||'—')}</div>
           <div><strong>Actif :</strong> ${asset}</div>
@@ -502,7 +521,7 @@ async function voirFicheComptaCloture(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">💰 Valorisation</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('wallet')} Valorisation</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Valeur d'achat :</strong> <span style="color:var(--blue);font-weight:600">${fmtM(r.ValeurAchat)}</span></div>
           <div><strong>Valeur vénale :</strong> ${fmtM(r.ValeurVenale)}</div>
@@ -514,7 +533,7 @@ async function voirFicheComptaCloture(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📅 Dates</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('calendar')} Dates</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Date d'achat :</strong> ${fmtD(r.DateAchat)}</div>
           <div><strong>Mise en service :</strong> ${fmtD(r.DateMiseEnService)}</div>
@@ -525,7 +544,7 @@ async function voirFicheComptaCloture(id) {
 
       ${r.User7 || r.Item ? `
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📝 Compléments</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('file-pen-line')} Compléments</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           ${r.User7 ? `<div><strong>User7 :</strong> ${escHtml(r.User7)}</div>` : ''}
           ${r.Item ? `<div><strong>Item :</strong> ${escHtml(r.Item)}</div>` : ''}
@@ -533,7 +552,7 @@ async function voirFicheComptaCloture(id) {
       </div>` : ''}
 
       <div style="background:rgba(220,53,69,0.06);border:1px solid rgba(220,53,69,0.2);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">🔒 Clôture</div>
+        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">${lk('lock')} Clôture</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Date :</strong> ${fmtD(r.DateCloture)}</div>
           <div><strong>Clôturé par :</strong> ${escHtml(r.ClotureParLogin||'—')}</div>
@@ -542,7 +561,7 @@ async function voirFicheComptaCloture(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">🔗 Traçabilité actif</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('link')} Traçabilité actif</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Créé par :</strong> ${escHtml(r.AssetCreatedBy||'—')}</div>
           <div><strong>Modifié par :</strong> ${escHtml(r.AssetUpdatedBy||'—')}</div>
@@ -592,11 +611,11 @@ async function voirInterventionArchivee(id) {
       if (devis.length) {
         devisHtml = `
         <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-          <div style="font-weight:700;margin-bottom:8px">📄 Devis</div>
+          <div style="font-weight:700;margin-bottom:8px">${lk('file-text')} Devis</div>
           ${devis.map(d => `
             <div style="display:flex;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray-border);font-size:12px;flex-wrap:wrap">
               <span style="font-weight:500">${escHtml(d.NumeroDevis||'—')}</span>
-              ${d.DateReception?`<span title="Date de réception du devis">📅 ${fmtD(d.DateReception)}</span>`:''}
+              ${d.DateReception?`<span title="Date de réception du devis">${lk('calendar')} ${fmtD(d.DateReception)}</span>`:''}
               <span>HT: ${fmtM(d.MontantHT)}</span>
               <span style="font-weight:600">TTC: ${fmtM(d.MontantTTC)}</span>
               <span class="badge badge-${d.Accepte==='Oui'?'teal':d.Accepte==='Non'?'red':'gray'}">${escHtml(d.Accepte||'—')}</span>
@@ -617,7 +636,7 @@ async function voirInterventionArchivee(id) {
         const det = (label, val) => val ? `<div><span style="color:var(--gray-text)">${label} :</span> ${val}</div>` : '';
         facturesHtml = `
         <div style="border-top:1px solid var(--gray-border);margin-top:14px;padding-top:14px">
-          <div style="font-weight:700;margin-bottom:10px">🧾 Factures / Engagement juridique <span style="color:var(--gray-text);font-weight:400;font-size:12px">(${factures.length})</span></div>
+          <div style="font-weight:700;margin-bottom:10px">${lk('receipt')} Factures / Engagement juridique <span style="color:var(--gray-text);font-weight:400;font-size:12px">(${factures.length})</span></div>
           <div style="display:flex;flex-direction:column;gap:10px">
           ${factures.map(f => `
             <div style="border:1px solid var(--gray-border);border-radius:8px;padding:10px 12px;background:var(--card-bg)">
@@ -635,7 +654,7 @@ async function voirInterventionArchivee(id) {
                 ${det('Montant TTC', (parseFloat(f.MontantTTC)||0) ? fmtM(f.MontantTTC) : '')}
                 ${det('Montant pour cette intervention', fmtM(f.MontantLigne))}
               </div>
-              ${f.AutresInterventions?`<div style="font-size:11px;color:var(--purple,#7c3aed);margin-top:6px">🔗 Cette facture couvre aussi : ${escHtml(f.AutresInterventions)}</div>`:''}
+              ${f.AutresInterventions?`<div style="font-size:11px;color:var(--purple,#7c3aed);margin-top:6px">${lk('link')} Cette facture couvre aussi : ${escHtml(f.AutresInterventions)}</div>`:''}
             </div>
           `).join('')}
           </div>
@@ -650,11 +669,11 @@ async function voirInterventionArchivee(id) {
       }
     } catch(e) {}
 
-    openModal(`🔧 Intervention archivée — ${escHtml(r.Numero||'N/A')}`, `
+    openModal(`Intervention archivée — ${escHtml(r.Numero||'N/A')}`, `
     <div style="display:flex;flex-direction:column;gap:16px;font-size:13px">
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📋 Informations générales</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('clipboard-list')} Informations générales</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           ${typeBadge} ${prioriteBadge}
           <span class="badge badge-gray">Archivée</span>
@@ -667,9 +686,9 @@ async function voirInterventionArchivee(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">👤 Agent créateur</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('user')} Agent créateur</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
-          <div><strong>Nom :</strong> ${[r.AgentPrenom, r.AgentNom].filter(Boolean).join(' ') || '—'}</div>
+          <div><strong>Nom :</strong> ${escHtml([r.AgentPrenom, r.AgentNom].filter(Boolean).join(' ') || '—')}</div>
           <div><strong>Téléphone :</strong> ${escHtml(r.AgentTel||'—')}</div>
           <div><strong>Email :</strong> ${escHtml(r.AgentEmail||'—')}</div>
           <div><strong>Créé par :</strong> ${escHtml(r.CreatedBy||'—')}</div>
@@ -677,23 +696,23 @@ async function voirInterventionArchivee(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">🔗 Liaisons</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('link')} Liaisons</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Bien :</strong> ${r.BienNumero ? `${escHtml(r.BienNumero||'')}${r.BienLabel ? ' — '+r.BienLabel : ''}` : '—'}</div>
-          <div><strong>Société :</strong> ${r.ContratSociete || r.SocieteManuelle || '—'}</div>
+          <div><strong>Société :</strong> ${escHtml(r.ContratSociete || r.SocieteManuelle || '—')}</div>
           <div><strong>Demande liée :</strong> ${escHtml(r.DemandeTitre||'—')}</div>
           <div><strong>CHMA / CBDC :</strong> ${escHtml(r.TypeBudget||'—')}</div>
         </div>
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📅 Dates</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('calendar')} Dates</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Date demande :</strong> ${fmtD(r.DateDemande)}</div>
-          <div><strong>Date intervention :</strong> ${fmtD(r.DateIntervention)}</div>
+          <div><strong>Date prévue :</strong> ${fmtD(r.DateIntervention)}</div>
           <div><strong>Date réalisation :</strong> ${fmtD(r.DateRealisation)}</div>
           <div><strong>Durée :</strong> ${r.DureeHeures ? r.DureeHeures+'h' : '—'}</div>
-          <div><strong>Code n° demande :</strong> ${escHtml(r.CodeNumeroDemande||'—')}</div>
+          <div><strong>Code / n° de demande :</strong> ${escHtml(r.CodeNumeroDemande||'—')}</div>
           <div><strong>Date envoi mail :</strong> ${fmtD(r.DateEnvoiMail)}</div>
         </div>
       </div>
@@ -701,7 +720,7 @@ async function voirInterventionArchivee(id) {
       ${devisHtml}
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">💶 Coûts & facturation</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('euro')} Coûts & facturation</div>
         <div style="display:flex;flex-direction:column;gap:6px;max-width:360px">
           <div style="display:flex;justify-content:space-between"><span>Pièces (stock consommé)</span><span style="font-weight:600">${cPieces>0?fmtM(cPieces):'—'}</span></div>
           <div style="display:flex;justify-content:space-between"><span>Main d'œuvre</span><span style="font-weight:600">${cMO>0?fmtM(cMO):'—'}</span></div>
@@ -715,18 +734,18 @@ async function voirInterventionArchivee(id) {
 
       ${r.Commentaire ? `
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">💬 Commentaire</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('message-circle')} Commentaire</div>
         <div style="white-space:pre-wrap">${escHtml(r.Commentaire||'')}</div>
       </div>` : ''}
 
       ${notesHtml ? `
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📝 Notes / Suivi</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('file-pen-line')} Notes / Suivi</div>
         ${notesHtml}
       </div>` : ''}
 
       <div style="background:rgba(107,114,128,0.08);border:1px solid rgba(107,114,128,0.2);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px;color:var(--gray-text)">📁 Archivage</div>
+        <div style="font-weight:700;margin-bottom:8px;color:var(--gray-text)">${lk('folder')} Archivage</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Validée le :</strong> ${fmtD(r.DateValidation)}</div>
           <div><strong>Archivée le :</strong> ${fmtD(r.DateArchivage)}</div>
@@ -750,28 +769,28 @@ async function voirSuppression(id) {
       Contrats:'purple', Stock:'gray', GestionMateriel:'green'
     };
     const modIcons = {
-      Biens:'🏢', Equipements:'⚙️', Interventions:'🔧',
-      Contrats:'📋', Stock:'📦', GestionMateriel:'💰'
+      Biens:lk('building-complex'), Equipements:lk('settings'), Interventions:lk('wrench'),
+      Contrats:lk('clipboard-list'), Stock:lk('package'), GestionMateriel:lk('wallet')
     };
 
-    openModal(`🗑️ Suppression — ${r.Numero||r.TableSource||'N/A'}`, `
+    openModal(`Suppression — ${r.Numero||r.TableSource||'N/A'}`, `
     <div style="display:flex;flex-direction:column;gap:16px;font-size:13px">
 
       <div style="background:rgba(220,53,69,0.06);border:1px solid rgba(220,53,69,0.2);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">🗑️ Élément supprimé</div>
+        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">${lk('trash')} Élément supprimé</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
-          <div><strong>Module :</strong> ${modIcons[r.TableSource]||'📄'} <span class="badge badge-${modColors[r.TableSource]||'gray'}">${escHtml(r.TableSource||'—')}</span></div>
+          <div><strong>Module :</strong> ${modIcons[r.TableSource]||lk('file-text')} <span class="badge badge-${modColors[r.TableSource]||'gray'}">${escHtml(r.TableSource||'—')}</span></div>
           <div><strong>N° / Réf. :</strong> <code style="font-size:12px;background:var(--gray-border);padding:2px 6px;border-radius:4px">${escHtml(r.Numero||'—')}</code></div>
         </div>
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📋 Description</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('clipboard-list')} Description</div>
         <div style="white-space:pre-wrap">${escHtml(r.Description||'Aucune description enregistrée.')}</div>
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">🔗 Traçabilité</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('link')} Traçabilité</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Supprimé par :</strong> ${escHtml(r.SupprimeParLogin||'—')}</div>
           <div><strong>Date :</strong> ${fmtD(r.DateSuppression)}</div>
@@ -802,7 +821,7 @@ async function voirDemandeHistorique(id) {
         const a = JSON.parse(d.ArchiveData);
         archiveHtml = `
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px">
-          <div style="font-weight:700;margin-bottom:8px;color:#15803d">🗄️ Détails archivage</div>
+          <div style="font-weight:700;margin-bottom:8px;color:#15803d">${lk('archive')} Détails archivage</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
             <div><strong>Prestation :</strong> ${escHtml(a.prestaArchive||'—')}</div>
             <div><strong>Date de solde :</strong> ${a.dateSolde ? fmtD(a.dateSolde) : '—'}</div>
@@ -819,16 +838,16 @@ async function voirDemandeHistorique(id) {
       } catch(e) {}
     }
 
-    openModal(`📝 Demande clôturée — ${escHtml(d.Titre||'')}`, `
+    openModal(`Demande clôturée — ${escHtml(d.Titre||'')}`, `
     <div style="display:flex;flex-direction:column;gap:16px;font-size:13px">
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📋 Informations générales</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('clipboard-list')} Informations générales</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <span class="badge badge-${urgColors[d.Urgence]||'gray'}">${escHtml(d.Urgence||'—')}</span>
           <span class="badge badge-${statColors[d.Statut]||'gray'}">${escHtml(d.Statut||'—')}</span>
-          ${d.PourAutrui == 1 ? '<span class="badge badge-purple">👥 Pour autrui</span>' : ''}
-          ${d.TypeLocalisation && d.TypeLocalisation !== 'Standard' ? `<span class="badge badge-${d.TypeLocalisation==='Archive'?'teal':'purple'}">${d.TypeLocalisation==='Archive'?'🗄️ Archive':'🔧 Technique'}</span>` : ''}
+          ${d.PourAutrui == 1 ? ('<span class="badge badge-purple">' + lk('users') + ' Pour autrui</span>') : ''}
+          ${d.TypeLocalisation && d.TypeLocalisation !== 'Standard' ? `<span class="badge badge-${d.TypeLocalisation==='Archive'?'teal':'purple'}">${d.TypeLocalisation==='Archive'?(lk('archive') + ' Archive'):(lk('wrench') + ' Technique')}</span>` : ''}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Titre :</strong> ${escHtml(d.Titre||'—')}</div>
@@ -838,7 +857,7 @@ async function voirDemandeHistorique(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📍 Localisation</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('map-pin')} Localisation</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Bâtiment :</strong> ${escHtml(d.Batiment||'—')}</div>
           <div><strong>Bureau / Emplacement :</strong> ${escHtml(d.Bureau||'—')}</div>
@@ -846,7 +865,7 @@ async function voirDemandeHistorique(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">👤 Demandeur</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('user')} Demandeur</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Nom :</strong> ${escHtml(d.NomDeclarant||'—')}</div>
           <div><strong>Email :</strong> ${escHtml(d.EmailDemandeur||'—')}</div>
@@ -856,7 +875,7 @@ async function voirDemandeHistorique(id) {
 
       ${d.PourAutrui == 1 ? `
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">👥 Demande pour un tiers</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('users')} Demande pour un tiers</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Nom :</strong> ${escHtml(d.NomAutrui||'—')}</div>
           <div><strong>Email :</strong> ${escHtml(d.EmailAutrui||'—')}</div>
@@ -867,7 +886,7 @@ async function voirDemandeHistorique(id) {
       ${archiveHtml}
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📅 Dates</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('calendar')} Dates</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Créée le :</strong> ${fmtDt(d.DateCreation)}</div>
           <div><strong>Traitée le :</strong> ${fmtDt(d.DateTraitement)}</div>
@@ -877,7 +896,7 @@ async function voirDemandeHistorique(id) {
 
       ${d.CommentaireAdmin ? `
       <div style="background:rgba(107,114,128,0.08);border:1px solid rgba(107,114,128,0.2);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">💬 Réponse admin</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('message-circle')} Réponse admin</div>
         <div style="white-space:pre-wrap">${escHtml(d.CommentaireAdmin||'')}</div>
       </div>` : ''}
 
@@ -896,18 +915,18 @@ async function voirBienHistorique(id) {
     const fmtM = v => v ? parseFloat(v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}) : '—';
     const isSorti = ['Jete/Recycle','Don/Vendu'].includes(b.Etat);
     const etatBdg = e => {
-      if (e === 'Don/Vendu') return '<span class="badge badge-blue">📤 Don/Vendu</span>';
-      if (e === 'Jete/Recycle') return '<span class="badge badge-orange">🗑️ Jeté/Recyclé</span>';
+      if (e === 'Don/Vendu') return ('<span class="badge badge-blue">' + lk('upload') + ' Don/Vendu</span>');
+      if (e === 'Jete/Recycle') return ('<span class="badge badge-orange">' + lk('trash') + ' Jeté/Recyclé</span>');
       if (e === 'Utilise') return '<span class="badge badge-teal">Utilisé</span>';
       if (e === 'Stock') return '<span class="badge badge-gray">Stock</span>';
       return e ? `<span class="badge badge-gray">${e}</span>` : '—';
     };
 
-    openModal(`🏢 Bien — ${escHtml(b.Numero||'N/A')}`, `
+    openModal(`Bien — ${escHtml(b.Numero||'N/A')}`, `
     <div style="display:flex;flex-direction:column;gap:16px;font-size:13px">
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📋 Identification</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('clipboard-list')} Identification</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Numéro :</strong> <code style="font-size:12px;background:var(--gray-border);padding:2px 6px;border-radius:4px">${escHtml(b.Numero||'—')}</code></div>
           <div><strong>N° Série :</strong> ${escHtml(b.NumeroSerie||'—')}</div>
@@ -920,7 +939,7 @@ async function voirBienHistorique(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📍 Localisation & Affectation</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('map-pin')} Localisation & Affectation</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Bâtiment :</strong> ${escHtml(b.Batiment||'—')}</div>
           <div><strong>Étage :</strong> ${escHtml(b.Etage||'—')}</div>
@@ -930,7 +949,7 @@ async function voirBienHistorique(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">💰 Finances</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('wallet')} Finances</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Prix :</strong> <span style="color:var(--blue);font-weight:600">${fmtM(b.Prix)}</span></div>
           <div><strong>Date commande :</strong> ${fmtD(b.DateCommande)}</div>
@@ -940,7 +959,7 @@ async function voirBienHistorique(id) {
 
       ${isSorti ? `
       <div style="background:rgba(220,53,69,0.06);border:1px solid rgba(220,53,69,0.2);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">📤 Sortie du parc</div>
+        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">${lk('upload')} Sortie du parc</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>État :</strong> ${etatBdg(b.Etat)}</div>
           <div><strong>Date de sortie :</strong> ${fmtD(b.DateSortie)}</div>
@@ -949,7 +968,7 @@ async function voirBienHistorique(id) {
       </div>` : ''}
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">🔗 Traçabilité</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('link')} Traçabilité</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Créé par :</strong> ${escHtml(b.CreatedBy||'—')}</div>
           <div><strong>Créé le :</strong> ${fmtD(b.CreatedAt)}</div>
@@ -973,18 +992,18 @@ async function voirEquipHistorique(id) {
     const fmtM = v => v ? parseFloat(v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}) : '—';
     const isSorti = ['Jete/Recycle','Don/Vendu'].includes(eq.Etat);
     const etatBdg = e => {
-      if (e === 'Don/Vendu') return '<span class="badge badge-blue">📤 Don/Vendu</span>';
-      if (e === 'Jete/Recycle') return '<span class="badge badge-orange">🗑️ Jeté/Recyclé</span>';
+      if (e === 'Don/Vendu') return ('<span class="badge badge-blue">' + lk('upload') + ' Don/Vendu</span>');
+      if (e === 'Jete/Recycle') return ('<span class="badge badge-orange">' + lk('trash') + ' Jeté/Recyclé</span>');
       if (e === 'Utilise') return '<span class="badge badge-teal">Utilisé</span>';
       if (e === 'Stock') return '<span class="badge badge-gray">Stock</span>';
       return e ? `<span class="badge badge-gray">${e}</span>` : '—';
     };
 
-    openModal(`⚙️ Équipement — ${escHtml(eq.Numero||'N/A')}`, `
+    openModal(`Équipement — ${escHtml(eq.Numero||'N/A')}`, `
     <div style="display:flex;flex-direction:column;gap:16px;font-size:13px">
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📋 Identification</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('clipboard-list')} Identification</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Numéro :</strong> <code style="font-size:12px;background:var(--gray-border);padding:2px 6px;border-radius:4px">${escHtml(eq.Numero||'—')}</code></div>
           <div><strong>N° Série :</strong> ${escHtml(eq.NumeroSerie||'—')}</div>
@@ -999,7 +1018,7 @@ async function voirEquipHistorique(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📍 Localisation</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('map-pin')} Localisation</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Bâtiment :</strong> ${escHtml(eq.Batiment||'—')}</div>
           <div><strong>Étage :</strong> ${escHtml(eq.Etage||'—')}</div>
@@ -1009,7 +1028,7 @@ async function voirEquipHistorique(id) {
       </div>
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">💰 Dates & Prix</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('wallet')} Dates & Prix</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Prix :</strong> <span style="color:var(--blue);font-weight:600">${fmtM(eq.Prix)}</span></div>
           <div><strong>Date commande :</strong> ${fmtD(eq.DateCommande)}</div>
@@ -1019,13 +1038,13 @@ async function voirEquipHistorique(id) {
 
       ${eq.Observations ? `
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">📝 Observations</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('file-pen-line')} Observations</div>
         <div style="white-space:pre-wrap">${escHtml(eq.Observations)}</div>
       </div>` : ''}
 
       ${isSorti ? `
       <div style="background:rgba(220,53,69,0.06);border:1px solid rgba(220,53,69,0.2);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">📤 Sortie du parc</div>
+        <div style="font-weight:700;margin-bottom:8px;color:var(--red)">${lk('upload')} Sortie du parc</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>État :</strong> ${etatBdg(eq.Etat)}</div>
           <div><strong>Date de sortie :</strong> ${fmtD(eq.DateSortie)}</div>
@@ -1034,7 +1053,7 @@ async function voirEquipHistorique(id) {
       </div>` : ''}
 
       <div style="background:var(--gray-bg);border-radius:8px;padding:14px 18px">
-        <div style="font-weight:700;margin-bottom:8px">🔗 Traçabilité</div>
+        <div style="font-weight:700;margin-bottom:8px">${lk('link')} Traçabilité</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 20px">
           <div><strong>Créé par :</strong> ${escHtml(eq.CreatedBy||'—')}</div>
           <div><strong>Créé le :</strong> ${fmtD(eq.CreatedAt)}</div>

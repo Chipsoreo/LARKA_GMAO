@@ -53,8 +53,8 @@ async function renderEquipements() {
         { key:'Modele',      label:'Modèle' },
         { key:'Statut',      label:'Statut',      badge:true },
         { key:'Etat',        label:'État',    render: v => {
-          if (v === 'Don/Vendu')     return '<span class="badge badge-blue">📤 Don/Vendu</span>';
-          if (v === 'Jete/Recycle')  return '<span class="badge badge-orange">🗑️ Jeté/Recyclé</span>';
+          if (v === 'Don/Vendu')     return ('<span class="badge badge-blue">' + lk('upload') + ' Don/Vendu</span>');
+          if (v === 'Jete/Recycle')  return ('<span class="badge badge-orange">' + lk('trash') + ' Jeté/Recyclé</span>');
           return v || '—';
         }},
         { key:'Fournisseur', label:'Fournisseur' },
@@ -62,8 +62,8 @@ async function renderEquipements() {
         { key:'Batiment',    label:'Bâtiment' },
       ],
       addBtnFn: canEdit() ? 'editEquip' : null,
-      extraButtons: canEdit() ? '<button class="btn btn-ghost btn-sm" onclick="openImportEquipements()" title="Importer des équipements depuis un fichier Excel">📥 Importer</button>'
-        + '<button class="btn btn-ghost btn-sm" onclick="ChampsPerso.ouvrirGestion(\'equipements\', renderEquipements)" title="Cases ajoutées aux fiches (section « Informations complémentaires »)">🗂️ Cases des fiches</button>' : '',
+      extraButtons: canEdit() ? ('<button class="btn btn-ghost btn-sm" onclick="openImportEquipements()" title="Importer des équipements depuis un fichier Excel">' + lk('download') + ' Importer</button>')
+        + ('<button class="btn btn-ghost btn-sm" onclick="ChampsPerso.ouvrirGestion(\'equipements\', renderEquipements)" title="Cases ajoutées aux fiches (section « Informations complémentaires »)">' + lk('folders') + ' Cases des fiches</button>') : '',
       searchTerm: App.searchTerm, currentFilter: App.currentFilter,
       canEdit: canEdit(), canDelete: canDelete(),
       selection: { cle: 'equipements', supprimerFn: 'supprimerEquipementsSelection' },
@@ -90,10 +90,10 @@ async function editEquip(id, readOnly = false) {
   const isSorti = ['Jete/Recycle','Don/Vendu'].includes(eq.Etat);
   const dis = readOnly ? 'disabled' : '';
 
-  const titlePrefix = readOnly ? '👁️ Consultation —' : (isNew ? 'Nouvel équipement' : 'Équipement —');
+  const titlePrefix = readOnly ? 'Consultation —' : (isNew ? 'Nouvel équipement' : 'Équipement —');
   openModal(`${titlePrefix} ${escHtml(eq.Numero||'')}`, `
-  ${readOnly ? '<div style="padding:8px 12px;background:#fef3c7;border-radius:6px;margin-bottom:12px;font-size:12px;color:#92400e">🔒 Fiche en consultation seule</div>' : ''}
-  ${!readOnly && isSorti ? '<div style="padding:8px 12px;background:#fef3c7;border-radius:6px;margin-bottom:12px;font-size:12px;color:#92400e">⚠️ Équipement sorti du parc — Fiche toujours modifiable</div>' : ''}
+  ${readOnly ? ('<div style="padding:8px 12px;background:#fef3c7;border-radius:6px;margin-bottom:12px;font-size:12px;color:#92400e">' + lk('lock') + ' Fiche en consultation seule</div>') : ''}
+  ${!readOnly && isSorti ? ('<div style="padding:8px 12px;background:#fef3c7;border-radius:6px;margin-bottom:12px;font-size:12px;color:#92400e">' + lk('triangle-exclamation-point', 'warn') + ' Équipement sorti du parc — Fiche toujours modifiable</div>') : ''}
   <div style="display:flex;flex-direction:column;gap:16px">
 
     <div>
@@ -191,7 +191,7 @@ async function editEquip(id, readOnly = false) {
     </div>
 
     <div id="sortieCommentaireEquip" style="${(['Jete/Recycle','Don/Vendu'].includes(eq.Etat) || eq.DateSortie || eq.CommentaireSortie)?'':'display:none'}">
-      <div class="section-label">💬 Sortie</div>
+      <div class="section-label">${lk('message-circle')} Sortie</div>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Date de sortie</label>

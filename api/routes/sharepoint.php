@@ -127,7 +127,7 @@ function graphPost(string $endpoint, string $jsonBody, string $accessToken): arr
 // ── Helper : rafraîchir le token si expiré ───────────────────────────────────
 /**
  * Jeton Microsoft valide de la session (rafraîchi s'il expire), ou null.
- * ⚠️ FIX : un jeton EXPIRÉ dont le rafraîchissement échouait était rendu tel
+ * FIX : un jeton EXPIRÉ dont le rafraîchissement échouait était rendu tel
  * quel. Graph répondait alors 401 à chaque appel : SharePoint disparaissait de
  * l'écran et la présence restait « indisponible », sans jamais proposer de se
  * reconnecter (la session croyait avoir un jeton). Il est désormais retiré de
@@ -212,7 +212,7 @@ if ($action === 'sharepoint_status') {
     // Tester rapidement si le token donne accès à SharePoint
     $hasAccess = false;
     if ($t !== null) {
-        // ⚠️ graphApi() TERMINE la requête sur toute erreur (json_error) : un
+        // graphApi() TERMINE la requête sur toute erreur (json_error) : un
         // Graph injoignable ou un 403 (tenant sans SharePoint) faisait échouer
         // ce statut entier, et l'écran masquait SharePoint sans rien dire. Ici,
         // un simple essai : l'accès est là, ou il ne l'est pas.
@@ -855,7 +855,7 @@ if ($action === 'sharepoint_check' && $method === 'GET') {
     if (!SHAREPOINT_ENABLED) {
         json_ok($horsLigne + ['disponible' => false, 'raison' => 'SharePoint n\'est pas activé sur cette instance.']);
     }
-    // ⚠️ FIX : sans jeton Microsoft (compte local), ensureMsToken() répondait
+    // FIX : sans jeton Microsoft (compte local), ensureMsToken() répondait
     // 401 — et le client, prenant ce 401 pour une session expirée,
     // DÉCONNECTAIT l'utilisateur qui cliquait sur un document SharePoint.
     if (empty($_SESSION['ms_access_token'])) {

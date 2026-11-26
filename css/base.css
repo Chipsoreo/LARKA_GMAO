@@ -129,3 +129,7 @@ body {
 @media (max-width: 600px) {
   .hide-sm { display: none !important; }
 }
+
+/* ── Icônes Lucide (css/lucide.css, lk() dans js/icones.js) : tailles du menu ── */
+.nav-item .icon .lk, .nav-parent .icon .lk { width: 18px; height: 18px; vertical-align: -4px; }
+.sidebar.sidebar-collapsed .nav-item .icon .lk { width: 20px; height: 20px; }

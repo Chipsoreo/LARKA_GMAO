@@ -1,6 +1,6 @@
 # Exemples de packs de données
 
-Neuf déclarations complètes, de la plus simple à la plus complète. Toutes sont
+Dix déclarations complètes, de la plus simple à la plus complète. Toutes sont
 **vérifiées à chaque construction** : elles valident contre le schéma réel, et
 elles ont été installées puis exécutées sur une base pour s'assurer qu'elles
 produisent bien ce qu'elles annoncent.
@@ -16,6 +16,7 @@ produisent bien ce qu'elles annoncent.
 | `6-liens-et-totaux.json` | Liens vers les équipements et contrats, défaut `{{today}}`, totaux, regroupement | + `donnees.lire:equipements` `donnees.lire:contrats` |
 | `7-mise-en-page.json` | La mise en page : grille de 12 colonnes, champs placés, une section, et un formulaire qui tient sur un téléphone | + `donnees.lire:equipements` |
 | `8-interface-complete.json` | **Une interface complète** : cartes, panneaux, encadré, section conditionnelle, alignements, bornes de taille, trois paliers responsive, actions rapides, surlignage et vue calendrier | + `ui.ancrage` `donnees.lire:contrats` `donnees.lire:interventions` |
+| `9-batiment-connecte.json` | **Le bâtiment connecté** : liens vers les points, équipements raccordés et bâtiments de Larka Connect, mesures en direct (index, consommations du jour et du mois, état de la communication), une formule sur une mesure, une main courante remplie par les alarmes techniques, des tuiles dans la supervision | + `donnees.lire:points_connect` `donnees.lire:connexions_connect` `donnees.lire:batiments` `connect.alarmes` `ui.ancrage` |
 
 ## La mise en page en trois minutes
 

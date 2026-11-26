@@ -49,10 +49,11 @@ set_error_handler(function ($severity, $message, $file, $line) {
 set_exception_handler(function (\Throwable $e) {
     if (ob_get_level()) ob_end_clean();
     if (!headers_sent()) {
+        header_remove('Content-Encoding'); header_remove('Content-Length');   // réponse gzip déjà préparée
         header('Content-Type: application/json; charset=utf-8');
         http_response_code(500);
     }
-    // ⚠️ FIX SÉCURITÉ (F1) : ne pas divulguer le détail de l'exception au client
+    // FIX SÉCURITÉ (F1) : ne pas divulguer le détail de l'exception au client
     // (chemins, requêtes SQL, structure interne). On journalise côté serveur et
     // on renvoie un identifiant de corrélation. Le détail n'est renvoyé que si
     // securite.debug_errors=true (constante DEBUG_ERRORS).
@@ -74,10 +75,11 @@ register_shutdown_function(function () {
     if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
         if (ob_get_level()) ob_end_clean();
         if (!headers_sent()) {
+            header_remove('Content-Encoding'); header_remove('Content-Length');   // réponse gzip déjà préparée
             header('Content-Type: application/json; charset=utf-8');
             http_response_code(500);
         }
-        // ⚠️ FIX SÉCURITÉ (F1) : message générique + référence, détail en log.
+        // FIX SÉCURITÉ (F1) : message générique + référence, détail en log.
         $ref = bin2hex(random_bytes(4));
         error_log('[Larka][' . $ref . '] Fatal: ' . $err['message']
             . ' @ ' . ($err['file'] ?? '?') . ':' . ($err['line'] ?? '?'));
@@ -121,6 +123,28 @@ if (function_exists('fastcgi_finish_request')) {
     });
 }
 
+// ── Larka Connect : même filet pour la collecte des équipements ─────────────
+// Les déclencheurs normaux (cron chaque minute, minuterie systemd, start.sh,
+// lanceur Windows) font la collecte. Sans aucun d'eux depuis 2 minutes, une
+// requête s'en charge après avoir rendu sa réponse. Un verrou empêche deux
+// passages simultanés ; rien ne se passe si Larka Connect est désactivé.
+if (function_exists('fastcgi_finish_request')) {
+    register_shutdown_function(static function (): void {
+        $e = @json_decode((string)@file_get_contents(__DIR__ . '/../data/run/connect-collecte.json'), true);
+        $passage = is_array($e) && !empty($e['_passage']) ? (int)strtotime((string)$e['_passage']) : 0;
+        if (time() - $passage < 120) return;
+        if (!function_exists('cfg') || !filter_var(cfg('connect', 'actif') ?? false, FILTER_VALIDATE_BOOLEAN)) return;
+        @fastcgi_finish_request();
+        try {
+            require_once __DIR__ . '/connect/Connect.php';
+            Connect::charger();
+            ConnectCollecte::executer();
+        } catch (\Throwable $x) {
+            error_log('[Larka] collecte Larka Connect : ' . $x->getMessage());
+        }
+    });
+}
+
 // ── Journalisation : chrono + capteurs globaux ───────────────────────────────
 // Installés le plus tôt possible pour que même une erreur de bootstrap soit
 // tracée. Les entrées émises avant l'ouverture de la base sont mises en tampon
@@ -129,13 +153,19 @@ Journal::demarrerChrono();
 
 // Exceptions non rattrapées.
 set_exception_handler(function (\Throwable $e) {
+    $codeErr = CodesErreur::reconnaitre('Exception non rattrapée : ' . $e->getMessage(), 'php', 'critique', 500,
+                                        $e->getMessage(), get_class($e)) ?? 'SYS-001';
     Journal::critique('php', 'Exception non rattrapée : ' . $e->getMessage(), [
-        'exception' => $e, 'codeHttp' => 500, 'dureeMs' => Journal::dureeMs(),
+        'exception' => $e, 'codeHttp' => 500, 'dureeMs' => Journal::dureeMs(), 'code' => $codeErr,
     ]);
     if (!headers_sent()) { http_response_code(500); }
     if (ob_get_level()) ob_clean();
-    echo json_encode(['success' => false, 'error' => 'Erreur serveur interne.',
-                      'reference' => Journal::requestId()], JSON_UNESCAPED_UNICODE);
+    // Le détail reste au journal ; l'utilisateur reçoit le code (ce qui s'est passé,
+    // en clair, et quoi faire) et la référence à transmettre.
+    $fiche = CodesErreur::fiche($codeErr);
+    echo json_encode(['success' => false, 'error' => 'Erreur serveur interne' . ($fiche ? ' — ' . $fiche['titre'] : '')
+                      . ' (' . $codeErr . '). Référence : ' . Journal::requestId(),
+                      'code' => $codeErr, 'reference' => Journal::requestId()], JSON_UNESCAPED_UNICODE);
     exit;
 });
 
@@ -178,19 +208,28 @@ register_shutdown_function(function () {
     $code = http_response_code() ?: 200;
     $duree = Journal::dureeMs();
     // Les erreurs serveur et les lenteurs méritent d'être visibles d'un coup d'œil.
+    // Sauf les routes LONGUES PAR NATURE : le pont du serveur de supervision attend
+    // jusqu'à 20 s qu'une demande arrive, la réponse en flux de l'assistant dure le
+    // temps de la réponse. Comptées « lentes », elles remplissaient le journal
+    // (Routes lentes, avertissements) d'attentes normales et y noyaient les vraies.
+    $lente = $duree !== null && $duree > 2000
+          && !in_array((string)LARKA_ACTION_COURANTE, ['supervision_pont', 'assistant_stream'], true);
     $niveau = $code >= 500 ? Journal::ERROR
             : ($code >= 400 ? Journal::WARNING
-            : (($duree !== null && $duree > 2000) ? Journal::WARNING : Journal::INFO));
-    Journal::log($niveau, 'api', LARKA_ACTION_COURANTE, [
+            : ($lente ? Journal::WARNING : Journal::INFO));
+    // Requête refusée : le message donné à l'utilisateur figure dans la ligne (avant :
+    // la route seule, sans savoir pourquoi elle avait été refusée).
+    $refus = $code >= 400 ? (string)($GLOBALS['_larka_refus'] ?? '') : '';
+    Journal::log($niveau, 'api', LARKA_ACTION_COURANTE . ($refus !== '' ? ' — ' . $refus : ''), [
         'action'   => LARKA_ACTION_COURANTE,
         'codeHttp' => $code,
         'dureeMs'  => $duree,
-        'lente'    => ($duree !== null && $duree > 2000) ?: null,
+        'lente'    => $lente ?: null,
     ]);
 
     // ── Trace de sécurité des actions sensibles ─────────────────────────────
     //
-    // ⚠️ LES ACTIONS LES PLUS DANGEREUSES NE LAISSAIENT AUCUNE TRACE DE SÉCURITÉ.
+    // LES ACTIONS LES PLUS DANGEREUSES NE LAISSAIENT AUCUNE TRACE DE SÉCURITÉ.
     // Seule la bascule de tenant appelait SecurityLog. Supprimer un tenant (et
     // sa base), purger une base, importer un dump, ajouter un super admin,
     // installer une mise à jour, modifier config.json, changer un rôle… ne
@@ -206,11 +245,13 @@ register_shutdown_function(function () {
     if ($met !== 'GET' && $met !== 'OPTIONS' && class_exists('SecurityLog')) {
         $sensibles = [
             'utilisateurs', 'config_serveur', 'configuration', 'db_migrate',
-            'maj_installer', 'maj_restaurer', 'plans_upload_limits',
+            'maj_installer', 'maj_restaurer', 'maj_canal', 'plans_upload_limits',
             'ext_installer', 'ext_desinstaller', 'ext_activer', 'ext_roles',
             'ext_televerser', 'ext_importer', 'ext_installer_paquet',
             'push_generate_vapid', 'push_send', 'thematique_supprimer',
             'smtp_test', 'db_resync_sequences',
+            // Larka Connect : secrets des connexions, écritures vers les équipements.
+            'connect_passerelles', 'connect_ecrire', 'connect_commande_borne',
         ];
         // superadmin_login a ses propres évènements, plus précis (voir route).
         $estSensible = in_array($act, $sensibles, true)
@@ -263,6 +304,13 @@ if (in_array('*', CORS_ORIGINS)) {
 header('Access-Control-Allow-Methods: ' . CORS_METHODS);
 header('Access-Control-Allow-Headers: ' . CORS_HEADERS);
 if (CORS_CREDENTIALS) header('Access-Control-Allow-Credentials: true');
+// Synchronisation de l'app mobile : authentifiée par jeton (jamais par cookie), ouverte à
+// toute origine — l'app tourne dans son propre WebView (https://localhost).
+if (str_starts_with((string)($_GET['action'] ?? ''), 'synchro_')) {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Larka-Synchro');
+    header_remove('Access-Control-Allow-Credentials');
+}
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 // ── En-têtes sécurité HTTP ───────────────────────────────────────────────────
@@ -291,7 +339,7 @@ $MULTIPART_ALLOWED_ACTIONS = [
     'urgences_media_upload',// pièces jointes des procédures d'urgence
 ];
 
-// ⚠️ CETTE LISTE DOIT SUIVRE LES ROUTES.
+// CETTE LISTE DOIT SUIVRE LES ROUTES.
 // Une action qui lit $_FILES sans figurer ici reçoit un 403
 // « Content-Type non autorisé » AVANT d'être exécutée. Vu de l'utilisateur :
 // le téléversement échoue sans explication utile, et rien dans la route
@@ -305,7 +353,7 @@ if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'], true)) {
     $_currentAction = $_GET['action'] ?? $_POST['action'] ?? '';
     $_isMultipartWhitelisted = in_array($_currentAction, $MULTIPART_ALLOWED_ACTIONS, true);
 
-    // ⚠️ LA « LISTE BLANCHE STRICTE » ÉTAIT UNE RECHERCHE DE SOUS-CHAÎNE.
+    // LA « LISTE BLANCHE STRICTE » ÉTAIT UNE RECHERCHE DE SOUS-CHAÎNE.
     // Le test était str_contains($ct, 'application/json') : il acceptait
     // « text/plain; charset=application/json », dont le type RÉEL (« essence »
     // au sens Fetch) est text/plain — un type « simple » CORS, envoyable
@@ -337,7 +385,7 @@ if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'], true)) {
         }
     }
 
-    // ⚠️ « PAS DE CONTENT-TYPE » NE VEUT PAS DIRE « PAS DE CORPS ».
+    // « PAS DE CONTENT-TYPE » NE VEUT PAS DIRE « PAS DE CORPS ».
     // Le commentaire ci-dessus supposait qu'une requête sans Content-Type était
     // une requête sans corps. C'est faux : fetch() envoie un ArrayBuffer ou un
     // Blob sans type SANS aucun en-tête Content-Type, ce qui en fait une requête
@@ -361,16 +409,49 @@ if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'], true)) {
 // ── Helpers globaux ───────────────────────────────────────────────────────────
 function json_ok($data): void {
     if (ob_get_level()) ob_clean();
-    echo json_encode(['success'=>true,'data'=>$data], JSON_UNESCAPED_UNICODE); exit;
+    json_sortie(json_encode(['success'=>true,'data'=>$data], JSON_UNESCAPED_UNICODE)); exit;
 }
-function json_error($message, $code = 400): void {
+function json_error($message, $code = 400, ?string $codeErreur = null): void {
     if (ob_get_level()) ob_clean();
     http_response_code($code);
-    echo json_encode(['success'=>false,'error'=>$message], JSON_UNESCAPED_UNICODE); exit;
+    // Le message refusé est gardé pour la ligne de journal de la requête (elle ne
+    // disait que la route et « 400 ») ; son code d'erreur part avec la réponse :
+    // l'écran affiche le code et « Comment y remédier ».
+    $GLOBALS['_larka_refus'] = (string)$message;
+    $c = $codeErreur;
+    if ($c === null && class_exists('CodesErreur')) { try { $c = CodesErreur::reconnaitre((string)$message, 'api', 'warning', (int)$code); } catch (\Throwable $e) {} }
+    json_sortie(json_encode(['success'=>false,'error'=>$message] + ($c ? ['code' => $c] : []), JSON_UNESCAPED_UNICODE)); exit;
+}
+/**
+ * Écrit une réponse JSON, compressée en gzip quand c'est utile.
+ *
+ * LES LISTES PARTAIENT NON COMPRESSÉES.
+ * Le serveur intégré (Larka.cmd, start.sh) ne compresse rien : « demandes »
+ * pesait 2,8 Mo, « biens » 1,1 Mo, et la page Historique en chargeait 10.
+ * Le JSON se compresse d'un facteur 8 à 15. Derrière nginx ou Apache, la
+ * réponse arrive déjà encodée et le serveur ne la recompresse pas.
+ */
+function json_sortie($json): void {
+    $json = (string)$json;
+    if (strlen($json) > 1400 && !headers_sent() && !ini_get('zlib.output_compression')
+        && function_exists('gzencode')
+        && str_contains(strtolower((string)($_SERVER['HTTP_ACCEPT_ENCODING'] ?? '')), 'gzip')) {
+        $gz = gzencode($json, 4);
+        if ($gz !== false) {
+            header('Content-Encoding: gzip');
+            header('Vary: Accept-Encoding');
+            header('Content-Length: ' . strlen($gz));
+            echo $gz;
+            return;
+        }
+    }
+    echo $json;
 }
 function get_body(): array {
+    // Corps d'un appel relayé par le lien chiffré (le corps HTTP, lui, est l'enveloppe scellée).
+    if (isset($GLOBALS['_larka_corps_delegue']) && is_array($GLOBALS['_larka_corps_delegue'])) return $GLOBALS['_larka_corps_delegue'];
     $raw = file_get_contents('php://input');
-    // ⚠️ La limite était fixée à 10 Mo, alors que les documents (envoyés en
+    // La limite était fixée à 10 Mo, alors que les documents (envoyés en
     // base64, +33 %) sont annoncés jusqu'à documents.taille_max_mo (25 Mo par
     // défaut) : tout fichier de plus de ~7,5 Mo était refusé en « 413 ». La
     // limite suit désormais la taille de document autorisée (plancher 10 Mo).
@@ -401,12 +482,34 @@ if (!empty($_SESSION['superadmin']['authenticated'])) {
         unset($_SESSION['superadmin']);
     }
 }
+// ── Super admin : le compte existe-t-il toujours ? ───────────────────────────
+// LA SESSION SUPER ADMIN SURVIVAIT À LA SUPPRESSION DU COMPTE.
+// require_superadmin() ne regarde que la session : un compte secondaire supprimé
+// (départ, compte compromis) gardait la main sur TOUTES les organisations jusqu'à
+// 4 h, et un mot de passe changé n'éteignait pas les autres sessions. Comme pour
+// les comptes d'organisation (utilisateur_session), on revérifie à chaque
+// requête : connexion locale → le compte existe, avec le mot de passe de la
+// connexion ; connexion Microsoft → l'adresse est toujours autorisée. Registre
+// injoignable : la session tombe (on ne prête pas les pleins pouvoirs à l'aveugle).
+if (!empty($_SESSION['superadmin']['authenticated']) && class_exists('TenantResolver')) {
+    $saValide = false;
+    try { $saValide = TenantResolver::sessionSuperAdminValide((array)$_SESSION['superadmin']); }
+    catch (\Throwable $e) { $saValide = false; }
+    if (!$saValide) {
+        if (class_exists('SecurityLog')) {
+            SecurityLog::audit('session_revoked', ['login' => 'superadmin:' . (string)($_SESSION['superadmin']['login'] ?? '?'),
+                                                   'reason' => 'compte super admin supprimé, mot de passe changé ou adresse retirée']);
+        }
+        unset($_SESSION['superadmin'], $_SESSION['forced_tenant']);
+    }
+    unset($saValide);
+}
 $_SESSION['_last_activity'] = time();
 
 /**
  * Utilisateur de la session, REVÉRIFIÉ en base — ou null.
  *
- * ⚠️ LA SESSION FAISAIT FOI JUSQU'À SON EXPIRATION.
+ * LA SESSION FAISAIT FOI JUSQU'À SON EXPIRATION.
  * $_SESSION['user'] est une copie de la fiche prise à la connexion. Un compte
  * désactivé, et même SUPPRIMÉ, continuait donc de tout faire jusqu'à
  * l'expiration du cookie (24 h) ; un gestionnaire rétrogradé gardait ses
@@ -466,19 +569,106 @@ function utilisateur_session(): ?array {
         $revoquer('identité différente sous le même Id');
         return null;
     }
+    // MOT DE PASSE CHANGÉ : LES AUTRES SESSIONS RESTAIENT OUVERTES.
+    // Changer son mot de passe après un doute (poste partagé, mot de passe vu),
+    // ou le faire réinitialiser par un gestionnaire, laissait en place la session
+    // de celui qui s'en servait — jusqu'à 24 h. La session retient une empreinte
+    // du mot de passe de la connexion ; s'il a changé depuis, elle tombe. La
+    // session qui fait le changement prend la nouvelle (session_noter_mot_de_passe).
+    $empreinte = empreinte_mot_de_passe((string)($fiche['MotDePasse'] ?? ''));
+    $notee = $_SESSION['_mdp'] ?? null;
+    if (!is_array($notee) || (int)($notee['id'] ?? 0) !== $uid) {
+        $_SESSION['_mdp'] = ['id' => $uid, 'e' => $empreinte];   // première vérification de cette connexion
+    } elseif (!hash_equals((string)($notee['e'] ?? ''), $empreinte)) {
+        $revoquer('mot de passe changé depuis la connexion');
+        unset($_SESSION['_mdp']);
+        return null;
+    }
     foreach (['Login', 'Nom', 'Prenom', 'Email', 'Role', 'Provider', 'Actif', 'MustChangePassword'] as $k) {
         if (array_key_exists($k, $fiche)) $_SESSION['user'][$k] = $fiche[$k];
     }
     return $_SESSION['user'];
 }
 
+/** Empreinte d'une empreinte de mot de passe : ce qui est gardé en session (jamais le hash lui-même). */
+function empreinte_mot_de_passe(string $hash): string {
+    return substr(hash('sha256', 'larka-session|' . $hash), 0, 32);
+}
+
+/**
+ * La session courante a changé le mot de passe de SON compte (change_password,
+ * fiche éditée par soi-même) : elle prend la nouvelle empreinte et reste ouverte ;
+ * les autres sessions de ce compte tomberont à leur prochaine requête.
+ */
+function session_noter_mot_de_passe($db): void {
+    $uid = (int)($_SESSION['user']['Id'] ?? 0);
+    if ($uid <= 0 || !($db instanceof Database)) return;
+    try {
+        $h = $db->fetchOne('SELECT MotDePasse FROM Utilisateurs WHERE Id = :id', ['id' => $uid]);
+        if ($h) $_SESSION['_mdp'] = ['id' => $uid, 'e' => empreinte_mot_de_passe((string)($h['MotDePasse'] ?? $h['motdepasse'] ?? ''))];
+    } catch (\Throwable $e) { /* la prochaine requête reposera la référence */ }
+}
+
+/**
+ * Libère le verrou de session d'une lecture authentifiée.
+ *
+ * LES APPELS D'UN MÊME UTILISATEUR PASSAIENT UN PAR UN.
+ * Les sessions PHP (fichiers) sont verrouillées de session_start() à la fin de
+ * la requête : les ~30 appels lancés en parallèle à l'ouverture de Larka — et
+ * les 5 à 10 de chaque page — attendaient chacun la fin du précédent, quel que
+ * soit le nombre de workers. Mesuré : 8 appels simultanés prenaient autant que
+ * 8 appels successifs.
+ *
+ * Une lecture (GET) authentifiée relâche donc la session dès que l'utilisateur
+ * est vérifié. Si la route modifie ensuite $_SESSION (jeton Microsoft
+ * rafraîchi, réglage mis en session…), seules les clés modifiées sont
+ * réécrites en fin de requête, sur la session relue à ce moment — sans écraser
+ * ce qu'une requête parallèle aurait écrit entre-temps. Une route qui rouvre
+ * elle-même la session (session_start) retrouve le comportement habituel.
+ * Les écritures (POST, PUT, DELETE) gardent la session ouverte jusqu'au bout.
+ */
+function liberer_session_lecture(): void {
+    static $fait = false;
+    if ($fait || session_status() !== PHP_SESSION_ACTIVE) return;
+    if (!in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD'], true)) return;
+    $fait = true;
+    $avant = $_SESSION;
+    $id    = session_id();
+    session_write_close();
+    register_shutdown_function(static function () use ($avant, $id): void {
+        if (session_status() === PHP_SESSION_ACTIVE) return;   // rouverte : PHP l'écrira
+        $apres = is_array($_SESSION ?? null) ? $_SESSION : [];
+        $modifs = [];
+        foreach ($apres as $k => $v) {
+            if (!array_key_exists($k, $avant) || serialize($avant[$k]) !== serialize($v)) $modifs[$k] = $v;
+        }
+        $retraits = array_values(array_diff(array_keys($avant), array_keys($apres)));
+        if (!$modifs && !$retraits) return;
+        // Le cookie et les en-têtes de cache sont partis avec la première
+        // ouverture : la réouverture n'a rien à envoyer (et ne le pourrait plus
+        // si la réponse est déjà partie).
+        @ini_set('session.use_cookies', '0');
+        @ini_set('session.cache_limiter', '');
+        session_id($id);
+        if (!@session_start()) return;
+        if (session_id() !== $id) { @session_destroy(); return; }   // session détruite entre-temps
+        foreach ($modifs as $k => $v) $_SESSION[$k] = $v;
+        foreach ($retraits as $k) unset($_SESSION[$k]);
+        @session_write_close();
+    });
+}
+
 function require_auth(): array {
+    // Appel relayé par le lien chiffré du serveur principal (SupervisionLien::executerApi) :
+    // le compte et le rôle de la personne, posés APRÈS vérification cryptographique du message.
+    if (isset($GLOBALS['_larka_utilisateur_delegue']) && is_array($GLOBALS['_larka_utilisateur_delegue'])) return $GLOBALS['_larka_utilisateur_delegue'];
     $u = utilisateur_session();
-    if ($u !== null) return $u;
+    if ($u !== null) { liberer_session_lecture(); return $u; }
     // Le Super Admin n'a pas de $_SESSION['user'] mais doit pouvoir
     // accéder aux routes admin (push_test, push_config, etc.) depuis la Configuration.
     // On retourne un user virtuel avec le rôle Admin.
     if (!empty($_SESSION['superadmin']['authenticated'])) {
+        liberer_session_lecture();
         return [
             'Id'    => 0,
             'Login' => $_SESSION['superadmin']['login'] ?? 'superadmin',
@@ -492,7 +682,7 @@ function require_auth(): array {
 /**
  * Refus d'accès centralisé : journalise PUIS répond 403.
  *
- * ⚠️ LES REFUS N'ÉTAIENT JAMAIS TRACÉS.
+ * LES REFUS N'ÉTAIENT JAMAIS TRACÉS.
  * SecurityLog::accessDenied() existait mais aucune garde ne l'appelait : un
  * compte qui sondait les routes une à une (énumération de droits, tentative
  * d'accès à des données d'un autre rôle) ne laissait AUCUNE trace exploitable.
@@ -560,7 +750,7 @@ function demandeur_modules_lecture($db, array $user = []): array {
  * Comportement identique à require_role(), avec une exception : un Demandeur
  * est admis si cet onglet lui a été ouvert nominativement.
  *
- * ⚠️ À n'utiliser QUE sur des routes de lecture. L'écriture reste protégée par
+ * À n'utiliser QUE sur des routes de lecture. L'écriture reste protégée par
  * require_role() : l'autorisation accordée ici ne confère jamais le droit de
  * modifier quoi que ce soit, quel que soit l'onglet ouvert.
  */
@@ -594,6 +784,11 @@ if (strlen($action) > 50) json_error('Action invalide.', 400);
 // Les exécuter avant d'instancier Database() évite qu'un souci PDO empêche
 // l'affichage des boutons SSO ou la découverte de l'URL serveur.
 $dbOptionalActions = ['auth_config', 'server_url', 'oauth_microsoft_url', 'push_vapid_key',
+    // Synchronisation de l'app mobile : la base vient du jeton de l'appareil (routes/synchro.php).
+    'synchro_lier', 'synchro_etat', 'synchro_tables', 'synchro_cliche', 'synchro_empreintes', 'synchro_lignes',
+    'synchro_tirer', 'synchro_pousser', 'synchro_reserver', 'synchro_fichiers', 'synchro_fichier',
+    'synchro_fichier_envoyer', 'synchro_fichier_supprimer', 'synchro_delier',
+    'synchro_appairer', 'synchro_appairage_confirmer', 'synchro_appairage_attendre',
     'legifrance_status', 'legifrance_search', 'legifrance_suggest', 'legifrance_consult',
     'france_legifrance_config', 'france_legifrance_ping', 'france_legifrance_search',
     'france_legifrance_suggest', 'france_legifrance_call',
@@ -607,7 +802,11 @@ $dbOptionalActions = ['auth_config', 'server_url', 'oauth_microsoft_url', 'push_
     'superadmin_branding_public',
     'config_serveur', 'sauvegardes_etat', 'sauvegarde_maintenant',
     'rgpd', 'superadmin_rgpd', 'aide', 'thematiques_langue',
-    'maj_etat', 'maj_verifier', 'maj_installer', 'maj_historique', 'maj_restaurer'];
+    'maj_etat', 'maj_verifier', 'maj_installer', 'maj_historique', 'maj_restaurer', 'maj_canal',
+    'connect_releveur',    // PC releveur (Larka Connect) : jeton, sans session — sa base s'ouvre d'après le jeton
+    // Lien chiffré avec le serveur de supervision : authentifié par les clés du lien, sans session ;
+    // la base s'ouvre d'après l'organisation désignée dans le message (api/SupervisionLien.php).
+    'supervision_lien', 'supervision_pont', 'supervision_pont_reponse', 'supervision_appairer'];
 
 // ── Revérification de la session (compte supprimé / désactivé / rétrogradé) ─
 // Faite avant le blocage ci-dessous pour que le drapeau MustChangePassword
@@ -627,7 +826,7 @@ if (!empty($_SESSION['user']['MustChangePassword']) && (int)$_SESSION['user']['M
 }
 
 // ── Rate limiting simple (fichier) pour le login et l'API globale ───────────
-// ⚠️ FIX BUG : la définition de cette fonction est volontairement placée
+// FIX BUG : la définition de cette fonction est volontairement placée
 // AVANT ses appels. PHP hoist les fonctions nommées donc l'ancien ordre
 // fonctionnait, mais c'était fragile (ex. si on remplaçait par une closure
 // ou une fonction conditionnelle). Plus robuste de garder l'ordre logique.
@@ -688,7 +887,9 @@ function rate_limit_noter(string $key): void {
 
 // ── Rate limiting global par IP (200 req / 60s — anti-DDoS basique) ─────────
 $_clientIp = client_ip(); // IP réelle, y compris derrière un proxy de confiance
-if ($action && !in_array($action, ['auth_config', 'server_url', 'push_vapid_key'])) {
+// (La synchronisation de l'app mobile, authentifiée par jeton, a sa limite par appareil : routes/synchro.php.)
+// (Le lien du serveur de supervision, authentifié par ses clés, a sa propre limite d'échecs : routes/supervision-lien.php.)
+if ($action && !in_array($action, ['auth_config', 'server_url', 'push_vapid_key', 'supervision_lien', 'supervision_pont', 'supervision_pont_reponse']) && !str_starts_with($action, 'synchro_')) {
     check_rate_limit('global_' . $_clientIp, 200, 60);
 }
 
@@ -705,10 +906,13 @@ if (in_array($action, $dbOptionalActions, true)) {
         require_once __DIR__ . '/routes/majs.php';     // Mises à jour de l'application
         require_once __DIR__ . '/routes/rgpd.php';     // Conformité RGPD (politique, module Super Admin)
         require_once __DIR__ . '/routes/aide.php';     // Aide intégrée (fiches du rôle, procédures de l'installation)
+        require_once __DIR__ . '/routes/connect-releveur.php'; // PC releveur des appareils en hotspot (jeton)
+        if (str_starts_with($action, 'supervision_')) require_once __DIR__ . '/routes/supervision-lien.php'; // lien chiffré (clés)
+        if (str_starts_with($action, 'synchro_')) require_once __DIR__ . '/routes/synchro.php'; // app mobile (jeton)
         if ($action === 'thematiques_langue') require_once __DIR__ . '/routes/thematiques.php'; // libellés, écran de connexion
         json_error("Action inconnue : $action", 404);
     } catch (\Throwable $e) {
-        // ⚠️ Le message d'exception partait tel quel au client, même hors
+        // Le message d'exception partait tel quel au client, même hors
         // debug_errors (ex. « Impossible de se connecter à la base super
         // admin : SQLSTATE… » avec hôte et utilisateur). Détail en journal,
         // référence de corrélation au client — comme le reste de l'API.
@@ -736,6 +940,7 @@ try {
     require __DIR__ . '/routes/documents.php';   // Upload, download, suppression de fichiers
     require __DIR__ . '/routes/sharepoint.php';  // Navigation SharePoint + liens
     require __DIR__ . '/routes/archives.php';    // Boîtes, dossiers, bordereaux archives
+    require_once __DIR__ . '/routes/appareils.php'; // Appareils mobiles reliés (QR code, révocation)
     require_once __DIR__ . '/routes/france.php'; // Légifrance sandbox (france_legifrance_*)
     require_once __DIR__ . '/routes/chorus.php'; // Chorus Pro proxy
     require_once __DIR__ . '/routes/assistant.php'; // Assistant IA
@@ -744,7 +949,7 @@ try {
     require_once __DIR__ . '/routes/carbone.php'; // Facteurs d'émission ADEME (proxy + cache)
     require __DIR__ . '/routes/plans.php';       // Plans interactifs (bâtiments, étages, éléments)
     require __DIR__ . '/routes/annuaire.php';    // Annuaire cartographié (Plans côté Demandeur)
-    // ⚠️ ORDRE IMPORTANT : journal.php DOIT être chargé APRÈS annuaire.php.
+    // ORDRE IMPORTANT : journal.php DOIT être chargé APRÈS annuaire.php.
     //    L'action presence_effectif s'appuie sur _annuaireAppToken() et
     //    _annuaireGraphPost(), définies dans annuaire.php. Les routes étant
     //    de simples require successifs, une inclusion plus haut ferait
@@ -753,6 +958,8 @@ try {
     require __DIR__ . '/routes/journal.php';     // Journal applicatif + présence
     require __DIR__ . '/routes/urgences.php';    // Médias (photos/vidéos) des procédures d'urgence
     require __DIR__ . '/routes/migration.php';   // Migration inter-drivers (SQLite ↔ PG ↔ MariaDB)
+    require __DIR__ . '/routes/connect.php';     // Larka Connect : équipements raccordés (GTB, compteurs, bornes)
+    require __DIR__ . '/routes/supervision.php'; // Serveur de supervision séparé : réglage et appairage (gestionnaire)
 
     // ── Extensions communautaires ────────────────────────────────────────────
     // La couche reste INERTE tant que extensions.actif vaut false dans
@@ -769,15 +976,21 @@ try {
     json_error("Action inconnue : $action", 404);
 
 } catch (PDOException $e) {
-    // ⚠️ FIX SÉCURITÉ (F1) : le diagnostic détaillé ci-dessous expose l'hôte, le
+    // FIX SÉCURITÉ (F1) : le diagnostic détaillé ci-dessous expose l'hôte, le
     // port, le nom de base, l'utilisateur et les chemins. Il ne doit JAMAIS sortir
     // en production. On journalise systématiquement, et on ne renvoie le détail
     // au client que si securite.debug_errors=true.
     $ref = bin2hex(random_bytes(4));
     error_log('[Larka][' . $ref . '][DB] ' . $e->getMessage()
         . ' (driver=' . DB_DRIVER . ', code=' . $e->getCode() . ')');
+    // Au journal aussi (il n'y figurait pas) : avec son code — base injoignable,
+    // occupée, structure incomplète… — et la marche à suivre qui va avec.
+    $codeBdd = CodesErreur::reconnaitre('Erreur base de données', 'php', 'critique', 500, $e->getMessage(), 'PDOException') ?? 'BDD-001';
+    Journal::erreur('php', 'Erreur base de données : ' . $e->getMessage(), ['exception' => $e, 'code' => $codeBdd, 'codeHttp' => 500, 'reference' => $ref]);
     if (!(defined('DEBUG_ERRORS') && DEBUG_ERRORS)) {
-        json_error('Erreur base de données. Référence : ' . $ref . '. Consultez les journaux serveur.', 500);
+        $ficheBdd = CodesErreur::fiche($codeBdd);
+        json_error('Erreur base de données' . ($ficheBdd ? ' — ' . $ficheBdd['titre'] : '') . " ($codeBdd). Référence : " . $ref
+                   . '. Consultez les journaux serveur.', 500, $codeBdd);
     }
 
     $driver  = DB_DRIVER;
@@ -787,55 +1000,55 @@ try {
 
     // ── Diagnostic selon le driver et le code d'erreur ────────────────────
     if ($driver === 'pgsql') {
-        $ext = extension_loaded('pdo_pgsql') ? '✅ chargée' : '❌ MANQUANTE (activer php_pdo_pgsql dans php.ini)';
+        $ext = extension_loaded('pdo_pgsql') ? 'chargée' : 'MANQUANTE (activer php_pdo_pgsql dans php.ini)';
         $details[] = "Extension PHP pdo_pgsql : $ext";
         $details[] = "Serveur cible : " . DB_HOST . ":" . DB_PORT . " / base : " . DB_NAME . " / user : " . DB_USER;
 
         // Connection refused ou host unreachable
         if (str_contains($message, 'Connection refused') || str_contains($message, '10061') || $code === 7) {
-            $details[] = "⚠️  PostgreSQL n'est pas démarré ou n'écoute pas sur ce port.";
+            $details[] = "⚠ PostgreSQL n'est pas démarré ou n'écoute pas sur ce port.";
             $details[] = "→ Installez PostgreSQL : https://www.postgresql.org/download/";
             $details[] = "→ Ou repassez en SQLite dans config.json : base_de_donnees.driver = \"sqlite\"";
         } elseif (str_contains($message, 'password authentication failed')) {
-            $details[] = "⚠️  Mot de passe PostgreSQL incorrect.";
+            $details[] = "⚠ Mot de passe PostgreSQL incorrect.";
             $details[] = "→ Vérifiez base_de_donnees.password dans config.json";
         } elseif (str_contains($message, 'database') && str_contains($message, 'does not exist')) {
-            $details[] = "⚠️  La base \"" . DB_NAME . "\" n'existe pas.";
+            $details[] = "⚠ La base \"" . DB_NAME . "\" n'existe pas.";
             $details[] = "→ Créez-la : CREATE DATABASE " . DB_NAME . ";";
         } elseif (str_contains($message, 'could not find driver') || !extension_loaded('pdo_pgsql')) {
-            $details[] = "⚠️  L'extension PHP pdo_pgsql n'est pas activée.";
+            $details[] = "⚠ L'extension PHP pdo_pgsql n'est pas activée.";
             $details[] = "→ Ajoutez extension=php_pdo_pgsql.dll dans php.ini";
         } elseif (str_contains($message, 'role') && str_contains($message, 'does not exist')) {
-            $details[] = "⚠️  L'utilisateur PostgreSQL \"" . DB_USER . "\" n'existe pas.";
+            $details[] = "⚠ L'utilisateur PostgreSQL \"" . DB_USER . "\" n'existe pas.";
             $details[] = "→ Créez-le : CREATE USER " . DB_USER . " WITH PASSWORD '...';";
         }
 
     } elseif ($driver === 'mariadb' || $driver === 'mysql') {
-        $ext = extension_loaded('pdo_mysql') ? '✅ chargée' : '❌ MANQUANTE (activer php_pdo_mysql dans php.ini)';
+        $ext = extension_loaded('pdo_mysql') ? 'chargée' : 'MANQUANTE (activer php_pdo_mysql dans php.ini)';
         $details[] = "Extension PHP pdo_mysql : $ext";
         $details[] = "Serveur cible : " . DB_HOST . ":" . DB_PORT . " / base : " . DB_NAME . " / user : " . DB_USER;
 
         if (str_contains($message, 'Connection refused') || str_contains($message, '10061') || $code === 2002) {
-            $details[] = "⚠️  MySQL/MariaDB n'est pas démarré ou refuse la connexion.";
+            $details[] = "⚠ MySQL/MariaDB n'est pas démarré ou refuse la connexion.";
             $details[] = "→ Installez MariaDB : https://mariadb.org/download/";
             $details[] = "→ Ou repassez en SQLite dans config.json : base_de_donnees.driver = \"sqlite\"";
         } elseif (str_contains($message, 'Access denied')) {
-            $details[] = "⚠️  Accès refusé — mauvais identifiants MySQL.";
+            $details[] = "⚠ Accès refusé — mauvais identifiants MySQL.";
             $details[] = "→ Vérifiez base_de_donnees.user et base_de_donnees.password dans config.json";
         } elseif (str_contains($message, 'Unknown database')) {
-            $details[] = "⚠️  La base \"" . DB_NAME . "\" n'existe pas.";
+            $details[] = "⚠ La base \"" . DB_NAME . "\" n'existe pas.";
             $details[] = "→ Créez-la : CREATE DATABASE " . DB_NAME . " CHARACTER SET utf8mb4;";
         } elseif (!extension_loaded('pdo_mysql')) {
-            $details[] = "⚠️  L'extension PHP pdo_mysql n'est pas activée.";
+            $details[] = "⚠ L'extension PHP pdo_mysql n'est pas activée.";
             $details[] = "→ Ajoutez extension=php_pdo_mysql.dll dans php.ini";
         }
 
     } elseif ($driver === 'sqlite') {
-        $ext = extension_loaded('pdo_sqlite') ? '✅ chargée' : '❌ MANQUANTE';
+        $ext = extension_loaded('pdo_sqlite') ? 'chargée' : 'MANQUANTE';
         $details[] = "Extension PHP pdo_sqlite : $ext";
         $details[] = "Fichier DB : " . DB_PATH;
         if (!is_writable(dirname(DB_PATH)) && is_dir(dirname(DB_PATH))) {
-            $details[] = "⚠️  Le dossier data/ n'est pas accessible en écriture.";
+            $details[] = "⚠ Le dossier data/ n'est pas accessible en écriture.";
         }
     }
 
@@ -849,14 +1062,14 @@ try {
     );
 
 } catch (RuntimeException $e) {
-    // ⚠️ FIX SÉCURITÉ (F1) : erreur de config — détail en log, message générique.
+    // FIX SÉCURITÉ (F1) : erreur de config — détail en log, message générique.
     $ref = bin2hex(random_bytes(4));
     error_log('[Larka][' . $ref . '][CFG] ' . $e->getMessage());
     json_error((defined('DEBUG_ERRORS') && DEBUG_ERRORS)
         ? ('Erreur de configuration : ' . $e->getMessage())
         : ('Erreur de configuration. Référence : ' . $ref), 500);
 } catch (\Throwable $e) {
-    // ⚠️ FIX SÉCURITÉ (F1) : erreur générique — détail en log uniquement.
+    // FIX SÉCURITÉ (F1) : erreur générique — détail en log uniquement.
     $ref = bin2hex(random_bytes(4));
     error_log('[Larka][' . $ref . '] ' . get_class($e) . ': ' . $e->getMessage()
         . ' @ ' . $e->getFile() . ':' . $e->getLine());

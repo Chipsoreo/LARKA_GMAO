@@ -21,7 +21,7 @@
 /** Dossier de dépôt. */
 function thematiques_dossier(): string
 {
-    // ⚠️ ISOLÉ PAR CLIENT, comme le code et l'état des extensions.
+    // ISOLÉ PAR CLIENT, comme le code et l'état des extensions.
     // Le dossier était unique : un thème déposé par un client apparaissait dans
     // la liste de tous les autres, et le désactiver le désactivait partout.
     // C'est exactement la fuite corrigée pour les extensions ; elle subsistait
@@ -94,7 +94,7 @@ function thematiques_etat_ecrire(array $etat): void
  * Packs livrés AVEC Larka (identifiant « larka.… ») déjà installés : remis à
  * niveau quand la version livrée est plus récente.
  *
- * ⚠️ UNE MISE À JOUR DE LARKA NE RAFRAÎCHISSAIT PAS LES TRADUCTIONS.
+ * UNE MISE À JOUR DE LARKA NE RAFRAÎCHISSAIT PAS LES TRADUCTIONS.
  * Le pack anglais installé (data/thematiques/) restait à sa version d'origine :
  * la nouvelle version apportait des centaines de libellés traduits… que
  * personne ne voyait, l'interface gardant ses trous. Il fallait savoir
@@ -144,7 +144,7 @@ function thematiques_actualiser_livrees(): void
  * Packs de langue LIVRÉS avec Larka et complets (≥ 90 % du catalogue), proposés
  * d'office même s'ils n'ont jamais été déposés.
  *
- * ⚠️ L'ANGLAIS N'ÉTAIT PAS UTILISABLE SUR UNE INSTALLATION ORDINAIRE.
+ * L'ANGLAIS N'ÉTAIT PAS UTILISABLE SUR UNE INSTALLATION ORDINAIRE.
  * Il fallait activer les modules complémentaires (désactivés par défaut), puis
  * retrouver le paquet et le déposer : sans cela, aucune langue n'était
  * proposée. Une traduction n'exécute rien et ne touche à aucune donnée.
@@ -154,7 +154,8 @@ function thematiques_livrees(): array
     static $cache = null;
     if ($cache !== null) return $cache;
     $racine = dirname(__DIR__, 2);
-    $cat = json_decode((string)@file_get_contents("$racine/lang/fr.json"), true)['libelles'] ?? [];
+    // Fichier de traduction unique : une ligne par libellé (clé = texte français).
+    $cat = json_decode((string)@file_get_contents("$racine/lang/traductions.json"), true)['libelles'] ?? [];
     $cache = [];
     foreach (glob("$racine/extensions/langues/larka.langue-*/extension.json") ?: [] as $f) {
         $j = json_decode((string)@file_get_contents($f), true);
@@ -239,7 +240,7 @@ function thematiques_lister(): array
  * interne, lui, ne bouge jamais. L'anonymat vient de l'empreinte, pas de ce
  * qu'on lui donne à manger.
  *
- * ⚠️ SECRET_KEY EST LA CLÉ DE VOÛTE.
+ * SECRET_KEY EST LA CLÉ DE VOÛTE.
  * Restée à sa valeur par défaut, l'empreinte est calculable par quiconque a le
  * code : on retombe sur « u7 » déguisé. On journalise dans ce cas, une fois,
  * plutôt que de refuser — le fond d'écran doit continuer de fonctionner.

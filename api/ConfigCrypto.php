@@ -19,16 +19,16 @@
  *
  * MODÈLE DE MENACE COUVERT
  * ------------------------
- * ✅ Lecture du fichier config.json par quelqu'un qui ne devrait pas
+ * Lecture du fichier config.json par quelqu'un qui ne devrait pas
  *    (collègue curieux, capture d'écran, backup non chiffré copié ailleurs).
- * ✅ Push accidentel du config.json sur un dépôt git public/interne.
+ * Push accidentel du config.json sur un dépôt git public/interne.
  *
  * NON COUVERT (limites honnêtes)
  * ------------------------------
- * ❌ Attaquant qui a un shell sur le serveur avec les droits du serveur web :
+ * Attaquant qui a un shell sur le serveur avec les droits du serveur web :
  *    il peut lire config.key et déchiffrer comme l'app. Aucune solution sans
  *    HSM/KMS ne protège contre ça.
- * ❌ Memory dump de PHP en cours d'exécution : les secrets sont déchiffrés
+ * Memory dump de PHP en cours d'exécution : les secrets sont déchiffrés
  *    en mémoire pour pouvoir servir.
  *
  * ARCHITECTURE
@@ -206,7 +206,7 @@ class ConfigCrypto {
      * comme sensibles et donc à chiffrer automatiquement à l'écriture / à
      * déchiffrer automatiquement à la lecture.
      *
-     * ⚠️ Cette liste DOIT rester synchronisée entre :
+     * Cette liste DOIT rester synchronisée entre :
      *   - la lecture (config.php décrypte ces champs après json_decode)
      *   - l'écriture (gestion.php config_serveur POST chiffre ces champs avant json_encode)
      *

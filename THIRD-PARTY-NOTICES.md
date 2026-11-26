@@ -19,11 +19,24 @@ Il doit être distribué avec le Logiciel et ne doit pas être supprimé.
 | PDF.js (pdfjs-dist, build legacy) | 6.4.299 | Apache-2.0 | `js/vendor/pdfjs-6.4.299/` | [`licenses/Apache-2.0.txt`](licenses/Apache-2.0.txt) · `js/vendor/pdfjs-6.4.299/LICENSE` |
 | OpenJPEG (décodeur wasm de PDF.js) | — | BSD-2-Clause | `js/vendor/pdfjs-6.4.299/wasm/openjpeg*` | `wasm/LICENSE_OPENJPEG` · `wasm/LICENSE_PDFJS_OPENJPEG` |
 | JBIG2 de PDFium (décodeur wasm de PDF.js) | — | BSD-3-Clause et Apache-2.0 | `js/vendor/pdfjs-6.4.299/wasm/jbig2*` | `wasm/LICENSE_JBIG2` (les deux textes) · `wasm/LICENSE_PDFJS_JBIG2` |
+| Lucide (icônes, sous-ensemble) | 1.70.0 | ISC (et MIT pour les icônes issues de Feather) | `css/lucide.css` | [`licenses/ISC.txt`](licenses/ISC.txt) · [`licenses/LUCIDE-LICENSE.txt`](licenses/LUCIDE-LICENSE.txt) |
 | SheetJS Community Edition (xlsx) | 0.18.5 | Apache-2.0 | `js/vendor/xlsx/` | [`licenses/Apache-2.0.txt`](licenses/Apache-2.0.txt) · `js/vendor/xlsx/LICENSE` |
 | DM Sans | — | OFL-1.1 | `css/fonts/dm-sans-*.woff2` | [`licenses/OFL-1.1.txt`](licenses/OFL-1.1.txt) |
 | DM Mono | — | OFL-1.1 | `css/fonts/dm-mono-*.woff2` | [`licenses/OFL-1.1.txt`](licenses/OFL-1.1.txt) |
 
 ---
+
+### App mobile (`mobile/`) — composants installés par `npm install`, non livrés dans Larka
+
+| Composant | Version | Licence | Rôle |
+|---|---|---|---|
+| @sqlite.org/sqlite-wasm | 3.54 | Apache-2.0 (SQLite : domaine public) | Base locale de l'app (WebAssembly) |
+| bcryptjs | 3.x | BSD-3-Clause | Mots de passe, même format que le serveur PHP |
+| Capacitor (core, android, app, filesystem, share, splash-screen) | 8.x | MIT | Enveloppe native Android |
+| esbuild, @capacitor/cli, @capacitor/assets | — | MIT | Outils de construction, non embarqués |
+
+L'app n'embarque plus de moteur PHP : son serveur est écrit en JavaScript (`mobile/src/serveur/`).
+Le texte de la licence de bcryptjs est copié dans l'app à la construction (`licenses/BCRYPTJS-LICENSE.txt`).
 
 ## @zxing/browser — MIT
 
@@ -198,3 +211,29 @@ Logiciel reste soumis à la licence propriétaire décrite dans [`LICENSE`](LICE
 
 En cas de contradiction entre les deux, la licence du composant tiers prévaut
 pour ce composant (voir article 13.4 de `LICENSE`).
+
+---
+
+## Lucide — ISC
+
+Copyright (c) 2026 Lucide Icons and Contributors
+https://lucide.dev
+
+Sous-ensemble des icônes, embarqué dans `css/lucide.css` par
+`outils/lucide/generer-icones.php`. Texte complet (avec la mention MIT des icônes
+issues du projet Feather, Copyright (c) 2013-present Cole Bemis) :
+`licenses/LUCIDE-LICENSE.txt`.
+
+```
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```

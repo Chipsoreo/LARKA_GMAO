@@ -10,7 +10,7 @@
  * Épreuve « Windows » — ce qui permet à Larka de tourner sous Windows.
  *
  *   1. Chemins : un chemin absolu Windows (« C:\… », « \\serveur\… ») est
- *      reconnu comme tel. En 2.1.1, il était préfixé une seconde fois : la
+ *      reconnu comme tel. En 3.0.0, il était préfixé une seconde fois : la
  *      base SQLite d'une installation Windows n'était jamais ouverte.
  *   2. Aucun « est-ce absolu ? » écrit à la main ne subsiste dans le code qui
  *      résout la base, les journaux, les sauvegardes ou les tenants.

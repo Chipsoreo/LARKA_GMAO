@@ -125,7 +125,7 @@
       return esc(txt.slice(0, i)) + '<mark style="background:#fde68a;color:#7c2d12;border-radius:2px">' + esc(txt.slice(i, i + q.length)) + '</mark>' + esc(txt.slice(i + q.length));
     }
     function renderLead() {
-      lead.innerHTML = sel ? avatarHtml(sel, 24) : '<span style="font-size:16px">🔍</span>';
+      lead.innerHTML = sel ? avatarHtml(sel, 24) : ('<span style="font-size:16px">' + lk('search') + '</span>');
     }
     function applySelected() {
       renderLead();

@@ -31,13 +31,18 @@ async function renderUtilisateurs() {
   showLoading(c);
 
   const canManage = isSuperAdmin() || isAdmin();
+  if (canManage) {
+    // Appareils mobiles : chacun relie les siens depuis « Mon profil » ; ici, la liste de tous (pour délier).
+    document.getElementById('topbarActions').innerHTML =
+      '<button class="btn btn-ghost" id="btnAppareilsMobiles" onclick="ouvrirAppareilsEtablissement()" title="Appareils mobiles reliés à ce serveur : voir, délier">Appareils mobiles</button>';
+  }
 
   try {
     const data = await UtilisateursApi.getAll();
 
     data.forEach(u => {
       const p = u.Provider || 'local';
-      u._type = p === 'google' ? '🔴 Google' : p === 'microsoft' ? '🔵 Microsoft' : '🔑 Local';
+      u._type = p === 'google' ? 'Google' : p === 'microsoft' ? 'Microsoft' : 'Local';
       // Récapitulatif des onglets ouverts : visible directement dans la liste,
       // pour repérer qui a des accès élargis sans ouvrir chaque fiche.
       u._acces = _usrBadgeAcces(u);
@@ -59,12 +64,12 @@ async function renderUtilisateurs() {
         { key:'Prenom',  label:'Prénom' },
         { key:'Nom',     label:'Nom' },
         { key:'Email',   label:'Email' },
-        { key:'TelMobile', label:'📱 Mobile' },
-        { key:'TelPro',   label:'📞 Pro' },
+        { key:'TelMobile', label:'Mobile', nowrap:true },
+        { key:'TelPro',   label:'Pro', nowrap:true },
         { key:'Service', label:'Service' },
         { key:'Poste',   label:'Poste' },
         { key:'Role',    label:'Rôle',  badge:true },
-        { key:'_acces',  label:'👁️ Consultation', render: (v) => v || '' },
+        { key:'_acces',  label:'Consultation', render: (v) => v || '' },
         { key:'_type',   label:'Type' },
       ],
       addBtnFn: canManage ? 'editUser' : null,
@@ -99,7 +104,7 @@ function _usrBlocAccesLecture(u) {
   const visible = (u.Role || 'Demandeur') === 'Demandeur';
 
   let h = '<div class="form-group span-2" id="accesLectureGroup" style="display:' + (visible ? 'block' : 'none') + '">';
-  h += '  <label class="form-label">👁️ Onglets consultables par cette personne</label>';
+  h += ('  <label class="form-label">' + lk('eye') + ' Onglets consultables par cette personne</label>');
   h += '  <div style="border:1px solid var(--gray-border);border-radius:8px;padding:12px;background:var(--gray-bg)">';
   h += '    <div style="font-size:11px;color:var(--gray-text);margin-bottom:10px;line-height:1.5">';
   h += '      Onglets ajoutés au menu de <strong>ce compte uniquement</strong>, en lecture seule.';
@@ -177,7 +182,7 @@ function _usrBadgeAcces(u) {
   if (!n) return '<span style="color:var(--gray-text);font-size:11px">—</span>';
   const items = (typeof DEMANDEUR_LECTURE_ITEMS !== 'undefined') ? DEMANDEUR_LECTURE_ITEMS : {};
   const libelles = liste.map(function(p) { return (items[p] && items[p].label) || p; });
-  return '<span title="' + escHtml(libelles.join(', ')) + '" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:#0e7490;color:#fff">👁️ ' + n + '</span>';
+  return '<span title="' + escHtml(libelles.join(', ')) + ('" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:#0e7490;color:#fff">' + lk('eye') + ' ') + n + '</span>';
 }
 
 function editUser(id) {
@@ -219,11 +224,11 @@ function editUser(id) {
         <div style="font-size:10px;color:var(--gray-text);margin-top:2px">Utilisé pour la récupération de mot de passe</div>
       </div>
       <div class="form-group">
-        <label class="form-label">📱 Tél. mobile</label>
+        <label class="form-label">${lk('smartphone')} Tél. mobile</label>
         <input class="form-control" id="f_telMobile" type="tel" value="${escHtml(u.TelMobile||u.Tel||'')}" placeholder="06 12 34 56 78">
       </div>
       <div class="form-group">
-        <label class="form-label">📞 Tél. professionnel</label>
+        <label class="form-label">${lk('phone')} Tél. professionnel</label>
         <input class="form-control" id="f_telPro" type="tel" value="${escHtml(u.TelPro||'')}" placeholder="05 61 00 00 00">
       </div>
       <div class="form-group">
@@ -276,10 +281,10 @@ function editUser(id) {
         <div style="display:flex;gap:16px;align-items:flex-start;margin-top:8px">
           ${u.PhotoUrl ? `<img src="${escHtml(u.PhotoUrl||'')}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--border);flex-shrink:0" alt="Photo">` : ''}
           <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">
-            ${u.OfficeLocation ? `<div>📍 <strong>Bureau :</strong> ${escHtml(u.OfficeLocation||'')}</div>` : ''}
-            ${u.CompanyName ? `<div>🏢 <strong>Société :</strong> ${escHtml(u.CompanyName||'')}</div>` : ''}
-            ${u.ManagerName ? `<div>👤 <strong>Responsable :</strong> ${escHtml(u.ManagerName||'')}</div>` : ''}
-            ${u.MicrosoftId ? `<div style="opacity:.5">🔑 ID : ${u.MicrosoftId.substring(0,12)}…</div>` : ''}
+            ${u.OfficeLocation ? `<div>${lk('map-pin')} <strong>Bureau :</strong> ${escHtml(u.OfficeLocation||'')}</div>` : ''}
+            ${u.CompanyName ? `<div>${lk('building-complex')} <strong>Société :</strong> ${escHtml(u.CompanyName||'')}</div>` : ''}
+            ${u.ManagerName ? `<div>${lk('user')} <strong>Responsable :</strong> ${escHtml(u.ManagerName||'')}</div>` : ''}
+            ${u.MicrosoftId ? `<div style="opacity:.5">${lk('key-round')} ID : ${u.MicrosoftId.substring(0,12)}…</div>` : ''}
             ${!u.OfficeLocation && !u.CompanyName && !u.ManagerName ? '<div style="opacity:.5">Aucune donnée enrichie disponible</div>' : ''}
           </div>
         </div>
@@ -332,4 +337,6 @@ async function deleteUser(id) {
     catch(e) { toast(e.message, 'error'); }
   });
 }
+
+
 

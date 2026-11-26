@@ -67,7 +67,7 @@ async function renderAnnuaire() {
   if (!main) return;
   // Les onglets sont dans la barre de filtres ci-dessous, pas dans la barre du
   // haut : le choix de vue appartient au plan, pas à l'application.
-  main.innerHTML = '<div style="padding:40px;text-align:center;color:var(--gray-text)">⏳ Chargement de l\'annuaire…</div>';
+  main.innerHTML = ('<div style="padding:40px;text-align:center;color:var(--gray-text)">' + lk('hourglass') + ' Chargement de l\'annuaire…</div>');
   try {
     await _anLoadLeaflet();
     _an.batiments = await AnnuaireApi.getBatiments();
@@ -77,7 +77,7 @@ async function renderAnnuaire() {
   }
   if (!_an.batiments.length) {
     main.innerHTML = '<div class="card" style="margin:24px;padding:32px;text-align:center;color:var(--gray-text)">'
-      + '<div style="font-size:42px;margin-bottom:12px;opacity:.4">🗺️</div>'
+      + ('<div style="font-size:42px;margin-bottom:12px;opacity:.4">' + lk('map') + '</div>')
       + 'Aucun plan disponible pour le moment.<br><span style="font-size:12px">Un gestionnaire doit créer des bâtiments et rattacher des personnes aux points.</span></div>';
     return;
   }
@@ -116,7 +116,7 @@ function _anRenderShell(main) {
           <label class="form-label">Rechercher une personne</label>
           <div id="anSearchMount"></div>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="_anOpenConsent()" title="Choisir si votre présence est visible sur les plans">🔒 Mon partage</button>
+        <button class="btn btn-secondary btn-sm" onclick="_anOpenConsent()" title="Choisir si votre présence est visible sur les plans">${lk('lock')} Mon partage</button>
       </div>
 
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
@@ -386,7 +386,7 @@ function _anRenderList(query, keepQuery) {
   });
   document.getElementById('anCount').textContent = '· ' + rows.length;
   const header = '<div style="padding:6px 8px;border-bottom:1px solid var(--gray-border)">'
-    + '<input id="anListQuery" class="form-control" placeholder="🔍 Filtrer la liste…" value="' + _anEsc(keepQuery ? query : '') + '" oninput="_anRenderList(this.value,true)" style="height:32px;font-size:13px"></div>';
+    + ('<input id="anListQuery" class="form-control" placeholder="Filtrer la liste…" value="') + _anEsc(keepQuery ? query : '') + '" oninput="_anRenderList(this.value,true)" style="height:32px;font-size:13px"></div>';
   const list = rows.map(pt => {
     const u = pt.user || {}, on = String(pt.ElementId) === String(_an.selected);
     const av = window.PersonPicker ? PersonPicker.avatarHtml(u, 30, pt.Couleur) : '';
@@ -401,7 +401,7 @@ function _anRenderList(query, keepQuery) {
       + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500">' + _anEsc(name) + '</div>'
       + '<div style="font-size:12px;color:var(--gray-text)">' + _anEsc(sub) + '</div></div>'
       + dot
-      + '<span style="color:' + (on ? (pt.Couleur || '#2b7be6') : 'var(--gray-text)') + '">📍</span></div>';
+      + '<span style="color:' + (on ? (pt.Couleur || '#2b7be6') : 'var(--gray-text)') + ('">' + lk('map-pin') + '</span></div>');
   }).join('') || '<div style="padding:14px;color:var(--gray-text);font-size:13px">Aucun résultat.</div>';
   box.innerHTML = header + list;
   if (keepQuery) {
@@ -445,14 +445,14 @@ function _anShowFiche(pt) {
   // Statut de présence (déjà chargé en batch) + agenda (chargé à la sélection)
   let presenceHtml = '';
   if (u.Id && Number(u.MasquerPresence) === 1) {
-    presenceHtml = '<div style="margin-top:12px;font-size:11px;color:var(--gray-text)">🔒 Cette personne a masqué sa présence.</div>';
+    presenceHtml = ('<div style="margin-top:12px;font-size:11px;color:var(--gray-text)">' + lk('lock') + ' Cette personne a masqué sa présence.</div>');
   } else if (u.Id) {
     const pr = _an.presence[u.Id] ? _anPresenceInfo(_an.presence[u.Id].availability, _an.presence[u.Id].activity) : null;
     const pill = pr
       ? '<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500"><span style="width:10px;height:10px;border-radius:50%;background:' + pr.c + '"></span>' + _anEsc(pr.label) + '</span>'
       : '<span style="font-size:12px;color:var(--gray-text);cursor:help;border-bottom:1px dotted var(--gray-text)" title="' + _anEsc(_anPresenceWhy()) + '">Statut indisponible ⓘ</span>'
         + (_anReconnexionUtile(_an.presenceReason)
-          ? ' <button type="button" class="btn btn-sm btn-secondary" style="margin-left:8px;font-size:11px;padding:2px 8px" onclick="_anReconnecterMs()">🔑 Reconnecter Microsoft</button>'
+          ? (' <button type="button" class="btn btn-sm btn-secondary" style="margin-left:8px;font-size:11px;padding:2px 8px" onclick="_anReconnecterMs()">' + lk('key-round') + ' Reconnecter Microsoft</button>')
           : '');
     // L'agenda a désormais son propre panneau (#anCal) sous la fiche : ici on
     // ne garde que la pastille de statut, qui doit rester collée à l'identité.
@@ -545,7 +545,7 @@ function _anCalHeader(s, e) {
   // Tout sur une ligne : le bandeau est large, inutile d'empiler comme dans
   // l'ancienne colonne étroite. Il s'enroule seulement sur petit écran.
   return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
-    + '<span style="font-weight:600;color:var(--text)">📅 Agenda' + (_anCal.who ? ' — ' + _anEsc(_anCal.who) : '') + '</span>'
+    + ('<span style="font-weight:600;color:var(--text)">' + lk('calendar') + ' Agenda') + (_anCal.who ? ' — ' + _anEsc(_anCal.who) : '') + '</span>'
     + '<span style="display:flex;gap:4px;margin-left:8px">' + btn('jour', 'Jour') + btn('semaine', 'Semaine') + btn('mois', 'Mois') + '</span>'
     + '<span style="display:flex;align-items:center;gap:6px;margin-left:auto">'
     + nav(-1, '‹')
@@ -569,7 +569,7 @@ function _anCalBodyJour(slots) {
       + _anHm(new Date(sl.start)) + '–' + _anHm(new Date(sl.end)) + '</span>'
       + '<span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
       + (sl.prive
-          ? '<span style="opacity:.7">🔒 Privé</span>'
+          ? ('<span style="opacity:.7">' + lk('lock') + ' Privé</span>')
           : _anEsc(sl.subject || '(sans objet)'))
       + '</span></div>';
   }).join('') + '</div>';
@@ -647,7 +647,7 @@ async function _anLoadAgenda(userId, u) {
     c.innerHTML = _anCalHeader(s, e)
       + '<div style="cursor:help;border-bottom:1px dotted var(--gray-text)" title="' + _anEsc(_anAgendaWhy(res && res.reason)) + '">Agenda indisponible ⓘ</div>'
       + (_anReconnexionUtile(res && res.reason)
-        ? '<button type="button" class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:11px;padding:2px 8px" onclick="_anReconnecterMs()">🔑 Reconnecter Microsoft</button>'
+        ? ('<button type="button" class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:11px;padding:2px 8px" onclick="_anReconnecterMs()">' + lk('key-round') + ' Reconnecter Microsoft</button>')
         : '');
     return;
   }
@@ -685,7 +685,7 @@ async function _anOpenConsent() {
     + '<input type="checkbox" id="anConsentChk" ' + (current ? 'checked' : '') + '> Partager ma présence et mes créneaux</label>'
     + '<p style="font-size:11px;color:var(--gray-text);margin-top:10px">Décochez pour masquer votre présence et votre agenda. Vous pouvez changer d\'avis à tout moment.</p>'
     + '</div>';
-  openModal('🔒 Mon partage de présence', html, async () => {
+  openModal('Mon partage de présence', html, async () => {
     const val = document.getElementById('anConsentChk')?.checked ? 1 : 0;
     await AnnuaireApi.setConsent(val);
     _an.consent = !!val;

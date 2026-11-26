@@ -133,7 +133,7 @@ if ($nouveau !== null) {
     $nomLisible = ucfirst(str_replace('-', ' ', explode('.', $nouveau)[1]));
     $cle = preg_replace('/[^a-z0-9]/', '', explode('.', $nouveau)[1]);
 
-    // ⚠️ CE SQUELETTE ÉTAIT MORT-NÉ.
+    // CE SQUELETTE ÉTAIT MORT-NÉ.
     // Il produisait « serveur/main.php », « client/page.js », une clé
     // « capacites » et aucun « format ». Or le manifeste refuse désormais tout
     // module sans "format": "declaratif/1", refuse explicitement les clés
@@ -293,7 +293,7 @@ foreach ($dossiers as $dossier) {
         /**
          * ── Les images déclarées sont-elles vraiment là ? ────────────────
          *
-         * ⚠️ UN LOGO ABSENT SE CONSTRUISAIT SANS UN MOT.
+         * UN LOGO ABSENT SE CONSTRUISAIT SANS UN MOT.
          * Le manifeste pouvait désigner « assets/logo.png » sans que le
          * fichier existe : le paquet se fabriquait, s'installait, et l'écran
          * Modules affichait une icône brisée. L'auteur, lui, a le fichier sur

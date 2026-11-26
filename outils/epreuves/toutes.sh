@@ -20,7 +20,7 @@ echec=0
 sautees=()
 avertissements=()
 
-for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant acces-coeur schema mise-a-jour csp windows tenants systeme sauvegardes rgpd secrets prerequis aide; do
+for e in invariants expressions conditions layout attaques autorisations execution fonctionnalites reference assistant acces-coeur synchro energie schema mise-a-jour csp windows tenants systeme sauvegardes connect connectivite radio codes-erreur maintenance import-interventions import-stock champs-perso supervision rgpd secrets prerequis aide; do
   f="outils/epreuves/test-$e.php"
   [[ -f "$f" ]] || continue
   echo
@@ -66,6 +66,13 @@ node outils/epreuves/verif-globales.js || echec=1
 echo
 echo "─── rendu de la mise en page ──────────────────────────────────────"
 node outils/epreuves/test-rendu-layout.js | tail -3
+[[ ${PIPESTATUS[0]} -eq 0 ]] || echec=1
+
+# La lecture des classeurs (vrai worker) et le dépliage d'un planning de
+# contrôles (vraies fonctions de l'assistant), sans navigateur ni base.
+echo
+echo "─── lecture des classeurs et plannings ────────────────────────────"
+node outils/epreuves/test-import-planning.js | tail -1
 [[ ${PIPESTATUS[0]} -eq 0 ]] || echec=1
 
 # Les catalogues de la référence sont-ils à jour ? On régénère, et l'on compare :

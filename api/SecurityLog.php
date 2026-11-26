@@ -70,6 +70,7 @@ final class SecurityLog
     private const BRUYANTS = [
         'login_failure', 'access_denied', 'sa_login_failure', 'rate_limited',
         'password_reset_failure', 'password_change_failure',
+        'connect_releveur_refus',   // jetons de PC releveur refusés (route sans session)
     ];
     /** Entrées par (évènement, IP) et par minute au-delà desquelles on résume. */
     private const QUOTA_PAR_MINUTE = 30;
@@ -129,7 +130,7 @@ final class SecurityLog
             // endroit que le reste. Le fichier JSONL ci-dessus reste la source
             // de vérité (il survit à une panne de base).
             if (class_exists('Journal')) {
-                // ⚠️ NOMS DÉSALIGNÉS : la liste portait « default_password_attempt »
+                // NOMS DÉSALIGNÉS : la liste portait « default_password_attempt »
                 // et « superadmin_action », alors que les helpers émettent
                 // « sa_default_password » et « sa_action ». Ces deux évènements,
                 // parmi les plus sensibles, arrivaient donc au journal en simple
@@ -143,7 +144,7 @@ final class SecurityLog
                 // Une action sensible qui ÉCHOUE est aussi un signal (refus en
                 // série, tentative sur une route d'administration…).
                 $echec = array_key_exists('success', $context) && $context['success'] === false;
-                // ⚠️ array_merge($context, ['action' => …]) ÉCRASAIT la route.
+                // array_merge($context, ['action' => …]) ÉCRASAIT la route.
                 // Le contexte porte souvent 'action' = la route visée
                 // (« interventions_prevues »…) : elle était remplacée par le
                 // nom de l'évènement, et l'écran Journal ne disait plus QUOI
@@ -154,6 +155,13 @@ final class SecurityLog
                     $ctxJournal['cible'] = $ctxJournal['action'];
                 }
                 $ctxJournal['action'] = strtoupper($event);
+                // Code d'erreur : l'évènement de sécurité dit précisément ce qui s'est passé.
+                $codes = ['login_failure' => 'SEC-001', 'sa_login_failure' => 'SEC-001', 'password_reset_failure' => 'SEC-001',
+                          'password_change_failure' => 'SEC-001', 'connect_reauth_failure' => 'SEC-005', 'rate_limited' => 'SEC-007',
+                          'access_denied' => 'SEC-004', 'synchro_refus' => 'SEC-004', 'connect_releveur_refus' => 'CXH-001',
+                          'sa_default_password' => 'SEC-009', 'default_password_attempt' => 'SEC-009'];
+                if (isset($codes[$event])) $ctxJournal['code'] = $codes[$event];
+                elseif (!$echec) $ctxJournal['code'] = null;          // évènement normal : pas un incident
                 // Colonne CodeHttp du journal (badge « HTTP 403 » à l'écran).
                 if (isset($context['http_code'])) $ctxJournal['codeHttp'] = (int)$context['http_code'];
                 $message = $event

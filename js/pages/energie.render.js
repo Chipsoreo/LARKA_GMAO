@@ -88,19 +88,23 @@ async function _renderEnergieOnglet(c) {
     <!-- Barre principale -->
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px">
       <div class="search-input-wrap">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon">${lk('search')}</span>
         <input class="search-input" type="text" placeholder="Rechercher (N° facture, fournisseur, commentaire…)"
           value="${App.searchTerm||''}" oninput="App.handleSearch(this.value)" onkeydown="App.handleSearchKey(event)">
       </div>
       ${renderEnergieFilterButtons()}
 
       <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="verifierRelevesEnergie('${type}')" title="Relire les relevés : index précédents, consommations, doublons">${lk('circle-check')} Vérifier</button>
       ${canEdit() ? `<button class="btn btn-primary" onclick="editReleve(0,null,'${type}')">+ Saisie</button>` : ''}
     </div>
 
     ${renderEnergieFilterPanels()}
 
   </div>`;
+
+  // Relevés de tous les compteurs du fluide en un appel (statistiques + blocs).
+  await EnergieApi.prechargerReleves(mesCompteurs.map(c => c.Id));
 
   // Stats globales du fluide
   // ── Graphique stats — utilise TOUS les relevés (non filtrés) ──
@@ -175,7 +179,7 @@ async function _renderEnergieOnglet(c) {
           const colors = ['#3b82f6','#9b59b6','#16a34a','#f59e0b','#ef4444','#0ea5e9'];
           repartHtml = `<tr><td colspan="8" style="padding:4px 8px 8px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <span style="font-size:10px;font-weight:600;color:#92400e">💰 Répartition :</span>
+              <span style="font-size:10px;font-weight:600;color:#92400e">${lk('wallet')} Répartition :</span>
               ${repartPresta.map((rp,idx) => {
                 const col = colors[idx % colors.length];
                 const partMontant = (parseFloat(r.Montant)||0) * (rp.pourcentage / 100);
@@ -223,7 +227,7 @@ async function _renderEnergieOnglet(c) {
         <td style="font-family:monospace;font-size:12px">${r.IndexDebut!=null?fmtNum(r.IndexDebut):'—'}</td>
         <td style="font-family:monospace;font-size:12px">${r.IndexFin!=null?fmtNum(r.IndexFin):'—'}</td>
         <td style="font-weight:600;color:var(--blue)">${r.Consommation!=null?fmtNum(r.Consommation)+' '+cfg.unite:'—'}</td>
-        <td style="color:var(--orange);font-weight:600">${r.Montant?fmtMon(r.Montant):'—'}${isFactureSide && repartPresta.length > 0 && r.Montant ? '<span style="font-size:9px;color:#92400e;margin-left:3px" title="Répartie entre '+repartPresta.length+' prestataires">💰</span>' : ''}</td>
+        <td style="color:var(--orange);font-weight:600">${r.Montant?fmtMon(r.Montant):'—'}${isFactureSide && repartPresta.length > 0 && r.Montant ? '<span style="font-size:9px;color:#92400e;margin-left:3px" title="Répartie entre '+repartPresta.length+(' prestataires">' + lk('wallet') + '</span>') : ''}</td>
         ${isFactureSide ? `
           <td style="font-family:monospace;font-size:12px">${escHtml(r.NumeroFacture||'—')}</td>
           <td style="font-size:12px">${r.PeriodeDebut&&r.PeriodeFin ? fmtDate(r.PeriodeDebut)+' → '+fmtDate(r.PeriodeFin) : '—'}</td>
@@ -231,8 +235,8 @@ async function _renderEnergieOnglet(c) {
           <td colspan="2" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gray-text)">${escHtml(r.Commentaire||'—')}</td>
         `}
         <td><div class="actions-col">
-          ${canEdit()?`<button class="icon-btn" onclick="editReleve(${r.Id},${cpt.Id},'${type}')" title="Modifier">✏️</button>`:''}
-          ${canDelete()?`<button class="icon-btn delete" onclick="deleteReleve(${r.Id},${cpt.Id},'${type}')" title="Supprimer">🗑️</button>`:''}
+          ${canEdit()?`<button class="icon-btn" onclick="editReleve(${r.Id},${cpt.Id},'${type}')" title="Modifier">${lk('pencil')}</button>`:''}
+          ${canDelete()?`<button class="icon-btn delete" onclick="deleteReleve(${r.Id},${cpt.Id},'${type}')" title="Supprimer">${lk('trash')}</button>`:''}
         </div></td>
       </tr>${sousHtml}${repartHtml}`;
       }).join('');
@@ -249,7 +253,7 @@ async function _renderEnergieOnglet(c) {
             <div class="card-title" style="margin:0">${escHtml(cpt.Nom||'')}</div>
             <div style="font-size:11px;color:var(--gray-text)">${escHtml(cpt.NumeroCompteur||'')}${cpt.Site?' — '+cpt.Site:''}</div>
           </div>
-          ${contrat ? `<span class="badge badge-blue" style="margin-left:8px">📋 ${escHtml(contrat.Societe||'')}</span>` : ''}
+          ${contrat ? `<span class="badge badge-blue" style="margin-left:8px">${lk('clipboard-list')} ${escHtml(contrat.Societe||'')}</span>` : ''}
           ${!cpt.Actif ? `<span class="badge badge-gray">Inactif</span>` : ''}
           ${(() => {
             let rep = [];
@@ -257,7 +261,7 @@ async function _renderEnergieOnglet(c) {
             if (!rep.length) return '';
             return `<span class="badge" style="margin-left:8px;background:#fef3c7;color:#92400e;border:1px solid #fbbf24;font-size:10px;padding:3px 8px;border-radius:12px;cursor:pointer"
               onclick="event.stopPropagation();toggleRepartitionDetail(${cpt.Id})" title="Cliquer pour voir le détail">
-              💰 Répartition : ${rep.map(r => r.nom?.split(' — ').pop()?.trim() || r.nom || '?').join(', ')}
+              ${lk('wallet')} Répartition : ${rep.map(r => r.nom?.split(' — ').pop()?.trim() || r.nom || '?').join(', ')}
             </span>`;
           })()}
         </div>
@@ -270,8 +274,8 @@ async function _renderEnergieOnglet(c) {
           </div>
           ${canEdit() ? `
             <button class="btn btn-ghost btn-sm" onclick="editReleve(0,${cpt.Id},'${type}')">+ Saisie</button>
-            <button class="icon-btn" onclick="editCompteur(${cpt.Id},'${type}')" title="Modifier compteur">✏️</button>
-            <button class="icon-btn delete" onclick="deleteCompteur(${cpt.Id})" title="Supprimer compteur">🗑️</button>
+            <button class="icon-btn" onclick="editCompteur(${cpt.Id},'${type}')" title="Modifier compteur">${lk('pencil')}</button>
+            <button class="icon-btn delete" onclick="deleteCompteur(${cpt.Id})" title="Supprimer compteur">${lk('trash')}</button>
           ` : ''}
         </div>
       </div>
@@ -279,7 +283,7 @@ async function _renderEnergieOnglet(c) {
       <!-- Bande récap : écart entre les 2 côtés -->
       ${(manuels.length > 0 && factures.length > 0) ? `
       <div style="padding:10px 20px;background:#f8f5ff;border-bottom:1px solid var(--gray-border);display:flex;gap:20px;align-items:center;flex-wrap:wrap;justify-content:center">
-        <span style="font-size:11px;font-weight:700;color:#7c3aed">⚖️ Comparaison relevé / facture</span>
+        <span style="font-size:11px;font-weight:700;color:#7c3aed">${lk('scale')} Comparaison relevé / facture</span>
         <span style="font-size:12px">Conso relevée : <strong style="color:var(--blue)">${fmtNum(consoManuels)} ${cfg.unite}</strong></span>
         <span style="font-size:12px">Estimé relevés : <strong style="color:var(--orange)">${fmtMon(coutManuels)}</strong></span>
         <span style="font-size:12px">Conso facturée : <strong style="color:#9b59b6">${fmtNum(consoFactures)} ${cfg.unite}</strong></span>
@@ -298,7 +302,7 @@ async function _renderEnergieOnglet(c) {
         const totalFacture = factures.reduce((s,r) => s+(parseFloat(r.Montant)||0), 0);
         return `
         <div id="repartDetail_${cpt.Id}" style="display:none;padding:12px 20px;background:#fffbeb;border-bottom:1px solid #fbbf24">
-          <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:8px">💰 Répartition des factures entre prestataires</div>
+          <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:8px">${lk('wallet')} Répartition des factures entre prestataires</div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
             ${rep.map((r,i) => {
               const colors = ['#3b82f6','#9b59b6','#16a34a','#f59e0b','#ef4444','#0ea5e9'];
@@ -520,6 +524,7 @@ async function _refreshEnergieStatsOnly() {
 
 
 async function _renderEnergieStats(type, compteurs, cfg) {
+  await EnergieApi.prechargerReleves(compteurs.map(c => c.Id));
   const tousReleves = [];
   for (const cpt of compteurs) {
     const r = await EnergieApi.getRelevers(cpt.Id);
@@ -913,7 +918,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
         const pct = Math.round((v/maxEntry)*100);
         return `<div>
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
-            <span style="font-weight:500">${nom}</span>
+            <span style="font-weight:500">${escHtml(nom)}</span>
             <span style="color:${COLORS[i%COLORS.length]};font-weight:600">${fmtVal(v)}</span>
           </div>
           <div style="background:var(--gray-border);border-radius:4px;height:14px">
@@ -950,7 +955,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
     const ecartCol = ecart === null ? '' : Math.abs(ecart) < d.conso*0.03 ? '#27ae60' : 'var(--orange)';
     return `
     <tr>
-      <td style="font-weight:500">${nom}</td>
+      <td style="font-weight:500">${escHtml(nom)}</td>
       <td style="color:var(--blue)">
         ${hasR ? `<div style="font-weight:600">${fmtNum(pt.releve.conso)} ${cfg.unite}</div><div style="font-size:10px;color:var(--gray-text)">${pt.releve.nb} relevé${pt.releve.nb>1?'s':''}</div>` : '<span style="color:var(--gray-text)">—</span>'}
       </td>
@@ -982,12 +987,12 @@ async function _renderEnergieStats(type, compteurs, cfg) {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
         <span style="font-size:11px;font-weight:600;color:var(--gray-text);margin-right:2px">Afficher :</span>
         ${[
-          ['kpi_conso',   '📊 Consommation', true],
-          ['kpi_cout',    '💰 Coûts',        true],
-          ['kpi_contrat', '📋 Contrat',      true],
-          ['kpi_tendance','📈 Tendance',      true],
-          ['kpi_carbone', '🌿 Carbone',      true],
-          ['kpi_extremes','🏆 Extrêmes',     false],
+          ['kpi_conso',   (lk('chart-column') + ' Consommation'), true],
+          ['kpi_cout',    (lk('wallet') + ' Coûts'),        true],
+          ['kpi_contrat', (lk('clipboard-list') + ' Contrat'),      true],
+          ['kpi_tendance',(lk('trending-up') + ' Tendance'),      true],
+          ['kpi_carbone', (lk('leaf') + ' Carbone'),      true],
+          ['kpi_extremes',(lk('trophy') + ' Extrêmes'),     false],
         ].map(([id,label,defOn]) => {
           const on = EnergieStatsState.kpiVisible?.[id] ?? defOn;
           return `<button onclick="toggleKpiGroupe('${id}')" id="kpiBtn_${id}"
@@ -1000,7 +1005,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- Groupe : Consommation -->
       <div id="kpi_conso" style="display:${(EnergieStatsState.kpiVisible?.kpi_conso ?? true)?'flex':'none'};gap:0;flex-wrap:wrap;border-top:1px solid var(--gray-border);padding:12px 0">
-        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">📊 Consommation</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">${lk('chart-column')} Consommation</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           ${hasBoth ? `
           <div style="text-align:center;min-width:110px">
@@ -1050,7 +1055,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- Groupe : Coûts -->
       <div id="kpi_cout" style="display:${(EnergieStatsState.kpiVisible?.kpi_cout ?? true)?'flex':'none'};gap:0;flex-wrap:wrap;border-top:1px solid var(--gray-border);padding:12px 0">
-        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">💰 Coûts</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">${lk('wallet')} Coûts</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           ${hasBoth ? `
           <div style="text-align:center;min-width:110px">
@@ -1104,7 +1109,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- Groupe : Contrat -->
       <div id="kpi_contrat" style="display:${(EnergieStatsState.kpiVisible?.kpi_contrat ?? true)?'flex':'none'};gap:0;flex-wrap:wrap;border-top:1px solid var(--gray-border);padding:12px 0">
-        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">📋 Contrat</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">${lk('clipboard-list')} Contrat</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <div style="text-align:center;min-width:110px">
             <div style="font-size:10px;color:var(--gray-text);display:flex;align-items:center;justify-content:center;gap:3px">Prix contractuel
@@ -1117,7 +1122,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- Groupe : Tendance -->
       <div id="kpi_tendance" style="display:${(EnergieStatsState.kpiVisible?.kpi_tendance ?? true)?'flex':'none'};gap:0;flex-wrap:wrap;border-top:1px solid var(--gray-border);padding:12px 0">
-        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">📈 Tendance</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">${lk('trending-up')} Tendance</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           ${tendanceConso !== null ? `
           <div style="text-align:center;min-width:110px">
@@ -1132,7 +1137,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- Groupe : Extrêmes -->
       <div id="kpi_extremes" style="display:${(EnergieStatsState.kpiVisible?.kpi_extremes ?? false)?'flex':'none'};gap:0;flex-wrap:wrap;border-top:1px solid var(--gray-border);padding:12px 0">
-        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">🏆 Extrêmes</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px">${lk('trophy')} Extrêmes</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           ${meilleurMois ? `
           <div style="text-align:center;min-width:110px">
@@ -1151,9 +1156,9 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- Groupe : Carbone -->
       <div id="kpi_carbone" style="display:${(EnergieStatsState.kpiVisible?.kpi_carbone ?? true)?'flex':'none'};gap:0;flex-wrap:wrap;border-top:1px solid var(--gray-border);padding:12px 0">
-        <div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px;display:flex;align-items:center;gap:8px">🌿 Empreinte carbone
+        <div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px;width:100%;margin-bottom:8px;display:flex;align-items:center;gap:8px">${lk('leaf')} Empreinte carbone
           <span style="text-transform:none;letter-spacing:0;font-weight:500;font-size:10px;padding:1px 8px;border-radius:10px;background:${_methodeActive==='simplifiee'?'#f5f3ff':'#f0fdf4'};color:${_methodeActive==='simplifiee'?'#7c3aed':'#16a34a'};border:1px solid ${_methodeActive==='simplifiee'?'#c4b5fd':'#86efac'}">
-            ${_methodeActive==='simplifiee'?'📦 Simplifiée':'🏛️ Officielle'}
+            ${_methodeActive==='simplifiee'?(lk('package') + ' Simplifiée'):(lk('landmark') + ' Officielle')}
           </span>
           ${type==='Chauffage' ? '<span style="text-transform:none;letter-spacing:0;font-weight:400;font-size:9px;color:var(--gray-text)">Chauffage : facteur ' + (_methodeActive==='simplifiee'?'Impact CO2':'ADEME') + ' (mix moyen réseau)</span>' : ''}
         </div>
@@ -1223,7 +1228,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
 
       <!-- En-tête + contrôles indépendants -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-        <div style="font-size:12px;font-weight:700;color:#16a34a">🌿 Émissions CO₂ — Évolution mensuelle</div>
+        <div style="font-size:12px;font-weight:700;color:#16a34a">${lk('leaf')} Émissions CO₂ — Évolution mensuelle</div>
         <div style="flex:1;border-top:1px dashed #bbf7d0"></div>
         ${(()=>{
           const cPer = CarboneGraphState.periode;
@@ -1237,8 +1242,8 @@ async function _renderEnergieStats(type, compteurs, cfg) {
           return `
           <div style="display:flex;gap:4px;align-items:center">
             <span style="font-size:10px;color:var(--gray-text)">Série :</span>
-            <button onclick="switchCarboneShow('showReleve')"  style="${btnStyle(cSR,'var(--blue)')}">📋 Relevés</button>
-            <button onclick="switchCarboneShow('showFacture')" style="${btnStyle(cSF,'#9b59b6')}">🧾 Factures</button>
+            <button onclick="switchCarboneShow('showReleve')"  style="${btnStyle(cSR,'var(--blue)')}">${lk('clipboard-list')} Relevés</button>
+            <button onclick="switchCarboneShow('showFacture')" style="${btnStyle(cSF,'#9b59b6')}">${lk('receipt')} Factures</button>
           </div>
           <div style="width:1px;background:var(--gray-border);align-self:stretch;margin:0 2px"></div>
           <div style="display:flex;gap:4px;align-items:center">
@@ -1248,8 +1253,8 @@ async function _renderEnergieStats(type, compteurs, cfg) {
             ).join('')}
           </div>
           <div style="display:flex;gap:4px;align-items:center;margin-left:8px">
-            <button onclick="switchCarboneGraphType('barres')" title="Barres" style="${btnStyle(cTyp==='barres','#16a34a')}">📊</button>
-            <button onclick="switchCarboneGraphType('ligne')"  title="Ligne"  style="${btnStyle(cTyp==='ligne','#16a34a')}">📈</button>
+            <button onclick="switchCarboneGraphType('barres')" title="Barres" style="${btnStyle(cTyp==='barres','#16a34a')}">${lk('chart-column')}</button>
+            <button onclick="switchCarboneGraphType('ligne')"  title="Ligne"  style="${btnStyle(cTyp==='ligne','#16a34a')}">${lk('trending-up')}</button>
           </div>`;
         })()}
         ${(()=>{
@@ -1332,7 +1337,7 @@ async function _renderEnergieStats(type, compteurs, cfg) {
             const area = `M${pts[0].x},${H} `+pts.map(p=>`L${p.x},${p.y}`).join(' ')+` L${pts[pts.length-1].x},${H} Z`;
             svgContent += `<path d="${area}" fill="url(#gCO2R)"/>`;
             svgContent += `<polyline points="${pts.map(p=>`${p.x},${p.y}`).join(' ')}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round" stroke-dasharray="5,3"/>`;
-            svgContent += pts.map((p,i) => vRel[i]>0 ? `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#3b82f6" stroke="white" stroke-width="1.5"><title>📋 ${moisC[i].label}: ${fmtNum(vRel[i])} kgCO₂ (relevé)</title></circle>` : '').join('');
+            svgContent += pts.map((p,i) => vRel[i]>0 ? `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#3b82f6" stroke="white" stroke-width="1.5"><title>${lk('clipboard-list')} ${moisC[i].label}: ${fmtNum(vRel[i])} kgCO₂ (relevé)</title></circle>` : '').join('');
           }
           // Ligne factures
           if (cSF && vFac.some(v=>v>0)) {
@@ -1340,15 +1345,15 @@ async function _renderEnergieStats(type, compteurs, cfg) {
             const area = `M${pts[0].x},${H} `+pts.map(p=>`L${p.x},${p.y}`).join(' ')+` L${pts[pts.length-1].x},${H} Z`;
             svgContent += `<path d="${area}" fill="url(#gCO2F)"/>`;
             svgContent += `<polyline points="${pts.map(p=>`${p.x},${p.y}`).join(' ')}" fill="none" stroke="${COL_FAC}" stroke-width="2.5" stroke-linejoin="round"/>`;
-            svgContent += pts.map((p,i) => vFac[i]>0 ? `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="${COL_FAC}" stroke="white" stroke-width="1.5"><title>🧾 ${moisC[i].label}: ${fmtNum(vFac[i])} kgCO₂ (facture)</title></circle>` : '').join('');
+            svgContent += pts.map((p,i) => vFac[i]>0 ? `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="${COL_FAC}" stroke="white" stroke-width="1.5"><title>${lk('receipt')} ${moisC[i].label}: ${fmtNum(vFac[i])} kgCO₂ (facture)</title></circle>` : '').join('');
           }
           // Labels mois
           svgContent += moisC.map((m,i) => `<text x="${pad+i*xStep}" y="${H+12}" text-anchor="middle" font-size="9" fill="var(--gray-text)">${m.label}</text>`).join('');
 
           return `<svg viewBox="0 0 ${W} ${H+14}" style="width:100%;height:120px;overflow:visible">${svgContent}</svg>
           <div style="display:flex;align-items:center;gap:16px;margin-top:4px;font-size:11px;color:var(--gray-text)">
-            ${cSR ? `<span><span style="display:inline-block;width:18px;height:2px;background:#3b82f6;border-top:2px dashed #3b82f6;vertical-align:middle;margin-right:4px"></span>📋 Relevés</span>` : ''}
-            ${cSF ? `<span><span style="display:inline-block;width:18px;height:2px;background:${COL_FAC};vertical-align:middle;margin-right:4px"></span>🧾 Factures</span>` : ''}
+            ${cSR ? `<span><span style="display:inline-block;width:18px;height:2px;background:#3b82f6;border-top:2px dashed #3b82f6;vertical-align:middle;margin-right:4px"></span>${lk('clipboard-list')} Relevés</span>` : ''}
+            ${cSF ? `<span><span style="display:inline-block;width:18px;height:2px;background:${COL_FAC};vertical-align:middle;margin-right:4px"></span>${lk('receipt')} Factures</span>` : ''}
             <span style="margin-left:4px">Moy. combinée : ${fmtNum(avgCarb)} kgCO₂</span>
           </div>`;
         }
@@ -1365,16 +1370,16 @@ async function _renderEnergieStats(type, compteurs, cfg) {
             return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0">'
               + `<div style="font-size:9px;color:var(--gray-text);text-align:center;white-space:nowrap;overflow:hidden;max-width:100%">${label}</div>`
               + `<div style="display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;height:100px;width:100%;gap:0">`
-              + (cSF && hF > 0 ? `<div style="width:100%;height:${hF}px;background:${COL_FAC};border-radius:${hR>0?'0':'3px 3px'} 0 0;opacity:0.85;min-height:2px" title="${m.label} 🧾 Facture: ${fmtNum(vF)} kgCO₂"></div>` : '')
-              + (cSR && hR > 0 ? `<div style="width:100%;height:${hR}px;background:#3b82f6;border-radius:3px 3px 0 0;opacity:0.85;min-height:2px" title="${m.label} 📋 Relevé: ${fmtNum(vR)} kgCO₂"></div>` : '')
+              + (cSF && hF > 0 ? `<div style="width:100%;height:${hF}px;background:${COL_FAC};border-radius:${hR>0?'0':'3px 3px'} 0 0;opacity:0.85;min-height:2px" title="${m.label} — Facture : ${fmtNum(vF)} kgCO₂"></div>` : '')
+              + (cSR && hR > 0 ? `<div style="width:100%;height:${hR}px;background:#3b82f6;border-radius:3px 3px 0 0;opacity:0.85;min-height:2px" title="${m.label} — Relevé : ${fmtNum(vR)} kgCO₂"></div>` : '')
               + `</div>`
               + `<div style="font-size:9px;color:var(--gray-text);text-align:center;white-space:nowrap">${m.label}</div>`
               + '</div>';
           }).join('')
           + '</div>'
           + `<div style="display:flex;align-items:center;gap:16px;margin-top:8px;font-size:11px;color:var(--gray-text)">`
-          + (cSR ? `<span><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px;vertical-align:middle;margin-right:4px;opacity:0.85"></span>📋 Relevés manuels</span>` : '')
-          + (cSF ? `<span><span style="display:inline-block;width:10px;height:10px;background:${COL_FAC};border-radius:2px;vertical-align:middle;margin-right:4px;opacity:0.85"></span>🧾 Factures</span>` : '')
+          + (cSR ? `<span><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px;vertical-align:middle;margin-right:4px;opacity:0.85"></span>${lk('clipboard-list')} Relevés manuels</span>` : '')
+          + (cSF ? `<span><span style="display:inline-block;width:10px;height:10px;background:${COL_FAC};border-radius:2px;vertical-align:middle;margin-right:4px;opacity:0.85"></span>${lk('receipt')} Factures</span>` : '')
           + (cSR && cSF ? `<span style="color:var(--gray-text);font-size:10px">Barres empilées</span>` : '')
           + `</div>`;
       })()}
@@ -1386,11 +1391,11 @@ async function _renderEnergieStats(type, compteurs, cfg) {
       <div class="table-wrap" style="border:1px solid var(--gray-border);border-radius:8px;overflow:hidden">
         <table><thead><tr>
           <th>Compteur</th>
-          <th style="color:var(--blue)">🔵 Conso relevée</th>
-          <th style="color:#9b59b6">🟣 Conso facturée</th>
+          <th style="color:var(--blue)">${lk('circle', 'p bleu')} Conso relevée</th>
+          <th style="color:#9b59b6">${lk('circle', 'p violet')} Conso facturée</th>
           <th>Écart</th>
           <th>Prix unit. moyen</th>
-          <th style="color:#16a34a">🌿 CO₂</th>
+          <th style="color:#16a34a">${lk('leaf')} CO₂</th>
         </tr></thead><tbody>${lignesCompteur}</tbody></table>
       </div>
     </div>
@@ -1835,7 +1840,10 @@ function _bcExportCsv() {
 
 async function _renderBilanCarbone(c) {
   const compteurs = await EnergieApi.getCompteurs();
-  const facteurs  = await EnergieApi.getFacteursCarbone(getMethodeCarbone());
+  const [facteurs] = await Promise.all([
+    EnergieApi.getFacteursCarbone(getMethodeCarbone()),
+    EnergieApi.prechargerReleves(compteurs.map(x => x.Id)),
+  ]);
   // Contrats requis par le module 3 (colonne « Contrat » de la table détail
   // énergies). Un échec de chargement est silencieux — la colonne affichera
   // « — Aucun — » plutôt que casser tout le bilan.
@@ -1859,7 +1867,7 @@ async function _renderBilanCarbone(c) {
     return v < 0 ? '#16a34a' : v > 0 ? '#dc2626' : 'var(--gray-text)';
   };
 
-  const typeIcons  = { Electricite:'⚡', Eau:'💧', Chauffage:'🔥', Gaz:'🔵' };
+  const typeIcons  = { Electricite:lk('zap'), Eau:lk('droplet'), Chauffage:lk('flame'), Gaz:lk('circle', 'p bleu') };
   const typeColors = { Electricite:'#f59e0b', Eau:'#3b82f6', Chauffage:'#ef4444', Gaz:'#6b7280' };
   const typesActifs = [...new Set(compteurs.map(c => c.Type))].filter(t => ENERGIE_CONFIG[t]);
 
@@ -2024,14 +2032,14 @@ async function _renderBilanCarbone(c) {
   // Ligne du haut — badge source (cliquable pour déplier la méthodo) + bascule
   html += '<div style="display:flex;align-items:center;gap:10px;padding:12px 20px;flex-wrap:wrap;background:' + (chipOfficielle?'#f0fdf4':'#f5f3ff') + ';border-bottom:1px solid var(--gray-border)">';
   html += '  <div onclick="_bcToggleMethodo()" style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;background:var(--card-bg);border:1px solid ' + (chipOfficielle?'#86efac':'#c4b5fd') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (chipOfficielle?'#16a34a':'#7c3aed') + '">';
-  html += '    ' + (chipOfficielle ? '🏛️ ADEME officielle' : '📦 Version simplifiée');
+  html += '    ' + (chipOfficielle ? (lk('landmark') + ' ADEME officielle') : (lk('package') + ' Version simplifiée'));
   html += '    <span style="font-weight:400;color:var(--gray-text);font-size:11px">· millésime ' + anneeFacteurAffichee + '</span>';
   html += '    <span id="bc_methodo_chev" style="font-size:10px;margin-left:2px">' + (BilanCarboneUI.methodoOpen ? '▴' : '▾') + '</span>';
   html += '  </div>';
   html += '  <button onclick="setMethodeCarbone(\'' + (chipOfficielle?'simplifiee':'officielle') + '\');renderCarbone()" ';
   html += '     style="padding:5px 10px;font-size:11px;border-radius:16px;background:transparent;border:1px solid var(--gray-border);color:var(--gray-text);cursor:pointer" ';
   html += '     title="Basculer entre méthode officielle ADEME et méthode simplifiée grand public">';
-  html += '    Basculer → ' + (chipOfficielle ? '📦 Simplifiée' : '🏛️ Officielle');
+  html += '    Basculer → ' + (chipOfficielle ? (lk('package') + ' Simplifiée') : (lk('landmark') + ' Officielle'));
   html += '  </button>';
   html += '  <div style="flex:1"></div>';
   html += '  <span style="font-size:11px;color:var(--gray-text);font-style:italic">' + valides_len(facteurs) + ' facteur(s) énergie · millésime mobilité ' + millesimeMob + '</span>';
@@ -2055,9 +2063,9 @@ async function _renderBilanCarbone(c) {
     }
     return f.FacteurCO2 + ' ' + (f.Unite || 'kgCO2e/kWh');
   };
-  html += '⚡ Électricité : ' + _fmtF('Electricite') + '<br>';
-  html += '🔥 Chauffage : '   + _fmtF('Chauffage')   + '<br>';
-  html += '🔵 Gaz : '         + _fmtF('Gaz')         + '</div>';
+  html += (lk('zap') + ' Électricité : ') + _fmtF('Electricite') + '<br>';
+  html += (lk('flame') + ' Chauffage : ')   + _fmtF('Chauffage')   + '<br>';
+  html += (lk('circle', 'p bleu') + ' Gaz : ')         + _fmtF('Gaz')         + '</div>';
   html += '    <div><strong style="color:var(--navy)">Périmètre mobilité</strong><br>Facteurs issus de : <em>' + sourceMobLabel + '</em>. Le périmètre retenu (ACV complet, hors construction, combustion, CO₂ seul) se règle dans les paramètres globaux ci-dessous.</div>';
   html += '    <div><strong style="color:var(--navy)">Règle des millésimes</strong><br>Facteurs figés par année. Une facture ' + anneeFacteurAffichee + ' utilise le facteur ' + anneeFacteurAffichee + ', pas celui du jour — même si les valeurs futures changent.</div>';
   html += '  </div>';
@@ -2070,7 +2078,7 @@ async function _renderBilanCarbone(c) {
   });
   if (_gazEnVolume) {
     html += '  <div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--card-bg);border:1px solid var(--gray-border);border-left:3px solid #6b7280">';
-    html += '    <div style="font-weight:700;color:var(--navy);font-size:12px;margin-bottom:3px">🔵 Conversion du gaz — m³ vers kWh</div>';
+    html += ('    <div style="font-weight:700;color:var(--navy);font-size:12px;margin-bottom:3px">' + lk('circle', 'p bleu') + ' Conversion du gaz — m³ vers kWh</div>');
     html += '    <div style="color:var(--gray-text);font-size:11px;line-height:1.55;margin-bottom:6px">';
     html += '      Vos compteurs gaz sont relevés en m³, mais le facteur d\'émission s\'exprime au kWh. La conversion passe par le <strong>pouvoir calorifique</strong> du gaz distribué — ce n\'est pas un simple changement d\'unité, la valeur dépend de la composition du gaz et de votre zone. Elle figure sur vos factures GRDF sous le nom « coefficient de conversion » (généralement entre 10,7 et 12,8).';
     html += '    </div>';
@@ -2092,13 +2100,13 @@ async function _renderBilanCarbone(c) {
   [
     ['1', '#ef4444', 'Émissions directes',
      'Ce que brûlent vos propres installations et véhicules. La combustion a lieu chez vous, sur un équipement que vous possédez.',
-     '🔵 Gaz naturel · flotte thermique'],
+     (lk('circle', 'p bleu') + ' Gaz naturel · flotte thermique')],
     ['2', '#3b82f6', 'Énergie achetée',
      'L\'énergie est produite ailleurs mais consommée par vous. La combustion a lieu à la centrale ou à la chaufferie urbaine, pas sur votre site.',
-     '⚡ Électricité · 🔥 Réseau de chaleur'],
+     (lk('zap') + ' Électricité · ' + lk('flame') + ' Réseau de chaleur')],
     ['3', '#059669', 'Autres émissions indirectes',
      'Tout le reste de la chaîne de valeur : ce que votre activité provoque sans que vous en ayez la maîtrise directe. C\'est en général le poste le plus lourd.',
-     '🚗 Déplacements des agents'],
+     (lk('car') + ' Déplacements des agents')],
   ].forEach(function(s) {
     html += '<div style="padding:10px 12px;border-radius:8px;background:var(--card-bg);border:1px solid var(--gray-border);border-left:3px solid ' + s[1] + '">';
     html += '  <div style="font-weight:700;color:' + s[1] + ';font-size:12px">Scope ' + s[0] + ' — ' + s[2] + '</div>';
@@ -2116,13 +2124,13 @@ async function _renderBilanCarbone(c) {
   var styleSelectG = 'font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid var(--gray-border);background:var(--card-bg);color:var(--text);cursor:pointer;font-family:inherit';
   html += '<div style="display:flex;align-items:center;gap:8px;padding:10px 20px;flex-wrap:wrap">';
   html += '  <span style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px">Paramètres globaux</span>';
-  html += '  <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text)">📅 <select onchange="_bcSetMobiliteAnnee(this.value)" title="Exercice — seules les années contenant des données sont proposées" style="' + styleSelectG + '">';
+  html += ('  <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text)">' + lk('calendar') + ' <select onchange="_bcSetMobiliteAnnee(this.value)" title="Exercice — seules les années contenant des données sont proposées" style="') + styleSelectG + '">';
   anneesOptions.forEach(function(d) {
     html += '<option value="' + d.annee + '"' + (d.annee === anneeGlobale ? ' selected' : '') + '>' + _bcLabelAnnee(d) + '</option>';
   });
   html += '  </select></label>';
   if (typeof METHODES !== 'undefined') {
-    html += '  <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text)">⚗️ <select onchange="_bcSetMobiliteMethode(this.value)" title="Type de consommation / périmètre de calcul mobilité" style="' + styleSelectG + '">';
+    html += ('  <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text)">' + lk('flask-round') + ' <select onchange="_bcSetMobiliteMethode(this.value)" title="Type de consommation / périmètre de calcul mobilité" style="') + styleSelectG + '">';
     METHODES.forEach(function(m) {
       html += '<option value="' + m.id + '"' + (m.id === MobiliteConfig.methode ? ' selected' : '') + '>'
            +  m.label + (m.source === 'derive' ? ' *' : '') + '</option>';
@@ -2138,7 +2146,7 @@ async function _renderBilanCarbone(c) {
   html += '  <button onclick="_bcToggleAideConso()" title="Que veulent dire ces trois modes ?" style="width:20px;height:20px;border-radius:50%;border:1px solid var(--gray-border);background:var(--card-bg);color:var(--gray-text);cursor:pointer;font-size:11px;font-weight:700;line-height:1;padding:0">?</button>';
   html += '  <div style="flex:1"></div>';
   html += '  ' + (typeof FiltresEngine !== 'undefined' ? FiltresEngine.renderButton('bilan_carbone') : '');
-  html += '  <button class="btn btn-ghost btn-sm" onclick="_bcExportCsv()" title="Exporter le bilan (CSV)" style="font-size:11px">⬇️ Exporter</button>';
+  html += ('  <button class="btn btn-ghost btn-sm" onclick="_bcExportCsv()" title="Exporter le bilan (CSV)" style="font-size:11px">' + lk('arrow-down') + ' Exporter</button>');
   html += '</div>';
 
   // ── Aide : les 3 modes de consolidation ────────────────────────────────
@@ -2178,9 +2186,9 @@ async function _renderBilanCarbone(c) {
   // ── Bandeau alerte (existant, conservé) : factures sans CO₂ stocké ─────
   if (nbSansCarboneStocke > 0) {
     html += '<div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
-    html += '  <span>⚠️ <strong>' + nbSansCarboneStocke + '</strong> facture(s) sans CO₂ enregistré en base.</span>';
+    html += ('  <span>' + lk('triangle-exclamation-point', 'warn') + ' <strong>') + nbSansCarboneStocke + '</strong> facture(s) sans CO₂ enregistré en base.</span>';
     html += '  <span style="color:#78716c">Les valeurs affichées ci-dessous sont <strong>calculées dynamiquement</strong> (méthode ' + (methodeSrc === 'simplifiee' ? 'simplifiée' : 'officielle') + ').</span>';
-    html += '  <button class="btn btn-sm" onclick="recalculerCarboneTout(getMethodeCarbone())" style="background:#0e7490;color:white;border:none;font-size:11px;margin-left:auto">🔄 Enregistrer le CO₂ sur tout</button>';
+    html += ('  <button class="btn btn-sm" onclick="recalculerCarboneTout(getMethodeCarbone())" style="background:#0e7490;color:white;border:none;font-size:11px;margin-left:auto">' + lk('refresh-cw') + ' Enregistrer le CO₂ sur tout</button>');
     html += '</div>';
   }
 
@@ -2223,15 +2231,15 @@ function _bcFacteursFooterHtml(facteurs, typeIcons, anneeFacteur) {
   var h = '';
   h += '<div class="card" style="margin-bottom:16px">';
   h += '  <div class="card-header" style="cursor:pointer" onclick="var e=document.getElementById(\'blocFacteursDetail\');e.style.display=e.style.display===\'none\'?\'block\':\'none\'">';
-  h += '    <div class="card-title" style="font-size:14px;color:' + couleur + '">⚙️ Facteurs d\'émission CO₂';
-  h += '      <span style="font-size:11px;font-weight:400;margin-left:8px;padding:2px 8px;border-radius:10px;background:' + bgHead + ';color:' + couleur + ';border:1px solid ' + (isSimp?'#c4b5fd':'#86efac') + '">' + (isSimp?'📦 Simplifiée':'🏛️ Officielle') + '</span>';
+  h += '    <div class="card-title" style="font-size:14px;color:' + couleur + ('">' + lk('settings') + ' Facteurs d\'émission CO₂');
+  h += '      <span style="font-size:11px;font-weight:400;margin-left:8px;padding:2px 8px;border-radius:10px;background:' + bgHead + ';color:' + couleur + ';border:1px solid ' + (isSimp?'#c4b5fd':'#86efac') + '">' + (isSimp?(lk('package') + ' Simplifiée'):(lk('landmark') + ' Officielle')) + '</span>';
   h += '    </div>';
   h += '    <div style="display:flex;gap:8px;align-items:center">';
   h += '      ' + (isSimp
-    ? '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();syncCarboneSimplifiee(' + anneeFacteur + ')" id="btnSyncSimplifie" style="font-size:11px;background:#7c3aed;border-color:#7c3aed">📦 Sync simplifiée ' + anneeFacteur + '</button>'
-    : '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();syncCarboneADEME('     + anneeFacteur + ')" id="btnSyncCarbone"   style="font-size:11px;background:#16a34a;border-color:#16a34a">🌐 Sync ADEME '     + anneeFacteur + '</button>');
-  h += '      <button class="btn btn-sm" onclick="event.stopPropagation();recalculerCarboneTout(getMethodeCarbone())" style="font-size:11px;background:#0e7490;border-color:#0e7490;color:white" title="Recalculer le CO₂ sur toutes les factures/relevés">🔄 Recalculer CO₂</button>';
-  h += '      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openFacteursCarbone()" style="font-size:11px;border:1px solid ' + couleur + ';color:' + couleur + '">📋 Gérer facteurs</button>';
+    ? '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();syncCarboneSimplifiee(' + anneeFacteur + (')" id="btnSyncSimplifie" style="font-size:11px;background:#7c3aed;border-color:#7c3aed">' + lk('package') + ' Sync simplifiée ') + anneeFacteur + '</button>'
+    : '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();syncCarboneADEME('     + anneeFacteur + (')" id="btnSyncCarbone"   style="font-size:11px;background:#16a34a;border-color:#16a34a">' + lk('globe') + ' Sync ADEME ')     + anneeFacteur + '</button>');
+  h += ('      <button class="btn btn-sm" onclick="event.stopPropagation();recalculerCarboneTout(getMethodeCarbone())" style="font-size:11px;background:#0e7490;border-color:#0e7490;color:white" title="Recalculer le CO₂ sur toutes les factures/relevés">' + lk('refresh-cw') + ' Recalculer CO₂</button>');
+  h += '      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openFacteursCarbone()" style="font-size:11px;border:1px solid ' + couleur + ';color:' + couleur + ('">' + lk('clipboard-list') + ' Gérer facteurs</button>');
   h += '      <span style="font-size:18px;color:var(--gray-text)">▾</span>';
   h += '    </div>';
   h += '  </div>';
@@ -2361,7 +2369,7 @@ function _bcRenderDetailEnergies() {
   compteurs.forEach(function(c) { compteurById[String(c.Id)] = c; });
 
   const factures  = window._bcAllFactures || [];
-  const typeIcons = window._bcTypeIcons  || { Electricite:'⚡', Gaz:'🔵', Chauffage:'🔥', Eau:'💧' };
+  const typeIcons = window._bcTypeIcons  || { Electricite:lk('zap'), Gaz:lk('circle', 'p bleu'), Chauffage:lk('flame'), Eau:lk('droplet') };
   const typeColors = BilanCarboneUI.chart.colors;
   const calc = window._bcCalcCO2 || function(f) { return parseFloat(f.Carbone) || 0; };
 
@@ -2408,7 +2416,7 @@ function _bcRenderDetailEnergies() {
 
   let h = '';
   h += '<div class="card" style="margin-bottom:16px">';
-  h += _bcModuleHeader('energies', '⚡ Détail énergies', lignes.length + ' compteur(s) actif(s) en ' + annee + ' — ' + fmtMon(tot.coutTTC) + ' TTC');
+  h += _bcModuleHeader('energies', (lk('zap') + ' Détail énergies'), lignes.length + ' compteur(s) actif(s) en ' + annee + ' — ' + fmtMon(tot.coutTTC) + ' TTC');
 
   // Panneau de surcharge locale (visible seulement si override actif)
   if (uiOverride) {
@@ -2501,11 +2509,11 @@ function _bcRenderMobiliteSection() {
   if (!mobiliteData || !mobiliteData.length) {
     container.innerHTML =
       '<div class="card" style="margin-bottom:16px;border-left:4px solid #059669">' +
-      '  <div class="card-header"><div class="card-title" style="font-size:14px;color:#059669">🚗 Détail mobilité</div></div>' +
+      ('  <div class="card-header"><div class="card-title" style="font-size:14px;color:#059669">' + lk('car') + ' Détail mobilité</div></div>') +
       '  <div style="padding:24px 20px;text-align:center;color:var(--gray-text);font-size:13px">' +
       '    Aucun trajet renseigné pour le moment.<br>' +
       '    <span style="font-size:12px">Ajoutez vos trajets domicile-travail et déplacements professionnels pour visualiser le bilan mobilité.</span>' +
-      '    <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="navigate(\'mobilite_carbone\')" style="font-size:11px">✏️ ' + (role === 'Demandeur' ? 'Saisir mes trajets' : 'Mes trajets') + '</button></div>' +
+      ('    <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="navigate(\'mobilite_carbone\')" style="font-size:11px">' + lk('pencil') + ' ') + (role === 'Demandeur' ? 'Saisir mes trajets' : 'Mes trajets') + '</button></div>' +
       '  </div>' +
       '</div>';
     return;
@@ -2550,7 +2558,7 @@ function _bcRenderMobiliteSection() {
 
   let h = '';
   h += '<div class="card" style="margin-bottom:16px;border-left:4px solid #059669">';
-  h += _bcModuleHeader('mobilite', '🚗 Détail mobilité', filtered.length + ' trajet(s)' + (filtered.length !== mobDeLAnnee.length ? ' (filtré sur ' + mobDeLAnnee.length + ')' : '') + ' en ' + annee + ' — ' + fmtNum(totalKm) + ' km · ' + _bcFmt(totalKgCO2));
+  h += _bcModuleHeader('mobilite', (lk('car') + ' Détail mobilité'), filtered.length + ' trajet(s)' + (filtered.length !== mobDeLAnnee.length ? ' (filtré sur ' + mobDeLAnnee.length + ')' : '') + ' en ' + annee + ' — ' + fmtNum(totalKm) + ' km · ' + _bcFmt(totalKgCO2));
 
   if (uiOverride) {
     h += _bcOverridePanel('mobilite', uiOverride);
@@ -2562,14 +2570,14 @@ function _bcRenderMobiliteSection() {
   h += '  <button onclick="_bcToggleAidePerimetres()" title="Quelle différence entre les 4 périmètres ?" style="width:18px;height:18px;border-radius:50%;border:1px solid var(--gray-border);background:var(--card-bg);color:var(--gray-text);cursor:pointer;font-size:10px;font-weight:700;line-height:1;padding:0">?</button>';
   h += '  <span>· Millésime : <strong style="color:var(--text)">' + ((typeof FACTEURS_SOURCE !== 'undefined' && FACTEURS_SOURCE.anneeFacteurs) || annee) + '</strong></span>';
   if (typeof FACTEURS_SOURCE !== 'undefined' && FACTEURS_SOURCE.origine === 'report_avant') {
-    h += '  <span style="color:#dc2626">⛔ POSTÉRIEUR à l\'exercice</span>';
+    h += ('  <span style="color:#dc2626">' + lk('octagon-x', 'ko') + ' POSTÉRIEUR à l\'exercice</span>');
   } else if (typeof FACTEURS_SOURCE !== 'undefined' && FACTEURS_SOURCE.origine === 'report') {
     h += '  <span>(reporté)</span>';
   } else if (typeof FACTEURS_SOURCE !== 'undefined' && FACTEURS_SOURCE.origine === 'local') {
     h += '  <span>(valeurs intégrées)</span>';
   }
   h += '  <div style="flex:1"></div>';
-  h += '  <button class="btn btn-ghost btn-sm" onclick="navigate(\'mobilite_carbone\')" style="font-size:10px">✏️ ' + (role === 'Demandeur' ? 'Modifier mes trajets' : 'Mes trajets') + '</button>';
+  h += ('  <button class="btn btn-ghost btn-sm" onclick="navigate(\'mobilite_carbone\')" style="font-size:10px">' + lk('pencil') + ' ') + (role === 'Demandeur' ? 'Modifier mes trajets' : 'Mes trajets') + '</button>';
   h += '</div>';
 
   // ── Aide : les 4 périmètres de calcul mobilité ────────────────────────
@@ -2611,14 +2619,14 @@ function _bcRenderMobiliteSection() {
       });
       h += '  </div>';
     }
-    h += '  <div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fcd34d;font-size:11px;color:#92400e">⚠️ Seul <strong>ACV complet</strong> se consolide avec l\'énergie. Les facteurs énergie sont des totaux sans déclinaison de périmètre : les additionner à une mobilité en combustion seule mélangerait deux grandeurs, le bilan total est donc refusé dans ce cas.</div>';
+    h += ('  <div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fcd34d;font-size:11px;color:#92400e">' + lk('triangle-exclamation-point', 'warn') + ' Seul <strong>ACV complet</strong> se consolide avec l\'énergie. Les facteurs énergie sont des totaux sans déclinaison de périmètre : les additionner à une mobilité en combustion seule mélangerait deux grandeurs, le bilan total est donc refusé dans ce cas.</div>');
     h += '</div>';
   }
 
   // Corps : barres par catégorie
   h += '<div style="padding:14px 20px 12px">';
   if (!filtered.length) {
-    h += '  <div style="text-align:center;padding:20px;color:var(--gray-text);font-size:13px">' + (mobDeLAnnee.length === 0 ? '📅 Aucun trajet enregistré pour ' + annee + '.' : '🔍 Aucun trajet ne correspond aux filtres.') + '</div>';
+    h += '  <div style="text-align:center;padding:20px;color:var(--gray-text);font-size:13px">' + (mobDeLAnnee.length === 0 ? (lk('calendar') + ' Aucun trajet enregistré pour ') + annee + '.' : (lk('search') + ' Aucun trajet ne correspond aux filtres.')) + '</div>';
   } else {
     Object.entries(parCat).sort(function(a,b){ return b[1].co2 - a[1].co2; }).forEach(function(entry) {
       var cat = entry[0], d = entry[1];
@@ -2637,7 +2645,7 @@ function _bcRenderMobiliteSection() {
     // Top agents : uniquement quand un filtre est actif (confidentialité conservée)
     const filtresActifs = (typeof FiltresEngine !== 'undefined' && typeof FiltresEngine.activeCount === 'function') ? FiltresEngine.activeCount('bilan_carbone') : 0;
     if (filtresActifs > 0 && (role === 'Admin' || role === 'Gestionnaire') && Object.keys(parAgent).length >= 1) {
-      h += '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--gray-border)"><div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:8px">👤 Par agent (filtré)</div>';
+      h += ('<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--gray-border)"><div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:8px">' + lk('user') + ' Par agent (filtré)</div>');
       Object.entries(parAgent).sort(function(a,b){ return b[1].co2 - a[1].co2; }).slice(0, 10).forEach(function(entry) {
         var nom = entry[0], d = entry[1];
         var pct = totalKgCO2 > 0 ? (d.co2 / totalKgCO2 * 100) : 0;
@@ -2649,7 +2657,7 @@ function _bcRenderMobiliteSection() {
       });
       h += '</div>';
     } else if ((role === 'Admin' || role === 'Gestionnaire') && Object.keys(parAgent).length > 1) {
-      h += '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--gray-border);font-size:11px;color:var(--gray-text);font-style:italic">🔒 Pour voir le détail nominatif par agent, utilisez le bouton "Filtres" du bandeau global (filtre Agent, Service, Catégorie…).</div>';
+      h += ('<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--gray-border);font-size:11px;color:var(--gray-text);font-style:italic">' + lk('lock') + ' Pour voir le détail nominatif par agent, utilisez le bouton "Filtres" du bandeau global (filtre Agent, Service, Catégorie…).</div>');
     }
   }
   h += '</div>';
@@ -2677,7 +2685,7 @@ function _bcModuleHeader(module, titre, sousTitre) {
   const couleur = module === 'energies' ? '#16a34a' : '#059669';
   var h = '<div class="card-header">';
   h += '  <div>';
-  h += '    <div class="card-title" style="font-size:14px;color:' + couleur + '">' + titre + (s.override ? ' <span title="Ce module affiche un autre exercice que le reste de la page" style="font-size:10px;padding:2px 6px;border-radius:8px;background:#dbeafe;color:#1e40af;margin-left:6px;font-weight:600">📌 Exercice indépendant</span>' : '') + '</div>';
+  h += '    <div class="card-title" style="font-size:14px;color:' + couleur + '">' + titre + (s.override ? (' <span title="Ce module affiche un autre exercice que le reste de la page" style="font-size:10px;padding:2px 6px;border-radius:8px;background:#dbeafe;color:#1e40af;margin-left:6px;font-weight:600">' + lk('pin') + ' Exercice indépendant</span>') : '') + '</div>';
   h += '    <div style="font-size:11px;color:var(--gray-text);margin-top:2px">' + sousTitre + '</div>';
   h += '  </div>';
   h += '  <div style="display:flex;gap:6px;align-items:center">';
@@ -2686,8 +2694,8 @@ function _bcModuleHeader(module, titre, sousTitre) {
   h += '    <button class="btn btn-ghost btn-sm" onclick="_bcToggleOverride(\'' + module + '\')" title="' + (s.override
         ? 'Refaire suivre ce module à l\'année choisie en haut de page'
         : 'Figer ce module sur un autre exercice, pour le comparer à celui affiché en haut de page. Les autres modules ne bougent pas.') + '" style="font-size:11px">'
-        + (s.override ? '↩️ Resuivre le global' : '📌 Comparer un autre exercice') + '</button>';
-  h += '    <button class="btn btn-ghost btn-sm" onclick="_bcToggleModuleChart(\'' + module + '\')" style="font-size:11px">📊 Graphique ' + (s.chartOpen ? '▴' : '▾') + '</button>';
+        + (s.override ? '↩ Resuivre le global' : (lk('pin') + ' Comparer un autre exercice')) + '</button>';
+  h += '    <button class="btn btn-ghost btn-sm" onclick="_bcToggleModuleChart(\'' + module + ('\')" style="font-size:11px">' + lk('chart-column') + ' Graphique ') + (s.chartOpen ? '▴' : '▾') + '</button>';
   h += '  </div>';
   h += '</div>';
   return h;
@@ -2706,23 +2714,23 @@ function _bcOverridePanel(module, override) {
 
   var h = '<div style="padding:10px 20px;background:#eff6ff;border-bottom:1px solid #bfdbfe;font-size:11px">';
   h += '  <div style="color:#1e40af;margin-bottom:8px;line-height:1.6">';
-  h += '    <strong>📌 Exercice indépendant.</strong> Ce module seul affiche l\'année choisie ci-dessous ; le reste de la page reste sur <strong>' + anneeGlobale + '</strong>. Pratique pour comparer deux exercices côte à côte sans perdre la vue d\'ensemble.';
+  h += ('    <strong>' + lk('pin') + ' Exercice indépendant.</strong> Ce module seul affiche l\'année choisie ci-dessous ; le reste de la page reste sur <strong>') + anneeGlobale + '</strong>. Pratique pour comparer deux exercices côte à côte sans perdre la vue d\'ensemble.';
   h += '  </div>';
   h += '  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">';
-  h += '    <label>📅 Afficher ici l\'année <select onchange="_bcSetOverrideAnnee(\'' + module + '\', this.value)" style="' + styleS + '">';
+  h += ('    <label>' + lk('calendar') + ' Afficher ici l\'année <select onchange="_bcSetOverrideAnnee(\'') + module + '\', this.value)" style="' + styleS + '">';
   dispo.forEach(function(d) {
     h += '<option value="' + d.annee + '"' + (d.annee === override.annee ? ' selected' : '') + '>' + _bcLabelAnnee(d) + '</option>';
   });
   h += '    </select></label>';
   if (module === 'mobilite' && typeof METHODES !== 'undefined') {
-    h += '    <label>⚗️ Périmètre <select onchange="_bcSetOverrideMethode(\'' + module + '\', this.value)" style="' + styleS + '">';
+    h += ('    <label>' + lk('flask-round') + ' Périmètre <select onchange="_bcSetOverrideMethode(\'') + module + '\', this.value)" style="' + styleS + '">';
     METHODES.forEach(function(m) {
       h += '<option value="' + m.id + '"' + (m.id === override.methode ? ' selected' : '') + '>' + m.label + (m.source === 'derive' ? ' *' : '') + '</option>';
     });
     h += '    </select></label>';
   }
   h += '    <div style="flex:1"></div>';
-  h += '    <button class="btn btn-ghost btn-sm" onclick="_bcToggleOverride(\'' + module + '\')" style="font-size:10px">↩️ Resuivre le global (' + anneeGlobale + ')</button>';
+  h += '    <button class="btn btn-ghost btn-sm" onclick="_bcToggleOverride(\'' + module + '\')" style="font-size:10px">↩ Resuivre le global (' + anneeGlobale + ')</button>';
   h += '  </div>';
   h += '</div>';
   return h;
@@ -2744,9 +2752,9 @@ function _bcRenderDetailChart(module, items, titre, unite) {
   var setter = module === 'energies' ? '_bcSetDetailChartTypeEnergies' : '_bcSetDetailChartTypeMobilite';
   var h = '<div style="padding:0 20px 16px;border-top:1px solid var(--gray-border);margin-top:8px">';
   h += '  <div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px">';
-  h += '    <div style="font-size:12px;font-weight:600;color:var(--gray-text)">📊 ' + titre + ' <span style="font-weight:400">(en ' + unite + ')</span></div>';
+  h += ('    <div style="font-size:12px;font-weight:600;color:var(--gray-text)">' + lk('chart-column') + ' ') + titre + ' <span style="font-weight:400">(en ' + unite + ')</span></div>';
   h += '    <div style="display:flex;gap:4px">';
-  h += _bcPillGroup('', ['bar','line'], cfg.chartType, setter, { bar:'📊', line:'📈' });
+  h += _bcPillGroup('', ['bar','line'], cfg.chartType, setter, { bar:lk('chart-column'), line:lk('trending-up') });
   h += '    </div>';
   h += '  </div>';
 
@@ -2872,7 +2880,7 @@ function _bcRenderSynthese() {
   // ── Postes énergie (typesActifs, agrégés depuis les factures) ─────────
   const yd = (window._bcYearData || {})[annee] || {};
   const colors = BilanCarboneUI.chart.colors;
-  const typeIcons = window._bcTypeIcons || { Electricite:'⚡', Gaz:'🔵', Chauffage:'🔥', Eau:'💧' };
+  const typeIcons = window._bcTypeIcons || { Electricite:lk('zap'), Gaz:lk('circle', 'p bleu'), Chauffage:lk('flame'), Eau:lk('droplet') };
   // Rattachement au périmètre GHG, expliqué en détail dans le bandeau source.
   const scopeParType = { Gaz: 1, Electricite: 2, Chauffage: 2, Eau: 3 };
 
@@ -2913,7 +2921,7 @@ function _bcRenderSynthese() {
     });
   }
   if (totalMob > 0) {
-    postes.push({ nom: 'Mobilité', co2: totalMob, couleur: colors.Mobilite || '#059669', icon: '🚗', scope: 3 });
+    postes.push({ nom: 'Mobilité', co2: totalMob, couleur: colors.Mobilite || '#059669', icon: lk('car'), scope: 3 });
   }
 
   // ── Consolidation possible ? ────────────────────────────────────────
@@ -2969,7 +2977,7 @@ function _bcRenderSynthese() {
       var pct = p.co2 / totalPostes * 100;
       if (pct < 0.5) return; // segment invisible → on omet plutôt que d'afficher un fil
       var showLabel = pct >= 8; // en dessous, le libellé serait tronqué
-      h += '<div title="' + p.icon + ' ' + p.nom + ' — ' + _bcFmt(p.co2) + ' (' + pct.toFixed(1) + ' %) — scope ' + p.scope + '" ';
+      h += '<div title="' + p.nom + ' — ' + _bcFmt(p.co2) + ' (' + pct.toFixed(1) + ' %) — scope ' + p.scope + '" ';
       h += 'style="width:' + pct + '%;background:' + p.couleur + ';display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:600;text-shadow:0 1px 1px rgba(0,0,0,.15);padding:0 6px;overflow:hidden;white-space:nowrap">';
       h += showLabel ? (p.icon + ' ' + p.nom + ' · ' + pct.toFixed(0) + ' %') : '';
       h += '</div>';
@@ -2986,7 +2994,7 @@ function _bcRenderSynthese() {
       h += '<div style="display:inline-flex;align-items:center;gap:6px">';
       h += '  <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + p.couleur + '"></span>';
       h += '  <span>' + p.icon + ' ' + p.nom + '</span>';
-      h += '  <span title="Périmètre GHG Protocol — détail dans le bandeau ⚙️ en haut de page" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--gray-bg);border:1px solid var(--gray-border);color:var(--gray-text);cursor:help">scope ' + p.scope + '</span>';
+      h += ('  <span title="Périmètre GHG Protocol — détail dans le bandeau en haut de page" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--gray-bg);border:1px solid var(--gray-border);color:var(--gray-text);cursor:help">scope ') + p.scope + '</span>';
       h += '  <strong style="color:var(--navy)">' + _bcFmt(p.co2) + '</strong>';
       h += '  <span style="color:var(--gray-text)">· ' + pct.toFixed(0) + ' %</span>';
       h += '</div>';
@@ -3007,7 +3015,7 @@ function _bcRenderSynthese() {
   const aEnergie  = Object.keys(yd).length > 0;
   const aMobilite = totalMob > 0;
   if (!aEnergie && aMobilite) {
-    mentions.push({ n:'info', t: 'Aucune facture énergie saisie pour ' + annee + ' : le bilan ne reflète que la mobilité des agents. Les autres exercices disponibles sont proposés dans le sélecteur 📅 en haut de page.' });
+    mentions.push({ n:'info', t: 'Aucune facture énergie saisie pour ' + annee + (' : le bilan ne reflète que la mobilité des agents. Les autres exercices disponibles sont proposés dans le sélecteur ' + lk('calendar') + ' en haut de page.') });
   } else if (aEnergie && !aMobilite) {
     mentions.push({ n:'info', t: 'Aucun trajet renseigné pour ' + annee + ' : le bilan ne couvre que les énergies (scopes 1 et 2), le scope 3 déplacements est absent.' });
   }
@@ -3030,7 +3038,7 @@ function _bcRenderSynthese() {
       +  'background:' + (alerte ? '#fef3c7' : 'var(--gray-bg)') + ';'
       +  'border:1px solid ' + (alerte ? '#fcd34d' : 'var(--gray-border)') + ';'
       +  'color:' + (alerte ? '#92400e' : 'var(--gray-text)') + '">'
-      +  (alerte ? '⚠️ ' : 'ℹ️ ') + m.t + '</div>';
+      +  (alerte ? (lk('triangle-exclamation-point', 'warn') + ' ') : (lk('info') + ' ')) + m.t + '</div>';
   });
 
   h += '</div>';
@@ -3113,16 +3121,16 @@ function _bcRenderChartModule() {
   h += '<div class="card" style="margin-bottom:16px">';
   h += '  <div class="card-header">';
   h += '    <div>';
-  h += '      <div class="card-title" style="font-size:14px;color:#16a34a">📊 Comparatif des postes</div>';
+  h += ('      <div class="card-title" style="font-size:14px;color:#16a34a">' + lk('chart-column') + ' Comparatif des postes</div>');
   h += '      <div style="font-size:11px;color:var(--gray-text);margin-top:2px">Mesure : <strong style="color:var(--text)">' + meta.label + '</strong> en <strong style="color:var(--text)">' + meta.unite + '</strong> · ' + typeLabels[cfg.type] + ' · par ' + ({mois:'mois', trimestre:'trimestre', annee:'année'}[cfg.period]) + '</div>';
   h += '    </div>';
-  h += '    <button class="btn btn-ghost btn-sm" onclick="_bcToggleCustomize()" style="font-size:11px">⚙️ Personnaliser ' + (BilanCarboneUI.customizeOpen ? '▴' : '▾') + '</button>';
+  h += ('    <button class="btn btn-ghost btn-sm" onclick="_bcToggleCustomize()" style="font-size:11px">' + lk('settings') + ' Personnaliser ') + (BilanCarboneUI.customizeOpen ? '▴' : '▾') + '</button>';
   h += '  </div>';
 
   // Panneau de personnalisation
   if (BilanCarboneUI.customizeOpen) {
     h += '<div style="padding:12px 20px;background:var(--gray-bg);border-bottom:1px solid var(--gray-border);display:flex;flex-wrap:wrap;gap:18px;align-items:center;font-size:12px">';
-    h += _bcPillGroup('Type', ['bar','line','stack'], cfg.type, '_bcSetChartType', { bar:'📊 Barres', line:'📈 Lignes', stack:'📚 Empilé' });
+    h += _bcPillGroup('Type', ['bar','line','stack'], cfg.type, '_bcSetChartType', { bar:(lk('chart-column') + ' Barres'), line:(lk('trending-up') + ' Lignes'), stack:(lk('library') + ' Empilé') });
     h += _bcPillGroup('Métrique', ['co2','prix_ttc','prix_ht','quantite'], cfg.metric, '_bcSetChartMetric', { co2:'CO₂', prix_ttc:'Prix TTC', prix_ht:'Prix HT', quantite:'Quantité' });
     h += _bcPillGroup('Période', ['mois','trimestre','annee'], cfg.period, '_bcSetChartPeriod', { mois:'Mois', trimestre:'Trim.', annee:'Année' });
     h += '<div style="display:flex;align-items:center;gap:6px">';
@@ -3145,7 +3153,7 @@ function _bcRenderChartModule() {
   });
   h += '  </div>';
   if (meta.avertissement) {
-    h += '  <div style="margin-top:8px;padding:8px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fcd34d;font-size:11px;color:#92400e">⚠️ ' + meta.avertissement + '</div>';
+    h += ('  <div style="margin-top:8px;padding:8px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fcd34d;font-size:11px;color:#92400e">' + lk('triangle-exclamation-point', 'warn') + ' ') + meta.avertissement + '</div>';
   }
   if (mob.length && cfg.period !== 'annee' && cfg.metric === 'co2') {
     h += '  <div style="margin-top:8px;font-size:10px;color:var(--gray-text);text-align:center;font-style:italic">Mobilité : projection annuelle répartie uniformément sur les ' + (cfg.period === 'mois' ? '12 mois' : '4 trimestres') + '.</div>';

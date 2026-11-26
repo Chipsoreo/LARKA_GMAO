@@ -211,7 +211,7 @@ require_once __DIR__ . '/../extensions/Fichiers.php';
  * Le module est-il actif, ouvert à CE rôle, et ce dossier déclaré ?
  * Rend [manifeste, déclaration].
  *
- * ⚠️ LE RÔLE DE L'APPELANT N'ÉTAIT PAS REGARDÉ.
+ * LE RÔLE DE L'APPELANT N'ÉTAIT PAS REGARDÉ.
  *
  * Ces routes se contentaient de `require_auth()` : n'importe quel compte
  * authentifié — un demandeur, un visionneur — pouvait lister et TÉLÉCHARGER

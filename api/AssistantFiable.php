@@ -84,7 +84,7 @@ final class AssistantFiable
                     // Une réponse qui ne parle pas de ce que le modèle a compris est hors de propos
                     // (« demandes sur la tondeuse » → la liste de toutes les demandes) : on garde la première.
                     if ($r2['trouve'] && self::pertinente($i['comprehension'], $r2['texte'])) {
-                        $r2['texte'] = '🔎 *Question reformulée : ' . AssistantInterprete::resume($i['comprehension']) . "*\n" . $r2['texte'];
+                        $r2['texte'] = '*Question reformulée : ' . AssistantInterprete::resume($i['comprehension']) . "*\n" . $r2['texte'];
                         $r2['etapes'] = array_merge($r['etapes'], $r2['etapes']);
                         $r = $r2; $mode = 'moteur+ia';
                     }
@@ -126,7 +126,7 @@ final class AssistantFiable
         return false;
     }
 
-    /** Résumé court des arguments d'une recherche (affichage « 🔍 search(…) »). */
+    /** Résumé court des arguments d'une recherche (affichage « search(…) »). */
     public static function resumeArgs(array $args): string
     {
         $parts = [];

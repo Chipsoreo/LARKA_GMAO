@@ -82,7 +82,7 @@ function _renderChorusBlocked(info){
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
         <button class="btn" onclick="navigate('dashboard')">← Retour au tableau de bord</button>
-        <button class="btn btn-primary" onclick="navigate('configuration'); setTimeout(function(){switchConfigTab && switchConfigTab('serveur'); document.getElementById('srv-chorus-section')?.scrollIntoView({behavior:'smooth',block:'start'});}, 120);">⚙️ Ouvrir la config serveur</button>
+        <button class="btn btn-primary" onclick="navigate('configuration'); setTimeout(function(){switchConfigTab && switchConfigTab('serveur'); document.getElementById('srv-chorus-section')?.scrollIntoView({behavior:'smooth',block:'start'});}, 120);">${lk('settings')} Ouvrir la config serveur</button>
       </div>
     </div>
   </div>`;
@@ -182,7 +182,7 @@ function _renderChorusPage(status){
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
         <button class="btn btn-primary" onclick="_chRunCall()">▶ Lancer le test</button>
         <button class="btn" onclick="_chClearOutput()">Effacer la réponse</button>
-        <button class="btn" onclick="switchConfigTab && switchConfigTab('serveur'); setTimeout(function(){document.getElementById('srv-chorus-section')?.scrollIntoView({behavior:'smooth',block:'start'});}, 80);">⚙️ Ouvrir la config serveur</button>
+        <button class="btn" onclick="switchConfigTab && switchConfigTab('serveur'); setTimeout(function(){document.getElementById('srv-chorus-section')?.scrollIntoView({behavior:'smooth',block:'start'});}, 80);">${lk('settings')} Ouvrir la config serveur</button>
         <span id="ch_status_msg" style="font-size:12px;color:var(--gray-text)"></span>
       </div>
 

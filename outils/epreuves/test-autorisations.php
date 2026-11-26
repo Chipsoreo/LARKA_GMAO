@@ -416,7 +416,7 @@ verifier('« larka.recharge-x » et « larka-recharge.x » : même préfixe',
         && ExtPolitiqueDonnees::espacesEnConflit('larka.recharge-x', 'larka-recharge.x'),
     $ok, $ko);
 verifier('Deux identifiants distincts ne sont pas en conflit',
-    fn() => !ExtPolitiqueDonnees::espacesEnConflit('larka.cles', 'larka.controles'),
+    fn() => !ExtPolitiqueDonnees::espacesEnConflit('larka.cles', 'larka.prestataires'),
     $ok, $ko);
 verifier('Un module n\'est pas en conflit avec lui-même',
     fn() => !ExtPolitiqueDonnees::espacesEnConflit('larka.cles', 'larka.cles'), $ok, $ko);

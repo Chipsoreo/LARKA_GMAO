@@ -78,12 +78,12 @@ function _rgListe() {
 
   const lignes = (d.organisations || []).map(o => {
     const etat = o.personnalisee
-      ? `<span class="rgpd-badge">✎ Personnalisée</span> <span style="font-size:12px;color:var(--gray-text)">${o.sections} section(s) réécrite(s), ${o.ajouts} ajoutée(s)`
+      ? `<span class="rgpd-badge">${lk('pencil')} Personnalisée</span> <span style="font-size:12px;color:var(--gray-text)">${o.sections} section(s) réécrite(s), ${o.ajouts} ajoutée(s)`
         + (o.mise_a_jour ? ` — le ${_rgEsc(_rgDate(o.mise_a_jour))}${o.par ? ' par ' + _rgEsc(o.par) : ''}` : '') + '</span>'
       : '<span style="font-size:12px;color:var(--gray-text)">Modèle commun' + (o.mise_a_jour ? ` (coordonnées renseignées le ${_rgEsc(_rgDate(o.mise_a_jour))})` : '') + '</span>';
     const champs = { organisation: 'organisation', contact: 'contact' };
     const coord = (o.manquants || []).length
-      ? `<span style="font-size:12px;color:var(--orange,#b45309)">⚠️ À compléter : ${o.manquants.map(m => _rgEsc(champs[m] || m)).join(', ')}</span>`
+      ? `<span style="font-size:12px;color:var(--orange,#b45309)">${lk('triangle-exclamation-point', 'warn')} À compléter : ${o.manquants.map(m => _rgEsc(champs[m] || m)).join(', ')}</span>`
       : '<span style="font-size:12px;color:var(--chip-ok-fg)">✓ Coordonnées renseignées</span>';
     const cle = _rgEsc(o.cle);
     return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--gray-border);border-radius:10px;background:var(--gray-bg)">
@@ -93,8 +93,8 @@ function _rgListe() {
         <div style="margin-top:2px">${coord}</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-sm btn-primary" onclick="_rgEditer('org', '${cle}')">✏️ Personnaliser</button>
-        <button class="btn btn-sm" onclick="_rgApercuOrg('${cle}')">👁 Aperçu</button>
+        <button class="btn btn-sm btn-primary" onclick="_rgEditer('org', '${cle}')">${lk('pencil')} Personnaliser</button>
+        <button class="btn btn-sm" onclick="_rgApercuOrg('${cle}')">${lk('eye')} Aperçu</button>
         ${o.personnalisee || o.mise_a_jour ? `<button class="btn btn-sm" onclick="_rgReinitialiser('org', '${cle}')" title="Effacer la personnalisation et les coordonnées">↺ Modèle commun</button>` : ''}
       </div>
     </div>`;
@@ -103,9 +103,9 @@ function _rgListe() {
   main.innerHTML = `
     <div style="max-width:1000px;background:var(--card-bg);border:1px solid var(--gray-border);border-radius:14px;padding:18px 20px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
-        <h2 style="margin:0;font-size:20px;color:var(--navy)">🛡️ Conformité RGPD</h2>
+        <h2 style="margin:0;font-size:20px;color:var(--navy)">${lk('shield')} Conformité RGPD</h2>
         <div style="flex:1"></div>
-        <button class="btn" onclick="_rgApercuCommun()">👁 Politique commune</button>
+        <button class="btn" onclick="_rgApercuCommun()">${lk('eye')} Politique commune</button>
       </div>
       <p style="font-size:13px;color:var(--text-mid);line-height:1.55;margin:0 0 12px">
         La politique de protection des données est <strong>commune</strong> à toutes les organisations : le modèle Larka
@@ -116,7 +116,7 @@ function _rgListe() {
         Elle s'ouvre depuis l'écran de connexion, le menu « Protection des données » et l'assistant IA.
       </p>
       <p style="font-size:12px;color:var(--gray-text);margin:0 0 14px">
-        ⚖️ Modèle fourni à titre indicatif (révision du ${_rgEsc(_rgDate(d.modele_date))}) : la base légale et les durées de conservation
+        ${lk('scale')} Modèle fourni à titre indicatif (révision du ${_rgEsc(_rgDate(d.modele_date))}) : la base légale et les durées de conservation
         propres à chaque organisation sont à faire valider par son délégué à la protection des données.
       </p>
       <div style="padding:12px 14px;border:1px solid var(--gray-border);border-radius:10px;background:var(--gray-bg);margin-bottom:18px">
@@ -138,7 +138,7 @@ function _rgListe() {
             : 'Le modèle Larka tel quel. Les retouches faites ici valent pour toutes les organisations (sans mention « personnalisé »).'}
         </div>
         <div style="display:flex;gap:6px">
-          <button class="btn btn-sm" onclick="_rgEditer('modele', '')">✏️ Modifier le modèle commun</button>
+          <button class="btn btn-sm" onclick="_rgEditer('modele', '')">${lk('pencil')} Modifier le modèle commun</button>
           ${communRetouche ? `<button class="btn btn-sm" onclick="_rgReinitialiser('modele', '')">↺ Modèle Larka</button>` : ''}
         </div>
       </div>` : ''}
@@ -198,13 +198,13 @@ async function _rgEditer(portee, cle) {
     <div style="max-width:1000px;background:var(--card-bg);border:1px solid var(--gray-border);border-radius:14px;padding:18px 20px" id="rgEditeur" data-portee="${_rgEsc(portee)}" data-cle="${_rgEsc(cle)}">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
         <button class="btn btn-sm" onclick="_rgListe()">← Retour</button>
-        <h2 style="margin:0;font-size:18px;color:var(--navy)">🛡️ ${portee === 'org' ? 'Personnaliser — ' + _rgEsc(nom) : 'Modèle commun'}</h2>
+        <h2 style="margin:0;font-size:18px;color:var(--navy)">${lk('shield')} ${portee === 'org' ? 'Personnaliser — ' + _rgEsc(nom) : 'Modèle commun'}</h2>
         <div style="flex:1"></div>
-        <button class="btn btn-sm" onclick="_rgApercuBrouillon()">👁 Aperçu</button>
-        <button class="btn btn-sm btn-primary" onclick="_rgEnregistrer(this)">💾 Enregistrer</button>
+        <button class="btn btn-sm" onclick="_rgApercuBrouillon()">${lk('eye')} Aperçu</button>
+        <button class="btn btn-sm btn-primary" onclick="_rgEnregistrer(this)">${lk('save')} Enregistrer</button>
       </div>
       <div style="font-size:12.5px;line-height:1.5;padding:10px 12px;border-radius:8px;margin-bottom:14px;${portee === 'org'
-        ? 'background:var(--chip-warn-bg);color:var(--chip-warn-fg)">✎ Les sections réécrites ou ajoutées ici seront signalées aux utilisateurs : « Personnalisé par l\'entreprise », avec la date. Les coordonnées seules ne comptent pas comme une personnalisation.'
+        ? ('background:var(--chip-warn-bg);color:var(--chip-warn-fg)">' + lk('pencil') + ' Les sections réécrites ou ajoutées ici seront signalées aux utilisateurs : « Personnalisé par l\'entreprise », avec la date. Les coordonnées seules ne comptent pas comme une personnalisation.')
         : 'background:var(--gray-bg);color:var(--gray-text)">Les retouches du modèle commun valent pour toutes les organisations qui ne réécrivent pas la section, sans mention « personnalisé ».'}
       </div>
       <h3 style="font-size:14px;margin:0 0 8px;color:var(--navy)">Coordonnées${portee === 'modele' ? ' par défaut' : ''}</h3>
@@ -221,8 +221,8 @@ async function _rgEditer(portee, cle) {
       <button class="btn btn-sm" id="rgAjouter" onclick="_rgAjout()">＋ Ajouter une section</button>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin:18px 0 30px">
         <button class="btn" onclick="_rgListe()">Annuler</button>
-        <button class="btn" onclick="_rgApercuBrouillon()">👁 Aperçu</button>
-        <button class="btn btn-primary" onclick="_rgEnregistrer(this)">💾 Enregistrer</button>
+        <button class="btn" onclick="_rgApercuBrouillon()">${lk('eye')} Aperçu</button>
+        <button class="btn btn-primary" onclick="_rgEnregistrer(this)">${lk('save')} Enregistrer</button>
       </div>
     </div>`;
   (perso.ajouts || []).forEach(a => _rgAjout(a));
@@ -244,7 +244,7 @@ function _rgAjout(a) {
   bloc.style.cssText = 'border:1px dashed var(--gray-border);border-radius:10px;padding:10px 12px;margin-bottom:8px';
   bloc.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:6px">
       <input class="form-control rg-titre" maxlength="120" placeholder="Titre de la section" style="flex:1">
-      <button class="btn btn-sm" type="button" title="Retirer cette section">🗑️</button>
+      <button class="btn btn-sm" type="button" title="Retirer cette section">${lk('trash')}</button>
     </div>
     <textarea class="form-control rg-texte" rows="5" maxlength="6000" placeholder="Texte de la section" style="width:100%;font-size:13px"></textarea>`;
   bloc.querySelector('.rg-titre').value = a?.titre || '';

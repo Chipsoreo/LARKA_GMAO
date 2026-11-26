@@ -11,7 +11,7 @@
  * Appeler via: https://votre-serveur:8000/api/diagnostic.php
  * PROTÉGÉ : nécessite une session SUPER-ADMIN active.
  *
- * ⚠️ FIX SÉCURITÉ : ce script expose des infos d'infrastructure (driver DB,
+ * FIX SÉCURITÉ : ce script expose des infos d'infrastructure (driver DB,
  * chemins de fichiers, présence du super-admin, configuration multi-tenant)
  * qui ne doivent JAMAIS être visibles d'un Admin de tenant. Auparavant le
  * contrôle se faisait sur Role==='Admin' (admin de tenant), ce qui suffisait
@@ -34,7 +34,12 @@ if (defined('DIAGNOSTIC_DISABLED') && DIAGNOSTIC_DISABLED) {
     exit;
 }
 
-if (empty($_SESSION['superadmin']['authenticated'])) {
+// Session super admin revérifiée comme dans api/index.php : un compte supprimé
+// ou dont le mot de passe a changé ne lit plus ce diagnostic.
+$saValide = false;
+try { $saValide = !empty($_SESSION['superadmin']['authenticated']) && TenantResolver::sessionSuperAdminValide((array)$_SESSION['superadmin']); }
+catch (\Throwable $e) { $saValide = false; }
+if (!$saValide) {
     http_response_code(403);
     // Réponse volontairement neutre — pas d'indication "vous êtes admin
     // mais pas super-admin" qui aiderait un attaquant à savoir qu'il est

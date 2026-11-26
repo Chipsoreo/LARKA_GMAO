@@ -62,6 +62,8 @@ data/plans/
 data/fonds/
 data/thematiques/
 data/rgpd/
+# Larka Connect : exports CSV déposés par les GTB (données du site)
+data/connect/
 
 # Journaux de sécurité (IP, logins, tentatives échouées) et médias des
 # procédures d'urgence : contenu du tenant, à ne JAMAIS publier.
@@ -102,3 +104,19 @@ data/tmp-demo-*/
 *demo-Larkaville*.zip
 *demo-Larkaville*/
 !demo/sauvegarde-demo-Larkaville.zip
+
+# Simulateurs d'équipements (outils/simulateurs) : environnement Python,
+# journaux, PID et exports produits en local
+outils/simulateurs/.venv/
+outils/simulateurs/logs/
+outils/simulateurs/run/
+outils/simulateurs/export_gtb/
+outils/simulateurs/__pycache__/
+
+# App mobile : APK construit (npm run apk) et paquets ; la clé de publication reste HORS du dépôt (~/.larka/android/)
+telechargements/larka.apk
+telechargements/larka.json
+mobile/dist/
+mobile/larka-web/
+*.jks
+signature.properties

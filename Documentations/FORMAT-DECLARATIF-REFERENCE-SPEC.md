@@ -8,7 +8,12 @@
 > moteur sait lire, et rien d'autre. Un mot absent de ce document est refusé à
 > l'installation — jamais cherché ailleurs, jamais ignoré en silence.
 
-Version du format : `declaratif/1` · API d'extensions : version 1 · Référence : version 2.0 (septembre 2026, Larka V.Beta 2.0.0)
+Version du format : `declaratif/1` · API d'extensions : version 1, révision 1.4 · Référence : version 3.0 (novembre 2026, Larka V3.0.0)
+
+> **Nouveau en révision 1.4 — la connectivité des bâtiments.** Un module peut
+> désigner les points, les équipements raccordés et les bâtiments de Larka
+> Connect, y lire des **mesures** en direct, s'afficher dans la supervision, et
+> **recevoir les alarmes techniques** dans un de ses registres. Voir § 9.
 
 ---
 
@@ -29,6 +34,7 @@ Version du format : `declaratif/1` · API d'extensions : version 1 · Référenc
   "fichiers": { "...": "les dossiers de fichiers" },
   "partage":  [ "ce que le module publie aux autres" ],
   "calculs":  { "...": "ce qu'il additionne chez les autres" },
+  "alarmes":  [ "les registres qui reçoivent les alarmes techniques (§ 9)" ],
   "reglages": { "...": "ce que l'administrateur peut régler" },
   "langues":  { "...": "les traductions" }
 }
@@ -49,6 +55,7 @@ Quatre clés sont **refusées** parce qu'elles supposeraient du code :
 | Ancrages | 24 |
 | Partages | 20 · Calculs | 40 |
 | Retouches d'interface | 12 · Dossiers de fichiers | 8 |
+| Réceptions d'alarmes techniques | 4 (une par jeu) |
 
 ### Un module en plusieurs fichiers JSON — `$ref`
 
@@ -180,8 +187,9 @@ des bornes de recharge), réparti entre `extension.json` et huit parties.
 | `note` | Note sur 5 |
 | `pourcentage` | Pourcentage |
 | `duree` | Durée en minutes |
-| `lien` | Référence à une donnée du cœur |
+| `lien` | Référence à une donnée du cœur — y compris un point, un équipement raccordé ou un bâtiment de Larka Connect |
 | `formule` | Valeur calculée, jamais stockée |
+| `mesure` | Valeur lue en direct sur le bâtiment connecté, jamais stockée (§ 9.2) |
 
 ### Propriétés communes
 
@@ -425,8 +433,8 @@ rendu et bornée à 200 caractères : il ne peut pas transporter de balisage.
 #### Une image
 
 ```json
-{ "image": "assets/marguerite.jpg",
-  "description": "Marguerite commune en fleur",
+{ "image": "assets/equipe.jpg",
+  "description": "Un technicien et sa carte d'habilitation validée",
   "largeur": 4, "hauteur": 2,
   "cadrage": "couvrir", "arrondi": "leger" }
 ```
@@ -555,13 +563,24 @@ L'auteur choisit quoi afficher et d'où le tirer ; il n'écrit jamais comment.
 
 | Type | Ce qu'il produit | Emplacement |
 |---|---|---|
-| `compteur` | Une tuile chiffrée | `dashboard.tuiles` |
-| `jauge` | Une tuile avec agrégat | `dashboard.tuiles` |
-| `liste_liee` | Les enregistrements liés | `equipement.fiche`, `bien.fiche` |
+| `compteur` | Une tuile chiffrée | `dashboard.tuiles`, `connect.supervision` |
+| `jauge` | Une tuile avec agrégat | `dashboard.tuiles`, `connect.supervision` |
+| `liste_liee` | Les enregistrements liés | `equipement.fiche`, `bien.fiche`, `connect.point` |
 | `marqueurs` | Des repères sur le plan | `plans.barre_outils` |
 | `formulaire` | Le module devient un type de demande | `demandes.type` |
 
 Un ancrage déclaratif exige la capacité `ui.ancrage`.
+
+Un `compteur` ou une `jauge` accepte `icone`, un nom d'icône Lucide
+(`"icone": "key-round"`), posé dans la pastille teintée de `couleur`. Sans
+`icone`, la tuile prend le pictogramme de la page du module, sinon `#` ou une
+jauge.
+
+Dans `connect.point` (sous la courbe d'un point de Larka Connect), le
+`champ_lien` d'une `liste_liee` doit être un lien vers `points_connect` : c'est
+l'identifiant du point affiché qui y est injecté. Une liste liée montre ses
+colonnes comme la page du module : un lien par son libellé, une mesure avec son
+unité et son état, une formule par son résultat.
 
 ---
 
@@ -578,6 +597,8 @@ Elles sont **déduites** de la déclaration, jamais réclamées :
 | `fichiers.dossier` | Il déclare un dossier de fichiers |
 | `fichiers.import` | Un de ses dossiers accepte le dépôt |
 | `donnees.lire:<domaine>` | Un champ `lien` ou une source de suggestions |
+| `donnees.lire:points_connect` · `donnees.lire:connexions_connect` · `donnees.lire:batiments` | Un champ `lien` (ou `mesure`) vers le bâtiment connecté — lecture seule, risque moyen (§ 9) |
+| `connect.alarmes` | Il déclare `alarmes` : Larka écrira dans ses tables (§ 9.4) |
 
 Un auteur ne peut donc pas réclamer un accès dont sa déclaration n'a pas l'usage.
 
@@ -624,6 +645,146 @@ accepte de partager, champ par champ, et un autre module peut alors l'agréger :
 Opérations : `somme`, `compte`, `moyenne`, `minimum`, `maximum`.
 `@champ` désigne un champ de la ligne courante, et part en paramètre lié —
 jamais dans le SQL.
+
+---
+
+## 9. Connectivité des bâtiments (Larka Connect)
+
+Larka Connect relève les équipements techniques du bâtiment — GTB, compteurs,
+sondes, bornes (voir `LARKA-CONNECT.md`). Depuis la révision 1.4, un module
+déclaratif peut s'en servir **sans jamais lui parler** : il désigne, il lit, il
+reçoit. Il n'écrit jamais vers un équipement — ni consigne, ni commande, ni
+acquittement : cela exige un gestionnaire qui confirme son identité, et un
+module n'en a pas.
+
+### 9.1 Désigner : trois cibles de lien
+
+```json
+"sonde":    { "type": "lien", "vers": "points_connect",     "libelle": "Sonde de CO₂" },
+"automate": { "type": "lien", "vers": "connexions_connect", "libelle": "Automate" },
+"batiment": { "type": "lien", "vers": "batiments",          "libelle": "Bâtiment" }
+```
+
+| Cible | Désigne | Libellé composé par Larka |
+|---|---|---|
+| `points_connect` | Un point suivi : sonde, compteur, consigne, état | « CO₂ classe CM2 (ppm) — Automate CVC · Groupe scolaire » |
+| `connexions_connect` | Un équipement raccordé : automate, passerelle, borne | « Automate CVC — Groupe scolaire » |
+| `batiments` | Un bâtiment des plans | « Groupe scolaire » |
+
+Ces cibles ne sont **pas des tables ouvertes** au module. Le cœur les sert
+lui-même par des projections fixes : le module obtient un nom, jamais l'adresse
+réseau, le registre, les identifiants ou le secret d'un équipement. Les tables
+de Larka Connect sont classées « système protégé » : une requête de module qui
+les nommerait est refusée, quelles que soient ses capacités.
+
+### 9.2 Lire : le champ `mesure`
+
+```json
+"co2":        { "type": "mesure", "de": "sonde", "libelle": "CO₂" },
+"co2_max":    { "type": "mesure", "de": "sonde", "grandeur": "maximum_24h" },
+"etat_sonde": { "type": "mesure", "de": "sonde", "grandeur": "etat" }
+```
+
+`de` nomme un champ `lien` **de la même fiche** vers le bâtiment connecté ;
+`grandeur` choisit ce qu'on lit (par défaut `valeur` pour un point, `etat`
+sinon). Comme une formule, une mesure n'a **pas de colonne** : elle est lue à
+chaque affichage, groupée — une page de cinquante salles fait une lecture par
+cible, pas cent cinquante.
+
+| Lien vers | Grandeurs |
+|---|---|
+| `points_connect` | `valeur` · `horodatage` · `etat` · `alarmes` · `moyenne_24h` · `minimum_24h` · `maximum_24h` · `conso_jour` · `conso_mois` |
+| `connexions_connect` | `etat` · `horodatage` (dernière collecte) · `alarmes` |
+| `batiments` | `etat` · `alarmes` · `connexions_en_defaut` |
+
+Une grandeur `etat` rend un mot d'une liste fermée : `normal`, `alarme`,
+`defaut`, `partiel`, `ancienne` (valeur trop vieille pour décrire le présent —
+la règle de la supervision), `sans_valeur`, `inactif`, `indisponible` (Larka
+Connect fermé). Elle se surligne donc sans rien inventer :
+
+```json
+"surligner": [ { "si": { "champ": "etat_sonde", "operateur": "egal", "valeur": "alarme" },
+                 "couleur": "rouge" } ]
+```
+
+Une valeur chiffrée arrive avec l'unité du point et son état : la liste
+l'affiche « 1 620 ppm », grisée si elle est ancienne, avec une cloche si le
+point est en alarme. Les consommations (`conso_jour`, `conso_mois`) ne valent
+que pour un point de nature *compteur* : valeur actuelle moins le dernier index
+connu au début de la période ; un index en baisse ne donne rien plutôt qu'un
+chiffre faux.
+
+Une mesure **se lit, elle ne se saisit pas**. Sont refusés à l'installation :
+`obligatoire`, `defaut`, des bornes ; la placer dans un `layout` ou dans
+`champs_formulaire` ; trier, rechercher ou regrouper sur elle (elle n'existe
+pas en base). Sont permis : colonnes, surlignage, `totaux` pour une grandeur
+chiffrée, et les **formules**, qui sont évaluées après les mesures :
+
+```json
+"air": { "type": "formule",
+         "expression": "{{if(isEmpty(record.co2), '—', if(record.co2 >= record.seuil_alerte, 'À aérer', 'Bon'))}}" }
+```
+
+### 9.3 S'afficher : deux emplacements
+
+| Emplacement | Où | Types |
+|---|---|---|
+| `connect.supervision` | En tête de *Bâtiments → Supervision*, relu toutes les 30 s avec les cartes | `compteur`, `jauge` |
+| `connect.point` | Sous la courbe d'un point (clic sur une valeur de la supervision) | `liste_liee` |
+
+### 9.4 Recevoir les alarmes techniques : `alarmes`
+
+```json
+"alarmes": [ {
+  "jeu": "depassements",
+  "si": { "points_de": "salles.sonde", "gravites": ["critique", "majeure"] },
+  "champs": { "alarme": "@alarme", "sonde": "@point", "debut": "@debut",
+              "fin": "@fin", "duree": "@duree", "valeur": "@valeur", "etat": "@etat" },
+  "historique_jours": 30
+} ]
+```
+
+**Ce n'est pas un hook.** Aucun code du module ne s'exécute quand une alarme
+s'ouvre. Le module **décrit** où il veut la voir inscrite ; c'est Larka qui, à
+chaque passage de la collecte (chaque minute) — et à l'ouverture de l'écran du
+jeu —, écrit la ligne dans la table du module, au nom de `larka.connect`, puis
+la met à jour quand l'alarme se termine ou est acquittée.
+
+| Clé | Rôle |
+|---|---|
+| `jeu` | Le jeu qui reçoit. Un jeu ne reçoit que d'une réception |
+| `champs` | Champ du jeu ← `@attribut`. `@alarme` est **obligatoire**, dans un `entier` : c'est la clé qui rend l'écriture idempotente |
+| `si.gravites` | `critique`, `majeure`, `mineure`, `info` |
+| `si.origines` | `regle`, `connexion`, `equipement`, `liaison` |
+| `si.points_de` | `"jeu.champ"` : seulement les alarmes des points que le module suit déjà (un lien vers `points_connect`) |
+| `historique_jours` | À la première réception, l'historique récent repris (0 à 90, défaut 30) |
+
+Chaque attribut ne va que dans les types de champ qui peuvent le recevoir —
+`@debut` dans un `horodatage`, une `date` ou un `texte` ; `@point` dans un lien
+vers `points_connect` ou un `entier`… Un `choix` verrouillé qui reçoit
+`@gravite`, `@origine` ou `@etat` doit proposer **toutes** leurs valeurs. Le
+catalogue complet figure plus bas (« Attributs d'une alarme technique ») ; il
+ne contient **aucun nom de personne** : qui a acquitté n'en fait pas partie.
+
+Ce qui reste au gestionnaire : une page dont `champs_formulaire` ne contient
+que les champs de suivi (`suivi`, `action`…) lui laisse annoter la ligne sans
+pouvoir réécrire les faits de l'alarme. Une ligne qu'il supprime ne revient pas.
+
+### 9.5 Ce que l'administrateur voit à l'installation
+
+* les capacités `donnees.lire:points_connect` (et autres cibles) et
+  `connect.alarmes`, risque **moyen** ;
+* en clair : « Lira en direct N mesures… », « Recevra les alarmes techniques :
+  Larka inscrira lui-même chaque alarme, puis sa fin… », « Affichera une tuile
+  … en tête de la supervision des bâtiments » ;
+* la garantie : « N'écrira jamais vers un équipement : aucune consigne, aucune
+  commande, aucun acquittement d'alarme. »
+
+Larka Connect fermé (serveur ou organisation) : les liens restent nommés, les
+mesures valent `indisponible`, et rien n'est reçu.
+
+Exemple livré : `extensions/modules/larka.qualite-air` — le CO₂ et la
+température de chaque salle, et le registre des dépassements tenu tout seul.
 
 ---
 

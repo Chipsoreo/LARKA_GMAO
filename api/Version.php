@@ -14,7 +14,7 @@
  * le numéro à la main (c'est ainsi qu'il finit par mentir).
  *
  *   { "version": "2.1.0", "canal": "Stable", "date": "2026-10-25" }
- *   → libellé affiché : « V2.1.0 »  (canal « Beta » → « V.Beta 2.1.0 »)
+ *   → libellé affiché : « V3.0.0 »  (canal « Beta » → « V.Beta 3.0.0 »)
  */
 final class LarkaVersion
 {

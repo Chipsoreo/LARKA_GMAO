@@ -825,12 +825,26 @@ function cmd_demarrer(array $o): int
  * fixe. L'outil (api/outils/sauvegarde-auto.php) part 2 minutes après le
  * démarrage puis toutes les 10 minutes, et ne fait que les sauvegardes DUES
  * (aucune si rien n'est réglé). Sa sortie va dans data/logs/sauvegardes.log.
+ *
+ * Larka Connect : la collecte des équipements raccordés part chaque minute
+ * (api/outils/connect-collecte.php, rien à faire si le module est fermé) ; le
+ * service OCPP des bornes de recharge (api/outils/connect-ocpp.php) tourne
+ * pendant tout ce temps et est relancé s'il s'arrête. Journaux :
+ * data/logs/connect.log et data/logs/connect-ocpp.log.
  */
 function lk_veiller_serveur($proc): int
 {
     $journal = LK_RACINE . '/data/logs/sauvegardes.log';
     $prochaine = time() + 120;
     $tache = null;
+    $connect = ['journal' => LK_RACINE . '/data/logs/connect.log', 'prochaine' => time() + 20, 'tache' => null];
+    $ocpp = ['journal' => LK_RACINE . '/data/logs/connect-ocpp.log', 'prochaine' => time() + 5, 'proc' => null];
+    $lancer = function (array $args, string $journal) {
+        if (is_file($journal) && filesize($journal) > 5 * 1024 * 1024) { @unlink($journal . '.1'); @rename($journal, $journal . '.1'); }
+        $desc = [0 => ['file', LK_WIN ? 'NUL' : '/dev/null', 'r'], 1 => ['file', $journal, 'a'], 2 => ['redirect', 1]];
+        $t = @proc_open(lk_commande_php($args), $desc, $tubes, LK_RACINE);
+        return is_resource($t) ? $t : null;
+    };
     while (true) {
         $st = proc_get_status($proc);
         if (!$st['running']) {
@@ -842,14 +856,30 @@ function lk_veiller_serveur($proc): int
         if ($tache !== null && !proc_get_status($tache)['running']) { proc_close($tache); $tache = null; }
         if ($tache === null && time() >= $prochaine) {
             $prochaine = time() + 600;
-            if (is_file($journal) && filesize($journal) > 5 * 1024 * 1024) { @unlink($journal . '.1'); @rename($journal, $journal . '.1'); }
-            $desc = [0 => ['file', LK_WIN ? 'NUL' : '/dev/null', 'r'], 1 => ['file', $journal, 'a'], 2 => ['redirect', 1]];
-            $t = @proc_open(lk_commande_php(['api/outils/sauvegarde-auto.php', '--silencieux']), $desc, $tubes, LK_RACINE);
-            $tache = is_resource($t) ? $t : null;
+            $tache = $lancer(['api/outils/sauvegarde-auto.php', '--silencieux'], $journal);
+        }
+        // Larka Connect : collecte chaque minute (une à la fois).
+        if ($connect['tache'] !== null && !proc_get_status($connect['tache'])['running']) { proc_close($connect['tache']); $connect['tache'] = null; }
+        if ($connect['tache'] === null && time() >= $connect['prochaine']) {
+            $connect['prochaine'] = time() + 60;
+            $connect['tache'] = $lancer(['api/outils/connect-collecte.php', '--silencieux'], $connect['journal']);
+        }
+        // Service OCPP : relancé s'il s'est arrêté (au plus toutes les 30 s).
+        if ($ocpp['proc'] !== null && !proc_get_status($ocpp['proc'])['running']) { proc_close($ocpp['proc']); $ocpp['proc'] = null; }
+        if ($ocpp['proc'] === null && time() >= $ocpp['prochaine']) {
+            $ocpp['prochaine'] = time() + 30;
+            $ocpp['proc'] = $lancer(['api/outils/connect-ocpp.php', '--si-absent'], $ocpp['journal']);
         }
         usleep(500000);
     }
-    // Une sauvegarde en cours va jusqu'au bout.
+    // Le service OCPP s'arrête avec Larka ; une collecte ou une sauvegarde en
+    // cours va jusqu'au bout.
+    if ($ocpp['proc'] !== null) {
+        $pid = (int)(proc_get_status($ocpp['proc'])['pid'] ?? 0);
+        if (LK_WIN && $pid > 0) lk_tuer($pid); else proc_terminate($ocpp['proc']);
+        proc_close($ocpp['proc']);
+    }
+    if ($connect['tache'] !== null) proc_close($connect['tache']);
     if ($tache !== null) proc_close($tache);
     return $code;
 }
@@ -1449,8 +1479,34 @@ function cmd_demo(array $o, array $args): int
         echo '    Les 54 comptes : ' . lk_aff('data/demo/comptes-demo.csv') . "\n";
     }
     echo "    Si d'autres que vous peuvent joindre ce poste, changez ces mots de passe.\n\n";
+
+    // Larka Connect : deux bâtiments simulés, avec des mois de courbes et de relevés automatiques.
+    if (is_file(LK_RACINE . '/api/outils/connect-demo.php') && empty($o['sans-connect'])
+        && confirmer('  Ajouter les bâtiments connectés simulés (Larka Connect : 90 jours de courbes, alarmes et relevés automatiques) ?', true, $o)) {
+        cmd_connect_demo(['activer' => true, 'jours' => '90'], []);
+    }
     if (!empty($o['sans-demarrer'])) return 0;
     return cmd_demarrer(['sans-demo' => true] + $o);
+}
+
+/**
+ * Larka Connect, démonstration : connexions « Simulateur intégré » branchées sur les
+ * compteurs de la démonstration, avec leur historique (api/outils/connect-demo.php).
+ */
+function cmd_connect_demo(array $o, array $args): int
+{
+    $script = LK_RACINE . '/api/outils/connect-demo.php';
+    if (!is_file($script)) echec('Larka Connect absent de cette version (api/outils/connect-demo.php).');
+    $a = [lk_relatif($script)];
+    foreach (['jours', 'releves', 'organisation'] as $k) if (isset($o[$k]) && is_string($o[$k])) $a[] = "--$k=" . $o[$k];
+    foreach (['activer', 'retirer', 'refaire'] as $k) if (!empty($o[$k])) $a[] = "--$k";
+    info('Larka Connect — bâtiments simulés…');
+    $p = proc_open(lk_commande_php($a), [0 => ['file', LK_WIN ? 'NUL' : '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $tubes, LK_RACINE);
+    $sortie = is_resource($p) ? stream_get_contents($tubes[1]) : '';
+    if (is_resource($p)) { fclose($tubes[1]); $code = proc_close($p); } else { $code = -1; }
+    foreach (preg_split('/\R/', trim((string)$sortie)) as $l) if ($l !== '') echo "    $l\n";
+    if ($code !== 0) { alerte('Démonstration Larka Connect non installée (voir ci-dessus). Plus tard : ' . (LK_WIN ? 'Larka.cmd' : 'php deploy/windows/larka.php') . ' connect-demo'); return 1; }
+    return 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1619,6 +1675,11 @@ function cmd_aide(): int
         ['demo [archive.zip]',     'installe la démonstration « Ville de Larkaville »'],
         ['  --sans-recalage',      "garde les dates d'origine (fin au 14 octobre 2026)"],
         ['  --sans-demarrer',      'installe sans démarrer'],
+        ['  --sans-connect',       'sans les bâtiments connectés simulés (Larka Connect)'],
+        ['connect-demo',           'Larka Connect : bâtiments simulés, 60 jours de courbes et de relevés'],
+        ['  --jours=N',            "jours d'historique (1 à 400)"],
+        ['  --activer',            'active aussi Larka Connect sur ce poste'],
+        ['  --refaire, --retirer', 'reconstruit, ou enlève, ce que connect-demo a posé'],
         ['arreter',                'arrête Larka'],
         ['etat',                   'indique si Larka tourne, et où'],
         ['raccourci',              'raccourcis sur le Bureau et dans le menu Démarrer'],
@@ -1700,6 +1761,7 @@ $alias = [
     'démo' => 'demo', 'demonstration' => 'demo', 'install' => 'installer', 'setup' => 'installer',
     'doctor' => 'diagnostic', 'help' => 'aide', 'shortcut' => 'raccourci',
     'update' => 'maj', 'mise-a-jour' => 'maj', 'mettre-a-jour' => 'maj',
+    'demo-connect' => 'connect-demo', 'connect-démo' => 'connect-demo',
 ];
 $commande = $alias[$commande] ?? $commande;
 
@@ -1707,6 +1769,7 @@ exit(match ($commande) {
     'demarrer'   => cmd_demarrer($options),
     'installer'  => cmd_installer($options),
     'demo'       => cmd_demo($options, $arguments),
+    'connect-demo' => cmd_connect_demo($options, $arguments),
     'maj'        => cmd_maj($options, $arguments),
     'arreter'    => cmd_arreter($options),
     'etat'       => cmd_etat($options),

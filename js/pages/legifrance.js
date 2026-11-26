@@ -54,15 +54,6 @@ function _fmtDate(d){
   if(dt.getFullYear()>=2200)return'';
   return dt.toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
 }
-function _isPlaceholderDate(d){
-  if(!d)return true;
-  var str=String(d);
-  if(/^2[2-9]{3}/.test(str))return true;
-  var ts=typeof d==='number'?d:(str.match(/^\d{10,}$/)?Number(str):Date.parse(str));
-  if(isNaN(ts))return true;
-  if(ts<9999999999)ts=ts*1000;
-  return new Date(ts).getFullYear()>=2200;
-}
 function _legiUrl(id){
   if(!id)return'';
   if(/^LEGIARTI/i.test(id))return'https://www.legifrance.gouv.fr/codes/article_lc/'+id;
@@ -78,43 +69,43 @@ function _legiUrl(id){
 }
 
 var FR_TYPES={
-  texte:{titre:'Texte de loi / Décret / Arrêté',icon:'📜',cat:'Législation',
+  texte:{titre:'Texte de loi / Décret / Arrêté',icon:lk('scroll-text'),cat:'Législation',
     desc:'Lois, décrets, arrêtés, ordonnances consolidés.',
     detail:'Textes législatifs et réglementaires : lois votées par le Parlement, décrets du Président ou Premier ministre, arrêtés ministériels ou préfectoraux, ordonnances. Recherche par numéro ou mots-clés.',
     fond:'LODA_ETAT',fondDate:'LODA_DATE',exemples:['décret ascenseur','arrêté amiante','loi 2019-290']},
-  code:{titre:'Article de code',icon:'📖',cat:'Législation',
+  code:{titre:'Article de code',icon:lk('book-open'),cat:'Législation',
     desc:'Recherche dans les codes officiels (travail, civil, environnement…).',
     detail:'Les codes regroupent les textes par domaine. Recherche par numéro d\'article (L.4121-1, R4224-17) ou par thème. La table des matières est explorable.',
     fond:'CODE_ETAT',fondDate:'CODE_DATE',exemples:['R4224-17','eau','amiante'],hasCodeName:true},
-  jorf:{titre:'Journal officiel (JORF)',icon:'📰',cat:'Législation',
+  jorf:{titre:'Journal officiel (JORF)',icon:lk('newspaper'),cat:'Législation',
     desc:'Textes publiés au Journal officiel de la République française.',
     detail:'Le JORF publie les lois, décrets, arrêtés et avis officiels. Recherche par NOR, numéro de texte ou mots-clés. Utile pour trouver la version initiale d\'un texte à sa date de publication.',
     fond:'JORF',exemples:['PRMD2117108D','décret 2021','amiante']},
-  circulaire:{titre:'Circulaires',icon:'📋',cat:'Législation',
+  circulaire:{titre:'Circulaires',icon:lk('clipboard-list'),cat:'Législation',
     desc:'Instructions et circulaires ministérielles.',
     detail:'Circulaires, instructions et notes de service adressées par les ministres aux services déconcentrés. Elles précisent l\'interprétation d\'un texte de loi.',
     fond:'CIRC',exemples:['amiante','sécurité incendie','accessibilité']},
-  jurisprudence:{titre:'Jurisprudence judiciaire',icon:'⚖️',cat:'Jurisprudence',
+  jurisprudence:{titre:'Jurisprudence judiciaire',icon:lk('scale'),cat:'Jurisprudence',
     desc:'Cour de cassation, cours d\'appel, tribunaux judiciaires.',
     detail:'Arrêts et jugements des juridictions judiciaires (civiles, pénales, sociales). Recherche par mots-clés ou numéro d\'affaire (pourvoi).',
     fond:'JURI',exemples:['amiante responsabilité','trouble voisinage'],hasNumAffaire:true},
-  cetat:{titre:'Jurisprudence administrative',icon:'🏛️',cat:'Jurisprudence',
+  cetat:{titre:'Jurisprudence administrative',icon:lk('landmark'),cat:'Jurisprudence',
     desc:'Conseil d\'État, cours administratives d\'appel, tribunaux administratifs.',
     detail:'Décisions de la justice administrative : recours pour excès de pouvoir, contentieux des marchés publics, urbanisme, responsabilité de l\'État, fonction publique, etc.',
     fond:'CETAT',exemples:['permis construire','marché public','responsabilité']},
-  constit:{titre:'Conseil constitutionnel',icon:'🔖',cat:'Jurisprudence',
+  constit:{titre:'Conseil constitutionnel',icon:lk('bookmark'),cat:'Jurisprudence',
     desc:'Décisions du Conseil constitutionnel (QPC, DC, etc.).',
     detail:'Contrôle de constitutionnalité des lois (DC), questions prioritaires de constitutionnalité (QPC), contentieux électoral. Recherche par numéro de décision ou mots-clés.',
     fond:'CONSTIT',exemples:['QPC liberté','2018-717','environnement']},
-  cnil:{titre:'CNIL',icon:'🔒',cat:'Autorités',
+  cnil:{titre:'CNIL',icon:lk('lock'),cat:'Autorités',
     desc:'Délibérations et décisions de la CNIL.',
     detail:'Commission nationale de l\'informatique et des libertés : délibérations, avis, autorisations, mises en demeure, sanctions. Données personnelles et RGPD.',
     fond:'CNIL',exemples:['vidéosurveillance','données personnelles','RGPD']},
-  convention:{titre:'Convention collective',icon:'🤝',cat:'Social',
+  convention:{titre:'Convention collective',icon:lk('handshake'),cat:'Social',
     desc:'Conventions collectives nationales par intitulé ou IDCC.',
     detail:'Accords entre organisations patronales et syndicats de salariés définissant les conditions de travail pour un secteur. Recherche par IDCC ou mots-clés.',
     fond:'KALI',exemples:['bâtiment','métallurgie','2098'],hasIdcc:true},
-  acco:{titre:'Accords d\'entreprise',icon:'📝',cat:'Social',
+  acco:{titre:'Accords d\'entreprise',icon:lk('file-pen-line'),cat:'Social',
     desc:'Accords collectifs d\'entreprise et de branche.',
     detail:'Accords négociés au niveau de l\'entreprise : temps de travail, rémunération, égalité professionnelle, télétravail, etc. Recherche par raison sociale ou thème.',
     fond:'ACCO',exemples:['télétravail','intéressement','égalité professionnelle']}
@@ -146,7 +137,7 @@ async function renderLegifrance(){
   var main=document.getElementById('mainContent');if(!main)return;
   main.innerHTML=_frCSS()+'\
 <div class="lfr-hero"><div style="position:relative">\
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:20px">🇫🇷</span><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.7">Légifrance · PISTE</span></div>\
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:20px">'+lk('landmark', 'bleu')+'</span><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.7">Légifrance · PISTE</span></div>\
 <div style="font-size:22px;font-weight:800;line-height:1.35">Recherche juridique</div>\
 <div class="lfr-hero-sub">Textes de loi, codes, jurisprudence et conventions collectives.</div>\
 </div></div>\
@@ -156,7 +147,7 @@ async function renderLegifrance(){
     document.getElementById('legifranceContent').innerHTML=_renderLegifrancePage(status);
     _bindFrancePage(status);
   }catch(e){
-    document.getElementById('legifranceContent').innerHTML='<div class="lfr-section"><div style="display:flex;align-items:flex-start;gap:14px"><span style="font-size:24px">⚠️</span><div><div style="font-size:15px;font-weight:700;color:var(--red);margin-bottom:6px">Connexion impossible</div><div style="font-size:13px;color:var(--gray-text)">'+_escFr(e.message)+'</div></div></div></div>';
+    document.getElementById('legifranceContent').innerHTML=('<div class="lfr-section"><div style="display:flex;align-items:flex-start;gap:14px"><span style="font-size:24px">' + lk('triangle-exclamation-point', 'warn') + '</span><div><div style="font-size:15px;font-weight:700;color:var(--red);margin-bottom:6px">Connexion impossible</div><div style="font-size:13px;color:var(--gray-text)">')+_escFr(e.message)+'</div></div></div></div>';
   }
 }
 
@@ -181,18 +172,18 @@ function _renderLegifrancePage(status){
 <div class="lfr-section">\
   <div class="lfr-section-title">Type de recherche</div>\
   <div class="lfr-section-sub">Sélectionne le type de document juridique recherché</div>\
-  '+cardsHtml+'\
+  '+cardsHtml+('\
   <div id="fr-type-detail" class="lfr-type-detail-box"></div>\
   <div id="fr-code-picker" class="lfr-code-picker" style="display:none">\
-    <div class="lfr-code-picker-label">📖 Périmètre de recherche <span style="font-weight:400;font-size:11px;color:var(--gray-text)">(optionnel — par défaut tous les codes)</span></div>\
+    <div class="lfr-code-picker-label">' + lk('book-open') + ' Périmètre de recherche <span style="font-weight:400;font-size:11px;color:var(--gray-text)">(optionnel — par défaut tous les codes)</span></div>\
     <div class="lfr-autocomplete-wrap">\
       <input id="fr-code-name" class="lfr-input lfr-code-input" placeholder="Cliquer ici pour choisir un code… ex: travail, civil, environnement…" autocomplete="off">\
       <div id="fr-code-suggestions" class="lfr-autocomplete-list"></div>\
     </div>\
     <div id="fr-code-selected" class="lfr-code-selected" style="display:none"></div>\
   </div>\
-  <div id="fr-scope-indicator" style="display:none;margin-bottom:8px"><span class="lfr-badge lfr-badge-blue" style="font-size:12px;padding:5px 12px" id="fr-scope-badge">🔍 Recherche dans tous les codes</span></div>\
-  <div class="lfr-search-bar"><span class="lfr-search-icon">🔎</span><input type="text" id="fr-q" placeholder="Rechercher un texte, article, décision…"><button class="lfr-search-submit" id="fr-search-btn">Rechercher</button></div>\
+  <div id="fr-scope-indicator" style="display:none;margin-bottom:8px"><span class="lfr-badge lfr-badge-blue" style="font-size:12px;padding:5px 12px" id="fr-scope-badge">' + lk('search') + ' Recherche dans tous les codes</span></div>\
+  <div class="lfr-search-bar"><span class="lfr-search-icon">' + lk('search') + '</span><input type="text" id="fr-q" placeholder="Rechercher un texte, article, décision…"><button class="lfr-search-submit" id="fr-search-btn">Rechercher</button></div>\
   <div class="lfr-search-options">\
     <div class="lfr-search-mode">\
       <label class="lfr-radio-label" title="Recherche l\'expression exacte telle que saisie"><input type="radio" name="fr-mode" value="EXACTE" id="fr-mode-exact"><span class="lfr-radio-pill">Expression exacte</span></label>\
@@ -214,7 +205,7 @@ function _renderLegifrancePage(status){
   </div>\
   <input type="hidden" id="fr-type" value="texte">\
   <div class="lfr-status-bar">\
-    <span class="lfr-pill '+(status.service_active?'ok':'off')+'"><span class="dot"></span>'+(status.service_active?'Service actif':'Inactif')+'</span>\
+    <span class="lfr-pill ')+(status.service_active?'ok':'off')+'"><span class="dot"></span>'+(status.service_active?'Service actif':'Inactif')+'</span>\
     <span class="lfr-pill '+(status.client_configured?'ok':'warn')+'"><span class="dot"></span>'+(status.client_configured?'Configuré':'Non configuré')+'</span>\
     <span class="lfr-pill ok"><span class="dot"></span>'+_escFr(status.environment==='production'?'Production':'Sandbox')+'</span>\
   </div>\
@@ -238,10 +229,10 @@ function _bindFrancePage(status){
     if(typeEl.value==='code'){
       scopeIndicator.style.display='';
       if(selectedCode.label){
-        scopeBadge.innerHTML='🔍 Recherche dans <strong>'+_escFr(selectedCode.label)+'</strong>';
+        scopeBadge.innerHTML=(lk('search') + ' Recherche dans <strong>')+_escFr(selectedCode.label)+'</strong>';
         scopeBadge.style.background='rgba(26,179,148,.1)';scopeBadge.style.borderColor='rgba(26,179,148,.3)';scopeBadge.style.color='#1ab394';
       }else{
-        scopeBadge.innerHTML='🔍 Recherche dans <strong>tous les codes</strong>';
+        scopeBadge.innerHTML=(lk('search') + ' Recherche dans <strong>tous les codes</strong>');
         scopeBadge.style.background='';scopeBadge.style.borderColor='';scopeBadge.style.color='';
       }
     }else{
@@ -356,7 +347,7 @@ function _bindFrancePage(status){
     selectedCode={id:id,label:label};
     codeNameEl.value='';
     suggestBox.innerHTML='';suggestBox.style.display='none';
-    codeSelectedEl.innerHTML='<div class="lfr-code-chip"><span class="lfr-code-chip-icon">📖</span><span class="lfr-code-chip-label">'+_escFr(label)+'</span><span class="lfr-code-chip-id">'+_escFr(id)+'</span><button class="lfr-code-chip-remove" title="Changer de code">✕</button></div>';
+    codeSelectedEl.innerHTML=('<div class="lfr-code-chip"><span class="lfr-code-chip-icon">' + lk('book-open') + '</span><span class="lfr-code-chip-label">')+_escFr(label)+'</span><span class="lfr-code-chip-id">'+_escFr(id)+'</span><button class="lfr-code-chip-remove" title="Changer de code">✕</button></div>';
     codeSelectedEl.style.display='';
     codeNameEl.style.display='none';
     qEl.placeholder='Rechercher dans '+label+'…';
@@ -449,7 +440,7 @@ function _bindFrancePage(status){
       rEl.innerHTML=_frRenderResults(data,items);
       _frBindResults(items);
     }catch(e){
-      rEl.innerHTML='<div class="lfr-section"><div style="display:flex;align-items:flex-start;gap:14px"><span style="font-size:22px">❌</span><div><div style="font-weight:700;margin-bottom:4px">Erreur de recherche</div><div style="font-size:13px;color:var(--gray-text)">'+_escFr(e.message)+'</div></div></div></div>';
+      rEl.innerHTML=('<div class="lfr-section"><div style="display:flex;align-items:flex-start;gap:14px"><span style="font-size:22px">' + lk('circle-x', 'ko') + '</span><div><div style="font-weight:700;margin-bottom:4px">Erreur de recherche</div><div style="font-size:13px;color:var(--gray-text)">')+_escFr(e.message)+'</div></div></div></div>';
     }
   };
   $('fr-search-btn').addEventListener('click',doSearch);
@@ -642,7 +633,7 @@ function _frConsult(id,cid){
 /* ── Render results ─────────────────────────────────────── */
 function _frRenderResults(data,items){
   var total=items.length||Number(data&&data.totalResultNumber||0);
-  if(!items.length)return'<div class="lfr-section"><div class="lfr-empty"><div class="lfr-empty-icon">📭</div><div class="lfr-empty-title">Aucun résultat</div><div class="lfr-empty-desc">Essaye avec d\'autres mots-clés ou un type de recherche différent.</div></div></div>';
+  if(!items.length)return('<div class="lfr-section"><div class="lfr-empty"><div class="lfr-empty-icon">' + lk('mailbox') + '</div><div class="lfr-empty-title">Aucun résultat</div><div class="lfr-empty-desc">Essaye avec d\'autres mots-clés ou un type de recherche différent.</div></div></div>');
   var rows=items.map(function(item,idx){
     var ep='';
     if(item.extracts.length){
@@ -655,7 +646,7 @@ function _frRenderResults(data,items){
     var url=_legiUrl(item.id);
     return'<div class="lfr-result-item" data-fr-index="'+idx+'"><div style="min-width:0">\
 <div class="lfr-result-title">'+_escFr(item.titre)+'</div>\
-<div class="lfr-result-meta">'+_frBadge(item.etat)+(item.parentCode?'<span class="lfr-badge lfr-badge-blue lfr-badge-sm">📖 '+_escFr(item.parentCode)+'</span>':'')+(item.nature?'<span class="lfr-badge lfr-badge-sm">'+_escFr(item.nature)+'</span>':'')+(item.num?'<span class="lfr-badge lfr-badge-blue lfr-badge-sm">n° '+_escFr(item.num)+'</span>':'')+(item.nor?'<span class="lfr-badge lfr-badge-sm" style="font-family:\'DM Mono\',monospace">'+_escFr(item.nor)+'</span>':'')+(item.date?'<span style="font-size:11px;color:var(--gray-text)">'+_escFr(_fmtDate(item.date))+'</span>':'')+(url?'<a href="'+url+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--blue);text-decoration:none;margin-left:auto" onclick="event.stopPropagation()">Voir sur Légifrance ↗</a>':'')+'</div>\
+<div class="lfr-result-meta">'+_frBadge(item.etat)+(item.parentCode?('<span class="lfr-badge lfr-badge-blue lfr-badge-sm">' + lk('book-open') + ' ')+_escFr(item.parentCode)+'</span>':'')+(item.nature?'<span class="lfr-badge lfr-badge-sm">'+_escFr(item.nature)+'</span>':'')+(item.num?'<span class="lfr-badge lfr-badge-blue lfr-badge-sm">n° '+_escFr(item.num)+'</span>':'')+(item.nor?'<span class="lfr-badge lfr-badge-sm" style="font-family:\'DM Mono\',monospace">'+_escFr(item.nor)+'</span>':'')+(item.date?'<span style="font-size:11px;color:var(--gray-text)">'+_escFr(_fmtDate(item.date))+'</span>':'')+(url?'<a href="'+url+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--blue);text-decoration:none;margin-left:auto" onclick="event.stopPropagation()">Voir sur Légifrance ↗</a>':'')+'</div>\
 '+(item.resume?'<div class="lfr-result-excerpt">'+_escFr(item.resume.slice(0,280))+'</div>':'')+ep+'</div>\
 <div class="lfr-result-arrow">'+(item.consult?'→':'')+'</div></div>';
   }).join('');
@@ -682,7 +673,7 @@ function _frBindResults(items){
         dEl.innerHTML=_frRenderDetail(item,data);
         _frBindDetail(item,data);
       }catch(e){
-        dEl.innerHTML='<div class="lfr-section"><div style="display:flex;gap:14px"><span style="font-size:22px">❌</span><div><div style="font-weight:700;margin-bottom:4px">Erreur</div><div style="font-size:13px;color:var(--gray-text)">'+_escFr(e.message)+'</div></div></div></div>';
+        dEl.innerHTML=('<div class="lfr-section"><div style="display:flex;gap:14px"><span style="font-size:22px">' + lk('circle-x', 'ko') + '</span><div><div style="font-weight:700;margin-bottom:4px">Erreur</div><div style="font-size:13px;color:var(--gray-text)">')+_escFr(e.message)+'</div></div></div></div>';
       }
     });
   });
@@ -736,7 +727,7 @@ function _frRenderDetail(item,data){
   // Head
   h+='<div class="lfr-detail-head"><div class="lfr-detail-head-title">'+_escFr(titre)+'</div><div class="lfr-detail-head-meta">';
   if(etat)h+='<span class="lfr-detail-head-pill">'+_escFr(etat)+'</span>';
-  if(item.parentCode)h+='<span class="lfr-detail-head-pill">📖 '+_escFr(item.parentCode)+'</span>';
+  if(item.parentCode)h+=('<span class="lfr-detail-head-pill">' + lk('book-open') + ' ')+_escFr(item.parentCode)+'</span>';
   if(nature)h+='<span class="lfr-detail-head-pill">'+_escFr(nature)+'</span>';
   if(item.num)h+='<span class="lfr-detail-head-pill">n° '+_escFr(item.num)+'</span>';
   if(nor)h+='<span class="lfr-detail-head-pill" style="font-family:\'DM Mono\',monospace;font-size:10px">NOR '+_escFr(nor)+'</span>';
@@ -783,7 +774,7 @@ function _frRenderDetail(item,data){
       var lid=l.id||l.cidTexte||'';
       var lUrl=_legiUrl(lid);
       h+='<div class="lfr-detail-link">';
-      h+='<span class="lfr-detail-link-icon">🔗</span>';
+      h+=('<span class="lfr-detail-link-icon">' + lk('link') + '</span>');
       if(lUrl)h+='<a href="'+lUrl+'" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none;flex:1">'+_escFr(_cleanMark(l.title||l.numTexte||lid||'Lien'))+'</a>';
       else h+='<span style="flex:1">'+_escFr(_cleanMark(l.title||l.numTexte||lid||'Lien'))+'</span>';
       if(l.typeLien)h+='<span class="lfr-badge lfr-badge-sm">'+_escFr(l.typeLien)+'</span>';
@@ -923,7 +914,7 @@ function _frHead(item){
   var url=_legiUrl(item.id);
   var h='<div class="lfr-detail-head"><div class="lfr-detail-head-title">'+_escFr(item.titre)+'</div><div class="lfr-detail-head-meta">';
   if(item.etat)h+='<span class="lfr-detail-head-pill">'+_escFr(item.etat)+'</span>';
-  if(item.parentCode)h+='<span class="lfr-detail-head-pill">📖 '+_escFr(item.parentCode)+'</span>';
+  if(item.parentCode)h+=('<span class="lfr-detail-head-pill">' + lk('book-open') + ' ')+_escFr(item.parentCode)+'</span>';
   if(item.nature)h+='<span class="lfr-detail-head-pill">'+_escFr(item.nature)+'</span>';
   if(item.num)h+='<span class="lfr-detail-head-pill">n° '+_escFr(item.num)+'</span>';
   if(item.date)h+='<span class="lfr-detail-head-pill">'+_escFr(_fmtDate(item.date))+'</span>';
@@ -934,13 +925,7 @@ function _frHead(item){
 function _frFoot(item){
   var url=_legiUrl(item.id);
   var codeUrl=item.parentCodeId?_legiUrl(item.parentCodeId):'';
-  return'<div class="lfr-detail-footer"><span style="font-size:11px;color:var(--gray-text);font-family:\'DM Mono\',monospace">'+_escFr(item.id)+(item.cid?' · '+_escFr(item.cid):'')+'</span><div style="display:flex;gap:8px">'+(codeUrl?'<a href="'+codeUrl+'" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="font-size:11px;text-decoration:none">📖 Code complet ↗</a>':'')+(url?'<a href="'+url+'" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="font-size:11px;text-decoration:none">Voir sur Légifrance ↗</a>':'')+'<button class="btn btn-ghost" id="fr-detail-close-btn" style="font-size:11px">✕ Fermer</button></div></div>';
-}
-
-/* ── Legacy ─────────────────────────────────────────────── */
-function _openLegifranceServerConfig(){
-  if(typeof isAdmin==='function'&&!isAdmin())return;navigate('configuration');
-  setTimeout(function(){if(typeof switchConfigTab==='function')switchConfigTab('serveur');setTimeout(function(){var el=document.getElementById('srv-legifrance-section');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});el.style.boxShadow='0 0 0 2px rgba(43,123,230,.25)';setTimeout(function(){el.style.boxShadow='';},2200);}},120);},60);
+  return'<div class="lfr-detail-footer"><span style="font-size:11px;color:var(--gray-text);font-family:\'DM Mono\',monospace">'+_escFr(item.id)+(item.cid?' · '+_escFr(item.cid):'')+'</span><div style="display:flex;gap:8px">'+(codeUrl?'<a href="'+codeUrl+('" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="font-size:11px;text-decoration:none">' + lk('book-open') + ' Code complet ↗</a>'):'')+(url?'<a href="'+url+'" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="font-size:11px;text-decoration:none">Voir sur Légifrance ↗</a>':'')+'<button class="btn btn-ghost" id="fr-detail-close-btn" style="font-size:11px">✕ Fermer</button></div></div>';
 }
 
 /* ═══════════════════════════════════════════════════════ */

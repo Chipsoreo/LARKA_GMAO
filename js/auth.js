@@ -125,7 +125,7 @@ function showForcedPasswordChange(user, ancienSaisi = '') {
   popup.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)';
   popup.innerHTML = `
     <form id="forcedPwdForm" style="background:#1e293b;border-radius:16px;padding:32px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.5);color:#e2e8f0">
-      <h2 style="margin:0 0 6px;font-size:18px;color:#fff">🔑 Nouveau mot de passe requis</h2>
+      <h2 style="margin:0 0 6px;font-size:18px;color:#fff">${lk('key-round')} Nouveau mot de passe requis</h2>
       <p style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 18px">Votre mot de passe doit être changé avant d'accéder à l'application.</p>
       <div style="margin-bottom:12px"><label style="${etiquette}">Mot de passe actuel</label>
         <input type="password" id="forcedOld" autocomplete="current-password" style="${champ}"></div>
@@ -403,7 +403,7 @@ function afficherAccesDemo(d) {
   // Libellés fixes dans leurs propres éléments : le pack de langue traduit un
   // texte entier, jamais un morceau de phrase mêlé au nom de la commune.
   el.innerHTML = `
-    <div class="demo-titre">🏙️ <span>Démonstration</span> « ${esc(d.nom)} »</div>
+    <div class="demo-titre">${lk('building')} <span>Démonstration</span> « ${esc(d.nom)} »</div>
     <div><span>Identifiant :</span> <code>${esc(p.login)}</code></div>
     <div><span>Mot de passe :</span> <code>${esc(d.mot_de_passe)}</code></div>
     <button type="button" class="demo-remplir" data-login="${esc(p.login)}"><span>Se connecter avec ce compte</span> (${profil(p)})</button>
@@ -483,7 +483,7 @@ function showForgotPassword() {
   popup.innerHTML = `
     <div style="background:#1e293b;border-radius:16px;padding:32px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.5);color:#e2e8f0;position:relative">
       <button onclick="document.getElementById('forgotPopup').remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:rgba(255,255,255,.4);font-size:22px;cursor:pointer;line-height:1">×</button>
-      <h2 style="margin:0 0 6px;font-size:18px;color:#fff">🔑 Mot de passe oublié</h2>
+      <h2 style="margin:0 0 6px;font-size:18px;color:#fff">${lk('key-round')} Mot de passe oublié</h2>
       <p style="font-size:12px;color:rgba(255,255,255,.5);margin:0 0 18px">Comptes locaux uniquement</p>
 
       <!-- ÉTAPE 1 : login + email -->
@@ -566,7 +566,7 @@ async function doForgotSendCode() {
       btn.style.display = 'block';
       return;
     }
-    sucEl.textContent = `✅ Code envoyé à ${data.data.email}`;
+    sucEl.textContent = `Code envoyé à ${data.data.email}`;
     sucEl.style.display = 'block';
     // Passer à l'étape 2
     document.getElementById('forgotStep1').style.display = 'none';
@@ -606,7 +606,7 @@ async function doForgotReset() {
     document.getElementById('forgotPopup')?.remove();
     const errLogin = document.getElementById('loginError');
     if (errLogin) {
-      errLogin.textContent = '✅ Mot de passe réinitialisé ! Connectez-vous avec votre nouveau mot de passe.';
+      errLogin.textContent = 'Mot de passe réinitialisé ! Connectez-vous avec votre nouveau mot de passe.';
       errLogin.style.display = 'block';
       errLogin.style.color = '#86efac';
     }
@@ -618,7 +618,7 @@ async function doForgotReset() {
 
 // ── Changer son mot de passe (connecté) ──────────────────────────────────────
 function showChangePassword() {
-  openModal('🔑 Changer mon mot de passe', `
+  openModal('Changer mon mot de passe', `
     <div class="form-grid" style="grid-template-columns:1fr">
       <div class="form-group">
         <label class="form-label">Ancien mot de passe</label>

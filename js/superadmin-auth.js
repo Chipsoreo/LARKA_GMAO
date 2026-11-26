@@ -38,13 +38,13 @@ function showSuperAdminLogin() {
 
   loginCard.innerHTML = `
     <div style="text-align:center;margin-bottom:24px">
-      <div style="width:64px;height:64px;margin:0 auto 12px;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px">🛡️</div>
+      <div style="width:64px;height:64px;margin:0 auto 12px;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px">${lk('shield')}</div>
       <h1 style="margin:0;font-size:22px;color:#fff;font-weight:700">Super Administration</h1>
       <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,.5)">Gestion multi-tenant</p>
     </div>
 
     <div id="saSetupBanner" style="display:none;margin-bottom:16px;padding:12px;border-radius:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);font-size:12px;color:rgba(255,255,255,.8)">
-      <strong>🔧 Configuration initiale</strong><br>
+      <strong>${lk('wrench')} Configuration initiale</strong><br>
       Définissez vos identifiants super admin pour la première fois.
     </div>
 
@@ -359,7 +359,7 @@ function initSuperAdminApp(saUser) {
   if (typeof App !== 'undefined') App.saIsPrimary = !!saUser.is_primary;
 
   // Avatar et nom
-  document.getElementById('sidebarAvatar').textContent = '🛡️';
+  document.getElementById('sidebarAvatar').textContent = '';
   document.getElementById('sidebarAvatar').style.fontSize = '18px';
   document.getElementById('sidebarName').textContent = saUser.login || 'Super Admin';
   document.getElementById('sidebarRole').textContent = 'Super Admin';
@@ -369,19 +369,19 @@ function initSuperAdminApp(saUser) {
   nav.innerHTML = `
     <div class="nav-section-title" style="color:rgba(245,166,35,.6)">Super Administration</div>
     <div class="nav-item active" data-page="superadmin" onclick="navigate('superadmin')">
-      <span class="icon">🏢</span><span class="nav-label">Multi-Tenant</span>
+      <span class="icon">${lk('building-complex')}</span><span class="nav-label">Multi-Tenant</span>
     </div>
     <div class="nav-item" data-page="superadmin_branding" onclick="navigate('superadmin_branding')">
-      <span class="icon">🎨</span><span class="nav-label">Personnalisation</span>
+      <span class="icon">${lk('palette')}</span><span class="nav-label">Personnalisation</span>
     </div>
     <div class="nav-item" data-page="superadmin_rgpd" onclick="navigate('superadmin_rgpd')">
-      <span class="icon">🛡️</span><span class="nav-label">Conformité RGPD</span>
+      <span class="icon">${lk('shield')}</span><span class="nav-label">Conformité RGPD</span>
     </div>
     <div class="nav-item" data-page="superadmin_accounts" onclick="saShowAllAccounts()">
-      <span class="icon">👥</span><span class="nav-label">Registre comptes</span>
+      <span class="icon">${lk('users')}</span><span class="nav-label">Registre comptes</span>
     </div>
     <div class="nav-item" data-page="superadmin_logs" onclick="saSuperAdminLogs()">
-      <span class="icon">📊</span><span class="nav-label">Monitoring</span>
+      <span class="icon">${lk('chart-column')}</span><span class="nav-label">Monitoring</span>
     </div>
     <!-- Le journal d'audit était rangé sous « Administration », à côté de
          Configuration et Extensions. Or ce n'est pas un réglage : c'est la
@@ -389,17 +389,17 @@ function initSuperAdminApp(saUser) {
          Le laisser à portée de ceux qu'il surveille lui ôte une part de sa
          raison d'être. Il rejoint la Super Administration. -->
     <div class="nav-item" data-page="journal" onclick="navigate('journal')">
-      <span class="icon">📜</span><span class="nav-label">Journal d'audit</span>
+      <span class="icon">${lk('scroll-text')}</span><span class="nav-label">Journal d'audit</span>
     </div>
     <div class="nav-item" data-page="superadmin_serveur" onclick="saShowServerConfig()">
-      <span class="icon">🖥️</span><span class="nav-label">Config serveur</span>
+      <span class="icon">${lk('monitor')}</span><span class="nav-label">Config serveur</span>
     </div>
     <div class="nav-section-title" style="margin-top:12px">Actions</div>
     <div class="nav-item" onclick="saChangePasswordModal()">
-      <span class="icon">🔑</span><span class="nav-label">Changer mot de passe</span>
+      <span class="icon">${lk('key-round')}</span><span class="nav-label">Changer mot de passe</span>
     </div>
     <div class="nav-item" onclick="doSuperAdminLogout()">
-      <span class="icon">🚪</span><span class="nav-label">Déconnexion SA</span>
+      <span class="icon">${lk('door-open')}</span><span class="nav-label">Déconnexion SA</span>
     </div>
   `;
 
@@ -439,7 +439,7 @@ async function doSuperAdminLogout() {
 }
 
 function saChangePasswordModal() {
-  openModal('🔑 Changer le mot de passe Super Admin', `
+  openModal('Changer le mot de passe Super Admin', `
     <div class="form-grid" style="grid-template-columns:1fr">
       <div class="form-group">
         <label class="form-label">Ancien mot de passe</label>
@@ -501,7 +501,7 @@ async function saShowServerConfig() {
   // (le check dans gestion.php vérifie $_SESSION['superadmin'])
   // On utilise directement le rendu de l'onglet serveur de configuration.js
   const content = document.getElementById('mainContent');
-  content.innerHTML = '<div id="cfg-srv-slot" style="padding:50px;text-align:center;color:var(--on-content-dim)">⏳ Chargement de la configuration serveur…</div>';
+  content.innerHTML = ('<div id="cfg-srv-slot" style="padding:50px;text-align:center;color:var(--on-content-dim)">' + lk('hourglass') + ' Chargement de la configuration serveur…</div>');
 
   // En mode Super Admin, configuration.js n'est pas chargé au démarrage car la
   // sidebar SA ne contient pas le menu "Configuration". On le charge donc à la
@@ -513,7 +513,7 @@ async function saShowServerConfig() {
         await window.PageLoader.ensure('configuration');
       } catch(e) {
         content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">
-          <p>❌ Impossible de charger la configuration serveur.</p>
+          <p>${lk('circle-x', 'ko')} Impossible de charger la configuration serveur.</p>
           <p style="font-size:12px;margin-top:8px;color:var(--gray-text)">${e.message || ''}</p>
         </div>`;
         return;
@@ -535,9 +535,9 @@ async function saLoadMonitoring() {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <h2 style="margin:0;font-size:20px;color:var(--on-content)">📊 Monitoring Multi-Tenant</h2>
+      <h2 style="margin:0;font-size:20px;color:var(--on-content)">${lk('chart-column')} Monitoring Multi-Tenant</h2>
       <div style="flex:1"></div>
-      <button class="btn" onclick="saLoadMonitoring()" style="display:flex;align-items:center;gap:6px">🔄 Rafraîchir</button>
+      <button class="btn" onclick="saLoadMonitoring()" style="display:flex;align-items:center;gap:6px">${lk('refresh-cw')} Rafraîchir</button>
     </div>
     <div id="saMonGlobal" style="margin-bottom:20px"></div>
     <div id="saMonGrid" style="display:grid;gap:16px">
@@ -568,28 +568,28 @@ async function saLoadMonitoring() {
 
     document.getElementById('saMonGlobal').innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
-        ${_monCard('🏢', 'Tenants', g.tenants_actifs + '/' + g.total_tenants, 'actifs')}
-        ${_monCard('👥', 'Utilisateurs', totalUsers, 'actifs au total')}
-        ${_monCard('🔑', 'Comptes locaux', g.total_comptes_locaux, 'dans le registre')}
-        ${_monCard('🗄️', 'Base SA', (g.superadmin_db?.driver||'sqlite').toUpperCase(), g.superadmin_db?.dbname || 'fichier local')}
-        ${_monCard('🏢', 'Biens', totalBiens, 'tous tenants')}
-        ${_monCard('⚙️', 'Équipements', totalEquips, 'tous tenants')}
-        ${_monCard('🔧', 'Interventions', totalInterv, 'tous tenants')}
-        ${_monCard('📝', 'Demandes', totalDemandes, 'nouvelles')}
-        ${_monCard('💾', 'Stockage', (totalSize / 1024 / 1024).toFixed(1) + ' Mo', 'total DBs')}
+        ${_monCard(lk('building-complex'), 'Tenants', g.tenants_actifs + '/' + g.total_tenants, 'actifs')}
+        ${_monCard(lk('users'), 'Utilisateurs', totalUsers, 'actifs au total')}
+        ${_monCard(lk('key-round'), 'Comptes locaux', g.total_comptes_locaux, 'dans le registre')}
+        ${_monCard(lk('archive'), 'Base SA', (g.superadmin_db?.driver||'sqlite').toUpperCase(), g.superadmin_db?.dbname || 'fichier local')}
+        ${_monCard(lk('building-complex'), 'Biens', totalBiens, 'tous tenants')}
+        ${_monCard(lk('settings'), 'Équipements', totalEquips, 'tous tenants')}
+        ${_monCard(lk('wrench'), 'Interventions', totalInterv, 'tous tenants')}
+        ${_monCard(lk('file-pen-line'), 'Demandes', totalDemandes, 'nouvelles')}
+        ${_monCard(lk('save'), 'Stockage', (totalSize / 1024 / 1024).toFixed(1) + ' Mo', 'total DBs')}
       </div>`;
 
     // Détail par tenant
     document.getElementById('saMonGrid').innerHTML = tenants.map(t => {
       const color = /^#[0-9a-fA-F]{6}$/.test(t.couleur||'') ? t.couleur : '#6b7280';
-      const statusIcon = t.db_status === 'ok' ? '🟢' : (t.db_status === 'missing' || t.db_status === 'schema') ? '🟡' : t.db_status === 'unknown' ? '⚪' : '🔴';
+      const statusIcon = t.db_status === 'ok' ? lk('circle', 'p vert') : (t.db_status === 'missing' || t.db_status === 'schema') ? lk('circle', 'p jaune') : t.db_status === 'unknown' ? lk('circle', 'p gris') : lk('circle', 'p rouge');
       const s = t.stats || {};
       const size = t.db_size ? (t.db_size / 1024 / 1024).toFixed(2) + ' Mo' : '—';
       const lastAct = s.derniere_activite ? _monTimeAgo(s.derniere_activite) : '—';
 
       const alertes = [];
-      if ((s.stock_alertes || 0) > 0) alertes.push('📦 ' + s.stock_alertes + ' stock en alerte');
-      if ((s.demandes_nouvelles || 0) > 0) alertes.push('📝 ' + s.demandes_nouvelles + ' demande(s) non traitée(s)');
+      if ((s.stock_alertes || 0) > 0) alertes.push((lk('package') + ' ') + s.stock_alertes + ' stock en alerte');
+      if ((s.demandes_nouvelles || 0) > 0) alertes.push((lk('file-pen-line') + ' ') + s.demandes_nouvelles + ' demande(s) non traitée(s)');
 
       return `<div style="background:var(--card-bg);border:1px solid var(--gray-border);border-radius:12px;padding:18px;border-left:4px solid ${color}">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
@@ -602,15 +602,15 @@ async function saLoadMonitoring() {
         ${t.error ? `<div style="color:#e74c3c;font-size:12px;margin-bottom:10px">Erreur : ${_esc(t.error)}</div>` : ''}
         ${t.stats ? `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;font-size:12px">
-          ${_monMini('👥', 'Utilisateurs', s.utilisateurs_actifs + '/' + s.utilisateurs_total)}
-          ${_monMini('🏢', 'Biens', s.biens)}
-          ${_monMini('⚙️', 'Équipements', s.equipements)}
-          ${_monMini('🔧', 'Interventions', s.interventions_actives + ' actives / ' + s.interventions)}
-          ${_monMini('📋', 'Contrats', s.contrats_actifs + ' actifs / ' + s.contrats)}
-          ${_monMini('📦', 'Stock', s.stock_articles + (s.stock_alertes > 0 ? ' ⚠️' + s.stock_alertes : ''))}
-          ${_monMini('📝', 'Demandes', s.demandes)}
-          ${_monMini('💰', 'Matériel', s.gestion_materiel)}
-          ${_monMini('📎', 'Documents', s.documents)}
+          ${_monMini(lk('users'), 'Utilisateurs', s.utilisateurs_actifs + '/' + s.utilisateurs_total)}
+          ${_monMini(lk('building-complex'), 'Biens', s.biens)}
+          ${_monMini(lk('settings'), 'Équipements', s.equipements)}
+          ${_monMini(lk('wrench'), 'Interventions', s.interventions_actives + ' actives / ' + s.interventions)}
+          ${_monMini(lk('clipboard-list'), 'Contrats', s.contrats_actifs + ' actifs / ' + s.contrats)}
+          ${_monMini(lk('package'), 'Stock', s.stock_articles + (s.stock_alertes > 0 ? (' ' + lk('triangle-exclamation-point', 'warn')) + s.stock_alertes : ''))}
+          ${_monMini(lk('file-pen-line'), 'Demandes', s.demandes)}
+          ${_monMini(lk('wallet'), 'Matériel', s.gestion_materiel)}
+          ${_monMini(lk('paperclip'), 'Documents', s.documents)}
         </div>
         ${alertes.length > 0 ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">${alertes.map(a => `<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600">${a}</span>`).join('')}</div>` : ''}
         ` : '<div style="font-size:12px;color:var(--gray-text)">Pas de données disponibles</div>'}
@@ -666,10 +666,10 @@ async function saShowAllAccounts() {
 
   content.innerHTML = `
     <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <h2 style="margin:0;font-size:20px;color:var(--on-content)">👥 Registre centralisé des comptes locaux</h2>
+      <h2 style="margin:0;font-size:20px;color:var(--on-content)">${lk('users')} Registre centralisé des comptes locaux</h2>
       <div style="flex:1"></div>
       <button class="btn" onclick="saSyncAccounts()" style="display:flex;align-items:center;gap:6px">
-        🔄 Synchroniser
+        ${lk('refresh-cw')} Synchroniser
       </button>
     </div>
     <div id="saAccountsGrid">

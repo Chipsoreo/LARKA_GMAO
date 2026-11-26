@@ -59,7 +59,7 @@ function openMyProfile() {
     const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
     bannerHtml = `
       <div style="display:flex;gap:10px;padding:10px 12px;margin-bottom:14px;background:#fff7e6;border:1px solid #ffd591;border-radius:8px;font-size:13px;line-height:1.5;color:#874d00">
-        <span style="font-size:18px;line-height:1">🔒</span>
+        <span style="font-size:18px;line-height:1">${lk('lock')}</span>
         <div>
           <strong>Compte ${_escHtmlSafe(providerLabel)}</strong> —
           ton identité, ton email et ton service viennent de ${_escHtmlSafe(providerLabel)}
@@ -74,7 +74,7 @@ function openMyProfile() {
   // le champ read-only quel que soit le provider (réservé aux champs sensibles).
   const fieldHtml = (id, label, value, opts = {}) => {
     const locked = opts.forceLocked || (opts.lockedIfOAuth && !isLocal);
-    const lockIcon = locked ? ' 🔒' : '';
+    const lockIcon = locked ? (' ' + lk('lock')) : '';
     const inputAttrs = [
       `id="prof_${id}"`,
       `class="form-control"`,
@@ -140,11 +140,21 @@ function openMyProfile() {
       </div>
       ` : ''}
 
+      <!-- Appareils mobiles : l'app Larka hors ligne, reliée à CE compte (js/appareils-mobiles.js). -->
+      ${typeof ouvrirMesAppareils === 'function' && !window.LarkaMobile ? `
+      <div style="grid-column:span 2;font-weight:600;font-size:12px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-top:12px;padding-top:14px;border-top:1px solid #eee">
+        Appareils mobiles
+      </div>
+      <div style="grid-column:span 2;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <span style="flex:1;min-width:220px;font-size:13px;color:#555">Relier l'app mobile Larka à votre compte (QR code), voir et délier vos appareils.</span>
+        <button type="button" class="btn btn-ghost" id="btnMesAppareils" onclick="ouvrirMesAppareils()">${lk('smartphone')} Mes appareils mobiles</button>
+      </div>` : ''}
+
     </div>
   `;
 
   // Ouvre la modale via le helper existant. saveFn = saveMyProfile.
-  openModal('👤 Mon profil', bodyHtml, saveMyProfile, 'Enregistrer', 'Fermer', '640px');
+  openModal('Mon profil', bodyHtml, saveMyProfile, 'Enregistrer', 'Fermer', '640px');
 }
 
 /**

@@ -9,8 +9,9 @@
 /**
  * Larka — Routes : Maintenance
  *
- * Actions : interventions (CRUD), interv_autonumero, valider_intervention,
- *           archiver_intervention, contrats (CRUD)
+ * Actions : interventions (CRUD), import_interventions, interv_autonumero, valider_intervention,
+ *           archiver_intervention, contrats (CRUD), plans_maintenance (CRUD :
+ *           plans préventifs et de contrôle réglementaire)
  */
 
 // ── Interventions ─────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ if ($action === 'realiser_prevue' && $method === 'POST') {
     json_ok('OK');
 }
 
-// ⚠️ CES ROUTES DE LECTURE N'ÉTAIENT GARDÉES QUE PAR require_auth().
+// CES ROUTES DE LECTURE N'ÉTAIENT GARDÉES QUE PAR require_auth().
 // La route « interventions » exige require_lecture(… 'interventions' …), mais
 // « interventions_prevues », « interventions_archivees » et
 // « facture_interventions » renvoyaient les MÊMES fiches (i.* : montants,
@@ -250,7 +251,7 @@ if ($action === 'interventions_archivees' && $method === 'GET') {
 if ($action === 'interventions') {
     $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'interventions', $db);
     if ($method==='GET') {
-        // ⚠️ FIX PERFS : pagination opt-in. Si le client envoie ?paginated=1,
+        // FIX PERFS : pagination opt-in. Si le client envoie ?paginated=1,
         // on retourne {items, total, limit, offset} ; sinon, comportement
         // legacy (toute la liste) — pour ne pas casser le frontend existant.
         if (!empty($_GET['paginated'])) {
@@ -265,7 +266,7 @@ if ($action === 'interventions') {
             json_ok($db->getAllInterventions());
         }
     }
-    // ⚠️ L'ÉCRITURE N'ÉTAIT GARDÉE QUE PAR require_lecture().
+    // L'ÉCRITURE N'ÉTAIT GARDÉE QUE PAR require_lecture().
     // Un visionneur — et un demandeur à qui l'onglet avait été ouvert en
     // consultation — pouvait créer, modifier et SUPPRIMER des interventions
     // (avec leurs documents, lignes de stock et devis). require_lecture() est
@@ -273,10 +274,18 @@ if ($action === 'interventions') {
     // gestion, comme partout ailleurs.
     require_role($user, ['Admin','Gestionnaire']);
     if ($method==='POST') {
-        $nouvelId = $db->addIntervention(get_body(), $user['Login']);
+        $b = get_body();
+        $nouvelId = $db->addIntervention($b, $user['Login']);
+        // Cases complémentaires de la fiche (fusionnées : une case absente n'est pas effacée).
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('interventions', $nouvelId, $b['champsPerso']);
         json_ok(['id' => $nouvelId]);
     }
-    if ($method==='PUT')    { $db->updateIntervention($id, get_body(), $user['Login']); json_ok('OK'); }
+    if ($method==='PUT') {
+        $b = get_body();
+        $db->updateIntervention($id, $b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('interventions', $id, $b['champsPerso']);
+        json_ok('OK');
+    }
     if ($method==='DELETE') {
         // Raison optionnelle de la suppression (saisie côté UI). Comme la
         // ligne est physiquement supprimée, on garde une trace dans le log
@@ -301,6 +310,53 @@ if ($action === 'interventions') {
         $db->deleteIntervention($id, $user['Login']);
         json_ok('OK');
     }
+}
+
+// ── Import d'interventions (Excel / CSV lu par le navigateur) ────────────────
+// Curatives, préventives, contrôles réglementaires, divers : voir
+// api/ImportInterventions.php. dryRun : aperçu sans rien modifier.
+if ($action === 'import_interventions') {
+    $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
+    if ($method !== 'POST') json_error('Méthode invalide.', 405);
+    @ini_set('memory_limit', '512M');
+    @set_time_limit(300);
+    require_once __DIR__ . '/../ImportInterventions.php';
+    try {
+        json_ok((new ImportInterventions($db, (string)$user['Login']))->executer(get_body()));
+    } catch (\InvalidArgumentException $e) {
+        json_error($e->getMessage(), 400);
+    }
+}
+
+// ── Plans préventifs et de contrôle réglementaire ───────────────────────────
+// Un plan prévoit plusieurs passages du même genre dans l'année ; chaque passage
+// est une intervention (voir Database::planSynchroniser). Lecture : mêmes
+// droits que les interventions, dont ils font partie ; écriture : gestion.
+if ($action === 'plans_maintenance') {
+    $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'interventions', $db);
+    if ($method === 'GET') {
+        $nature = isset($_GET['nature']) ? (string)$_GET['nature'] : null;
+        if ($nature !== null && $nature !== '' && !in_array($nature, Database::PLAN_NATURES, true)) json_error('Nature inconnue.', 400);
+        if ($id) {
+            $plan = $db->getPlanMaintenance($id);
+            if (!$plan) json_error('Plan introuvable.', 404);
+            json_ok($plan);
+        }
+        json_ok($db->getPlansMaintenance($nature, isset($_GET['annee']) ? (int)$_GET['annee'] : null));
+    }
+    require_role($user, ['Admin','Gestionnaire']);
+    try {
+        if ($method === 'POST')   json_ok(['id' => $db->addPlanMaintenance(get_body(), $user['Login'])]);
+        if ($method === 'PUT')    { if (!$id) json_error('Plan manquant.', 400); $db->updatePlanMaintenance($id, get_body(), $user['Login']); json_ok('OK'); }
+        if ($method === 'DELETE') {
+            if (!$id) json_error('Plan manquant.', 400);
+            [$sup, $gardes] = $db->deletePlanMaintenance($id, $user['Login']);
+            json_ok(['supprimes' => $sup, 'gardes' => $gardes]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        json_error($e->getMessage(), 400);
+    }
+    json_error('Méthode non prise en charge.', 405);
 }
 
 // ── Devis interventions ──────────────────────────────────────────────────────
@@ -372,7 +428,7 @@ if ($action === 'facture_link' && $method === 'POST') {
 if ($action === 'contrats') {
     $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'contrats', $db);
     if ($method==='GET')    json_ok($db->getAllContrats());
-    // ⚠️ CORRECTIF SÉCURITÉ : POST et PUT s'exécutaient juste après la garde de
+    // CORRECTIF SÉCURITÉ : POST et PUT s'exécutaient juste après la garde de
     // LECTURE, qui admet le Visionneur — un compte en consultation pouvait donc
     // créer et modifier des contrats. Seul DELETE re-vérifiait. La garde
     // d'écriture est désormais posée avant toute modification, comme sur les

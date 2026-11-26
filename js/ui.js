@@ -59,12 +59,13 @@ function badge(val) {
 
 // ── Toast ──────────────────────────────────────────────────────────────────────
 function toast(msg, type = '') {
-  const icons = { success:'✓', error:'✕', warning:'⚠' };
+  const icons = { success: 'check', error: 'x', warning: 'triangle-exclamation-point' };
   const div   = document.createElement('div');
   div.className = `toast ${type}`;
-  // Texte seulement : un message peut contenir une saisie utilisateur.
+  // Le message reste du texte (il peut contenir une saisie utilisateur) ; seule
+  // l'icône, fixe, est du HTML.
   const ic = document.createElement('span');
-  ic.textContent = icons[type] || 'ℹ';
+  ic.innerHTML = lk(icons[type] || 'info');
   div.append(ic, ' ' + (msg == null ? '' : String(msg)));
   document.getElementById('toastContainer').appendChild(div);
   // Une erreur longue (marche à suivre, commande à exécuter) reste le temps
@@ -130,6 +131,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('modalOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('modalOverlay')) closeModal();
   });
+  // Sous-bandeau des boutons de page : visible dès qu'une page pose des boutons
+  // dans #topbarActions, masqué sinon (navigate() le vide à chaque changement de page).
+  const actions = document.getElementById('topbarActions');
+  const bandeau = document.getElementById('sousBandeau');
+  if (actions && bandeau) {
+    const maj = () => { bandeau.hidden = !actions.children.length && !actions.textContent.trim(); };
+    new MutationObserver(maj).observe(actions, { childList: true, subtree: true, characterData: true });
+    maj();
+  }
 });
 
 // ── Confirmation ───────────────────────────────────────────────────────────────
@@ -199,7 +209,7 @@ function renderPendingDocsPreview(key) {
   const docs = window['_pendingDocs_' + key] || [];
   el.innerHTML = docs.map((d, i) => `
     <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;font-size:12px">
-      <span>${d.mime?.startsWith('image/') ? '📷' : '📄'} ${d.name.substring(0,20)}${d.name.length>20?'…':''}</span>
+      <span>${d.mime?.startsWith('image/') ? lk('camera') : lk('file-text')} ${d.name.substring(0,20)}${d.name.length>20?'…':''}</span>
       <button onclick="window._pendingDocs_${key}.splice(${i},1);renderPendingDocsPreview('${key}')" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:14px;padding:0">×</button>
     </div>`).join('');
 }
@@ -220,6 +230,27 @@ function renderPendingDocsPreview(key) {
  * @param {Object|null}  selection        { cle, supprimerFn } — cases à cocher et
  *                                         suppression groupée (supprimerFn(ids))
  */
+/**
+ * Comparaison de deux valeurs de liste pour un tri : dates AAAA-MM-JJ entre
+ * elles, nombres entiers (« 12 », « 3,5 ») entre eux, sinon texte
+ * (« 10 » après « 9 », sans tenir compte de la casse ni des accents).
+ *
+ * ⚠️ Les tris faisaient « parseFloat(a) et parseFloat(b) sont des nombres ? » :
+ * parseFloat prend « 2026-03-15 » pour 2026 — une colonne de DATES ne se
+ * triait que par ANNÉE (Interventions « Date (récent) », colonnes Début/Fin
+ * des contrats…) — et « 06 12 34 56 78 » pour 6.
+ */
+function comparerValeurs(va, vb) {
+  va = va ?? ''; vb = vb ?? '';
+  const date = /^\d{4}-\d{2}/;
+  if (typeof va === 'string' && typeof vb === 'string' && date.test(va) && date.test(vb)) return va.localeCompare(vb);
+  const nombre = v => typeof v === 'number' ? v
+    : (/^\s*-?\d+(?:[.,]\d+)?\s*$/.test(String(v)) ? parseFloat(String(v).replace(',', '.')) : NaN);
+  const na = nombre(va), nb = nombre(vb);
+  if (!isNaN(na) && !isNaN(nb)) return na - nb;
+  return String(va).localeCompare(String(vb), 'fr', { sensitivity: 'base', numeric: true });
+}
+
 function renderTable({
   container, data, columns, addBtnFn = null, extraButtons = '',
   filters = null, searchTerm = '', currentFilter = 'Tous',
@@ -231,15 +262,7 @@ function renderTable({
   if (App._sortKey) {
     const key = App._sortKey;
     const dir = App._sortDir === 'asc' ? 1 : -1;
-    sorted.sort((a, b) => {
-      let va = a[key] ?? '', vb = b[key] ?? '';
-      // Numérique
-      if (!isNaN(parseFloat(va)) && !isNaN(parseFloat(vb))) return (parseFloat(va) - parseFloat(vb)) * dir;
-      // Date
-      if (typeof va === 'string' && va.match(/^\d{4}-/)) return va.localeCompare(vb) * dir;
-      // Texte
-      return String(va).localeCompare(String(vb), 'fr', {sensitivity:'base'}) * dir;
-    });
+    sorted.sort((a, b) => comparerValeurs(a[key], b[key]) * dir);
   }
 
   // Filtrage
@@ -299,7 +322,7 @@ function renderTable({
   html += `
     <div class="search-bar" style="gap:8px">
       <div class="search-input-wrap" style="flex:1;max-width:480px">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon">${lk('search')}</span>
         <input class="search-input" type="text" placeholder="Rechercher dans tous les champs…"
           value="${escHtml(searchTerm)}" autocomplete="off" spellcheck="false" title="Filtre en direct — Échap pour effacer"
           oninput="App.handleSearch(this.value)"
@@ -322,14 +345,14 @@ function renderTable({
       </select>
       ${App.currentUser?.Role !== 'Demandeur' ? `<div style="position:relative;display:inline-block" id="_exportWrap">
         <button class="btn btn-ghost btn-sm" onclick="_toggleExportMenu()" style="white-space:nowrap" title="Exporter">
-          📥 Exporter
+          ${lk('download')} Exporter
         </button>
         <div id="_exportMenu" style="display:none;position:absolute;right:0;top:100%;z-index:9999;min-width:220px;background:var(--card-bg,#fff);border:1px solid var(--gray-border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:6px 0">
-          <div onclick="_exportData('csv','filtered')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">📄 CSV — données filtrées (${totalFiltered})</div>
-          <div onclick="_exportData('csv','all')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">📄 CSV — toutes les données (${data.length})</div>
+          <div onclick="_exportData('csv','filtered')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">${lk('file-text')} CSV — données filtrées (${totalFiltered})</div>
+          <div onclick="_exportData('csv','all')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">${lk('file-text')} CSV — toutes les données (${data.length})</div>
           <div style="border-top:1px solid var(--gray-border);margin:4px 0"></div>
-          <div onclick="_exportData('pdf','filtered')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">📕 PDF — données filtrées (${totalFiltered})</div>
-          <div onclick="_exportData('pdf','all')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">📕 PDF — toutes les données (${data.length})</div>
+          <div onclick="_exportData('pdf','filtered')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">${lk('book')} PDF — données filtrées (${totalFiltered})</div>
+          <div onclick="_exportData('pdf','all')" style="padding:9px 14px;cursor:pointer;font-size:13px;transition:background .15s" onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background=''">${lk('book')} PDF — toutes les données (${data.length})</div>
         </div>
       </div>` : ''}
       ${extraButtons || ''}
@@ -384,14 +407,19 @@ function renderTable({
         else if (c.badge)            cell = badge(v);
         else if (c.type==='money')   cell = v!=null ? fmt(v,'money') : '—';
         else if (c.type==='date')    cell = v ? fmt(v,'date') : '—';
-        else                         cell = (v!==null&&v!==undefined&&v!=='') ? String(v) : '<span style="color:var(--gray-text)">—</span>';
-        html += `<td>${cell}</td>`;
+        // ⚠️ Valeur ÉCHAPPÉE : c'était String(v) brut. Une société de contrat, une
+        // marque ou un bâtiment saisis avec du HTML (« <img onerror=…> ») s'exécutaient
+        // à l'affichage de la liste, pour chaque personne qui l'ouvrait (XSS stockée).
+        // Une colonne qui veut du HTML le dit par son render().
+        else                         cell = (v!==null&&v!==undefined&&v!=='') ? escHtml(String(v)) : '<span style="color:var(--gray-text)">—</span>';
+        // nowrap : numéros de téléphone, références… (« 01 99 00 81 40 » se cassait chiffre par chiffre).
+        html += c.nowrap ? `<td style="white-space:nowrap">${cell}</td>` : `<td>${cell}</td>`;
       });
       const editFn   = columns.find(c => c.editFn)?.editFn;
       const deleteFn = columns.find(c => c.deleteFn)?.deleteFn;
       html += `<td><div class="actions-col">`;
-      if (canEdit   && editFn)   html += `<button class="icon-btn"        onclick="${editFn}(${row.Id})"   title="Modifier">✏️</button>`;
-      if (canDelete && deleteFn) html += `<button class="icon-btn delete" onclick="${deleteFn}(${row.Id})" title="Supprimer">🗑️</button>`;
+      if (canEdit   && editFn)   html += `<button class="icon-btn"        onclick="${editFn}(${row.Id})"   title="Modifier">${lk('pencil')}</button>`;
+      if (canDelete && deleteFn) html += `<button class="icon-btn delete" onclick="${deleteFn}(${row.Id})" title="Supprimer">${lk('trash')}</button>`;
       html += `</div></td></tr>`;
     });
   }
@@ -483,7 +511,7 @@ function _tblSelMaj() {
     + (resteFiltres > 0 ? `<button type="button" class="btn btn-ghost btn-sm" onclick="_tblSelFiltres()" title="Ajouter à la sélection toutes les lignes qui répondent à la recherche et aux filtres"><span>Sélectionner les</span> ${(st.filtres || []).length} <span>résultats filtrés</span></button>` : '')
     + `<button type="button" class="btn btn-ghost btn-sm" onclick="_tblSelVider()">Tout désélectionner</button>`
     + `<div style="flex:1"></div>`
-    + `<button type="button" class="btn btn-danger btn-sm" onclick="_tblSelSupprimer()">🗑️ Supprimer la sélection</button>`;
+    + `<button type="button" class="btn btn-danger btn-sm" onclick="_tblSelSupprimer()">${lk('trash')} Supprimer la sélection</button>`;
 }
 
 // Toggle panneau filtre avancé
@@ -808,7 +836,7 @@ function _openExportModal(format, data, cols, title, page) {
     </label>`;
   }).join('');
 
-  openModal(`📥 Exporter — ${data.length} ligne(s)`, `
+  openModal(`Exporter — ${data.length} ligne(s)`, `
     <div style="margin-bottom:14px;font-size:13px;color:var(--gray-text)">
       Depuis <strong>${title}</strong>
     </div>
@@ -817,10 +845,10 @@ function _openExportModal(format, data, cols, title, page) {
       <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block">Format</label>
       <div style="display:flex;gap:8px">
         <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:6px 14px;border:2px solid var(--gray-border);border-radius:8px;transition:all .15s" id="exp_fmt_csv">
-          <input type="radio" name="exp_format" value="csv" ${format==='csv'?'checked':''} onchange="_expTogglePdfOpts()"> 📄 CSV (Excel)
+          <input type="radio" name="exp_format" value="csv" ${format==='csv'?'checked':''} onchange="_expTogglePdfOpts()"> ${lk('file-text')} CSV (Excel)
         </label>
         <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:6px 14px;border:2px solid var(--gray-border);border-radius:8px;transition:all .15s" id="exp_fmt_pdf">
-          <input type="radio" name="exp_format" value="pdf" ${format==='pdf'?'checked':''} onchange="_expTogglePdfOpts()"> 📕 PDF
+          <input type="radio" name="exp_format" value="pdf" ${format==='pdf'?'checked':''} onchange="_expTogglePdfOpts()"> ${lk('book')} PDF
         </label>
       </div>
     </div>
@@ -833,8 +861,8 @@ function _openExportModal(format, data, cols, title, page) {
     <div style="margin-bottom:14px">
       <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block">Colonnes à inclure</label>
       <div style="display:flex;gap:4px;margin-bottom:8px">
-        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.exp-col-check').forEach(c=>c.checked=true)" style="font-size:11px">✅ Tout</button>
-        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.exp-col-check').forEach(c=>c.checked=false)" style="font-size:11px">❌ Rien</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.exp-col-check').forEach(c=>c.checked=true)" style="font-size:11px">${lk('circle-check', 'ok')} Tout</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.exp-col-check').forEach(c=>c.checked=false)" style="font-size:11px">${lk('circle-x', 'ko')} Rien</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;max-height:200px;overflow-y:auto;padding:8px 12px;background:var(--gray-bg);border-radius:8px;border:1px solid var(--gray-border)">
         ${colChecks}
@@ -1030,6 +1058,8 @@ function _sanitizeFilename(name) {
 function _injectPageExport() {
   // Si renderTable a déjà mis _exportState et qu'un bouton existe, ne rien faire
   if (document.getElementById('_exportWrap')) return;
+  // Page qui a son propre export (supervision Connect…) : pas de second bouton.
+  if (document.querySelector('#mainContent [data-export-propre]')) return;
 
   // Chercher un tableau dans mainContent
   const table = document.querySelector('#mainContent table');
@@ -1050,7 +1080,7 @@ function _injectPageExport() {
   const btn = document.createElement('button');
   btn.className = 'btn btn-ghost btn-sm injected-export-btn';
   btn.style.cssText = 'white-space:nowrap;margin-left:auto';
-  btn.innerHTML = '📥 Exporter';
+  btn.innerHTML = (lk('download') + ' Exporter');
   btn.onclick = function() {
     _captureAndExport();
   };
@@ -1077,7 +1107,8 @@ function _captureAndExport() {
     const cols = [];
     ths.forEach((th, i) => {
       const label = (th.textContent || '').trim();
-      if (label && label !== '⚡' && label !== '✏️') {
+      // Colonne d'actions (titre réduit à une icône) : pas exportée.
+      if (label) {
         cols.push({ key: 'col_' + i, label, idx: i });
       }
     });
@@ -1144,6 +1175,33 @@ function escHtml(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Lieu / bâtiment d'une intervention, pour l'afficher : le sien (saisi ou
+ * importé), sinon celui de son plan, sinon le bâtiment de son bien, sinon celui
+ * de ses équipements (s'ils sont tous au même endroit). '' si rien de connu.
+ * `equipements` : la liste chargée par l'écran (facultative).
+ */
+function lieuIntervention(i, equipements) {
+  if (!i) return '';
+  const direct = String(i.Lieu || i.PlanLieu || i.BienBatiment || '').trim();
+  if (direct) return direct;
+  if (!Array.isArray(equipements) || !i.EquipementsIds) return '';
+  const ids = String(i.EquipementsIds).split(',').filter(Boolean);
+  const bats = [...new Set(ids.map(id => equipements.find(e => String(e.Id) === id))
+    .filter(Boolean).map(e => String(e.Batiment || '').trim()).filter(Boolean))];
+  return bats.length === 1 ? bats[0] : '';
+}
+
+/** Lieux déjà connus (valeurs distinctes, sans doublon de casse), pour une liste de suggestions. */
+function lieuxConnus(...valeurs) {
+  const m = new Map();
+  valeurs.flat().forEach(v => {
+    const t = String(v || '').trim();
+    if (t && !m.has(t.toLowerCase())) m.set(t.toLowerCase(), t);
+  });
+  return [...m.values()].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
 }
 
 /**
@@ -1280,7 +1338,7 @@ function clearPageActionBar() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Cases complémentaires des fiches (biens, équipements) — section « fourre-tout »
+//  Cases complémentaires des fiches (biens, équipements, interventions, stock) — section « fourre-tout »
 // ═══════════════════════════════════════════════════════════════════════════════
 // Une information que Larka ne prévoit pas (date de sortie administrative, n°
 // d'inventaire de l'ancien logiciel, code analytique…) devient une CASE de la
@@ -1290,6 +1348,8 @@ function clearPageActionBar() {
 const ChampsPerso = {
   _cache: {},
   TYPES: [['texte', 'Texte'], ['texte_long', 'Texte long'], ['date', 'Date'], ['nombre', 'Nombre']],
+  // Fiches qui ont des cases (même liste fermée que Database::CHAMPS_PERSO_CIBLES).
+  LIBELLES: { biens: 'biens', equipements: 'équipements', interventions: 'interventions', stock: 'articles du stock' },
 
   async charger(cible, forcer = false) {
     if (!forcer && this._cache[cible]) return this._cache[cible];
@@ -1314,7 +1374,7 @@ const ChampsPerso = {
   sectionHtml(defs, valeurs, readOnly) {
     if (!defs || !defs.length) return '';
     const dis = readOnly ? 'disabled' : '';
-    let h = '<div><div class="section-label">🗂️ Informations complémentaires</div><div class="form-grid">';
+    let h = ('<div><div class="section-label">' + lk('folders') + ' Informations complémentaires</div><div class="form-grid">');
     defs.forEach(d => {
       const v = valeurs[d.cle] == null ? '' : String(valeurs[d.cle]);
       const id = 'f_cp_' + d.cle;
@@ -1340,22 +1400,75 @@ const ChampsPerso = {
     return out;
   },
 
-  // ── Gestion des cases (nom, type, ordre, ajout, retrait) ──────────────────
+  // ── Ressemblance de deux libellés (0 à 1) ─────────────────────────────────
+  // Même calcul que le serveur (Database::similariteLibelles) : la meilleure
+  // de deux mesures, l'une pour les fautes de frappe (distance d'édition),
+  // l'autre pour les mots abrégés ou déplacés (paires de lettres communes).
+  // Les petits mots (de, la, du…) ne comptent pas : « N° d'inventaire » et
+  // « N° inventaire » sont la même case.
+  SEUIL: 0.75,
+  _mots(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/œ/g, 'oe').replace(/æ/g, 'ae').replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
+      .filter(m => m && !['de', 'du', 'des', 'la', 'le', 'les', 'l', 'd', 'a', 'au', 'aux', 'en', 'et', 'un', 'une'].includes(m)).join('');
+  },
+  similarite(a, b) {
+    a = this._mots(a).substring(0, 120); b = this._mots(b).substring(0, 120);
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const m = a.length, n = b.length;
+    let prec = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cour = [i];
+      for (let j = 1; j <= n; j++) cour[j] = Math.min(prec[j] + 1, cour[j - 1] + 1, prec[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prec = cour;
+    }
+    const lev = 1 - prec[n] / Math.max(m, n);
+    const paires = s => { const p = {}; for (let i = 0; i < s.length - 1; i++) { const k = s.substr(i, 2); p[k] = (p[k] || 0) + 1; } return p; };
+    const pa = paires(a), pb = paires(b);
+    let communes = 0, total = 0;
+    Object.keys(pa).forEach(k => { communes += Math.min(pa[k], pb[k] || 0); total += pa[k]; });
+    Object.values(pb).forEach(v => { total += v; });
+    const dice = total ? 2 * communes / total : 0;
+    return Math.round(Math.max(lev, dice) * 1000) / 1000;
+  },
+
+  // ── Gestion des cases (nom, type, ordre, ajout, retrait, historique) ──────
   async ouvrirGestion(cible, apres) {
     const defs = (await this.charger(cible, true)).map(d => Object.assign({}, d));
-    this._edition = { cible, defs, apres };
-    openModal('🗂️ Cases des fiches ' + (cible === 'equipements' ? 'équipements' : 'biens'),
-      '<div id="cpGestion"></div>', async () => {
-        this._lireGestion();
-        const propres = this._edition.defs.filter(d => d.libelle.trim());
-        try {
-          this._cache[cible] = await apiRequest('champs_perso&cible=' + encodeURIComponent(cible), 'POST', { cible, champs: propres });
-          toast('Cases enregistrées.', 'success');
-          closeModal();
-          if (typeof this._edition.apres === 'function') this._edition.apres();
-        } catch (e) { toast(e.message, 'error'); }
-      }, 'Enregistrer', 'Annuler');
+    let historique = [];
+    try { historique = await apiRequest('champs_perso_historique&cible=' + encodeURIComponent(cible)) || []; } catch (_e) { historique = []; }
+    this._edition = { cible, defs, apres, historique, origine: new Set(defs.map(d => d.cle)) };
+    openModal('Cases des fiches ' + (this.LIBELLES[cible] || cible),
+      '<div id="cpGestion"></div>', () => this._enregistrer(false), 'Enregistrer', 'Annuler');
     this._rendreGestion();
+  },
+
+  async _enregistrer(confirme) {
+    const st = this._edition; if (!st) return;
+    this._lireGestion();
+    const propres = st.defs.filter(d => d.libelle.trim());
+    try {
+      const r = await apiRequest('champs_perso&cible=' + encodeURIComponent(st.cible), 'POST',
+        { cible: st.cible, champs: propres, confirmerRessemblances: !!confirme });
+      if (r && r.aConfirmer) {
+        // Une case nouvelle ressemble à une case existante ou retirée : on
+        // montre lesquelles, et l'on n'enregistre que si l'on confirme.
+        const lignes = (r.ressemblances || []).map(x => '« ' + x.libelle + ' » ressemble à ' + Math.round(x.similarite * 100) + ' % à « ' + x.ressemble_a + ' »'
+          + (x.statut === 'supprimee' ? ' (case retirée' + (x.nb_fiches ? ', ' + x.nb_fiches + ' fiche(s) en gardent une valeur' : '') + ')'
+            : x.statut === 'nouvelle' ? ' (autre case nouvelle)' : x.statut === 'retiree_maintenant' ? ' (que vous retirez)' : ''));
+        if (window.confirm('Ces cases ressemblent à des cases déjà connues :\n\n' + lignes.join('\n')
+          + '\n\nCréer quand même des cases distinctes ?\n(Annuler pour corriger : le bouton « Restaurer » ou « C\'est la même » sous la case.)')) {
+          return this._enregistrer(true);
+        }
+        this._rendreGestion();
+        return;
+      }
+      this._cache[st.cible] = r;
+      toast('Cases enregistrées.', 'success');
+      closeModal();
+      if (typeof st.apres === 'function') st.apres();
+    } catch (e) { toast(e.message, 'error'); }
   },
 
   _lireGestion() {
@@ -1367,23 +1480,88 @@ const ChampsPerso = {
     });
   },
 
+  /** Cases connues qui ressemblent à la case i (nouvelle) : existantes et retirées. */
+  _ressemblances(i) {
+    const st = this._edition, d = st && st.defs[i];
+    if (!d || !d.libelle.trim() || (d.cle && (st.origine.has(d.cle) || st.historique.some(h => h.cle === d.cle)))) return [];
+    const out = [];
+    st.defs.forEach((x, j) => {
+      if (j === i || !x.libelle.trim()) return;
+      const sim = this.similarite(d.libelle, x.libelle);
+      if (sim >= this.SEUIL) out.push({ j, libelle: x.libelle, statut: st.origine.has(x.cle) ? 'existante' : 'nouvelle', similarite: sim });
+    });
+    st.historique.forEach(h => {
+      if (st.defs.some(x => x.cle === h.cle)) return;
+      const sim = this.similarite(d.libelle, h.libelle);
+      if (sim >= this.SEUIL) out.push(Object.assign({ statut: 'supprimee', similarite: sim }, h));
+    });
+    return out.sort((a, b) => b.similarite - a.similarite);
+  },
+
+  _ressemblancesHtml(i) {
+    const r = this._ressemblances(i);
+    if (!r.length) return '';
+    return '<div class="cp-ressemble">' + r.slice(0, 3).map(x => {
+      const pct = Math.round(x.similarite * 100) + ' %';
+      if (x.statut === 'supprimee') {
+        return '<div>' + lk('triangle-exclamation-point', 'warn') + ' Ressemble à ' + pct + ' à la case retirée « ' + escHtml(x.libelle) + ' »'
+          + (x.supprimee_le ? ' (le ' + escHtml(String(x.supprimee_le).substring(0, 10).split('-').reverse().join('/')) + ')' : '')
+          + (x.nb_fiches ? ', dont ' + x.nb_fiches + ' fiche' + (x.nb_fiches > 1 ? 's gardent' : ' garde') + ' une valeur' : '') + '. '
+          + '<button type="button" class="btn btn-ghost btn-sm" onclick="ChampsPerso._restaurer(' + escHtml(JSON.stringify(x.cle)) + ',' + i + ')">' + lk('rotate-ccw') + ' Restaurer celle-ci</button></div>';
+      }
+      return '<div>' + lk('triangle-exclamation-point', 'warn') + ' Ressemble à ' + pct + ' à « ' + escHtml(x.libelle) + ' »' + (x.statut === 'nouvelle' ? ' (aussi ajoutée)' : '') + '. '
+        + '<button type="button" class="btn btn-ghost btn-sm" onclick="ChampsPerso._retirer(' + i + ')">C\'est la même : retirer celle-ci</button></div>';
+    }).join('') + '</div>';
+  },
+
   _rendreGestion() {
     const st = this._edition, box = document.getElementById('cpGestion');
     if (!st || !box) return;
     let h = '<div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">Ces cases apparaissent dans la section « Informations complémentaires » de chaque fiche. '
-      + 'Retirer une case ne supprime pas les valeurs déjà saisies : recréée sous le même nom, elle les retrouve.</div>';
+      + 'Retirer une case ne supprime pas les valeurs déjà saisies : elle passe dans les cases retirées, d\'où on peut la restaurer avec ses valeurs.</div>';
     if (!st.defs.length) h += '<div style="padding:14px;text-align:center;color:var(--gray-text);font-size:13px">Aucune case pour l\'instant.</div>';
     st.defs.forEach((d, i) => {
-      h += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
-        + '<input class="form-control" id="cpLib' + i + '" value="' + escHtml(d.libelle) + '" placeholder="Nom de la case" style="flex:1">'
+      h += '<div class="cp-ligne"><div style="display:flex;gap:6px;align-items:center">'
+        + '<input class="form-control" id="cpLib' + i + '" value="' + escHtml(d.libelle) + '" placeholder="Nom de la case" style="flex:1" oninput="ChampsPerso._saisie(' + i + ', this.value)">'
         + '<select class="form-control" id="cpType' + i + '" style="width:130px">'
         + this.TYPES.map(([v, l]) => '<option value="' + v + '" ' + (d.type === v ? 'selected' : '') + '>' + l + '</option>').join('') + '</select>'
         + '<button type="button" class="icon-btn" title="Monter" onclick="ChampsPerso._bouger(' + i + ',-1)" ' + (i === 0 ? 'disabled' : '') + '>↑</button>'
         + '<button type="button" class="icon-btn" title="Descendre" onclick="ChampsPerso._bouger(' + i + ',1)" ' + (i === st.defs.length - 1 ? 'disabled' : '') + '>↓</button>'
-        + '<button type="button" class="icon-btn delete" title="Retirer la case" onclick="ChampsPerso._retirer(' + i + ')">🗑️</button></div>';
+        + '<button type="button" class="icon-btn delete" title="Retirer la case (ses valeurs sont gardées)" onclick="ChampsPerso._retirer(' + i + (')">' + lk('trash') + '</button></div>')
+        + '<div id="cpRess' + i + '">' + this._ressemblancesHtml(i) + '</div></div>';
     });
-    h += '<button type="button" class="btn btn-ghost btn-sm" onclick="ChampsPerso._ajouter()">➕ Ajouter une case</button>';
+    h += ('<button type="button" class="btn btn-ghost btn-sm" onclick="ChampsPerso._ajouter()">' + lk('plus') + ' Ajouter une case</button>');
+    // Cases retirées : l'historique, avec de quoi les restaurer.
+    const retirees = st.historique.filter(x => !st.defs.some(d => d.cle === x.cle));
+    if (retirees.length) {
+      h += '<details class="cp-historique"' + (st.historiqueOuvert ? ' open' : '') + ' ontoggle="ChampsPerso._edition && (ChampsPerso._edition.historiqueOuvert = this.open)">'
+        + '<summary>' + lk('archive') + ' Cases retirées (' + retirees.length + ')</summary>'
+        + '<table><thead><tr><th>Case</th><th>Retirée</th><th>Fiches avec une valeur</th><th></th></tr></thead><tbody>'
+        + retirees.map(x => '<tr><td><strong>' + escHtml(x.libelle) + '</strong><div class="cp-aide">' + escHtml((this.TYPES.find(t => t[0] === x.type) || ['', x.type])[1])
+            + (x.creee_le ? ' · créée le ' + escHtml(String(x.creee_le).substring(0, 10).split('-').reverse().join('/')) + (x.creee_par ? ' par ' + escHtml(x.creee_par) : '') : '') + '</div></td>'
+          + '<td>' + (x.supprimee_le ? escHtml(String(x.supprimee_le).substring(0, 10).split('-').reverse().join('/')) : '—') + (x.supprimee_par ? '<div class="cp-aide">par ' + escHtml(x.supprimee_par) + '</div>' : '') + '</td>'
+          + '<td>' + (x.nb_fiches || 0) + '</td>'
+          + '<td><button type="button" class="btn btn-ghost btn-sm" onclick="ChampsPerso._restaurer(' + escHtml(JSON.stringify(x.cle)) + ')">' + lk('rotate-ccw') + ' Restaurer</button></td></tr>').join('')
+        + '</tbody></table></details>';
+    }
     box.innerHTML = h;
+  },
+  /** Saisie d'un nom : met à jour l'avertissement de ressemblance de la ligne, sans redessiner la fenêtre. */
+  _saisie(i, v) {
+    const st = this._edition; if (!st || !st.defs[i]) return;
+    st.defs[i].libelle = v;
+    const z = document.getElementById('cpRess' + i);
+    if (z) z.innerHTML = this._ressemblancesHtml(i);
+  },
+  /** Restaure une case retirée (à la place de la ligne i si elle est donnée) : même clé, donc mêmes valeurs. */
+  _restaurer(cle, i) {
+    this._lireGestion();
+    const st = this._edition, x = st.historique.find(h => h.cle === cle);
+    if (!x) return;
+    const d = { cle: x.cle, libelle: x.libelle, type: x.type };
+    if (typeof i === 'number' && st.defs[i]) st.defs[i] = d; else st.defs.push(d);
+    this._rendreGestion();
+    toast('« ' + x.libelle + ' » sera restaurée à l\'enregistrement' + (x.nb_fiches ? ', avec les valeurs de ' + x.nb_fiches + ' fiche(s).' : '.'), 'success');
   },
   _bouger(i, sens) {
     this._lireGestion();

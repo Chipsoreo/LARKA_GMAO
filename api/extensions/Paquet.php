@@ -11,7 +11,7 @@
  * Larka — Extensions : le format de paquet .larka
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * ⚠️ D'ABORD, CE QUE L'EXTENSION DE FICHIER N'APPORTE PAS
+ * D'ABORD, CE QUE L'EXTENSION DE FICHIER N'APPORTE PAS
  * Renommer une archive en .larka ne sécurise rien : le PHP qu'elle contient
  * reste du PHP, et un attaquant renomme un fichier aussi vite que nous. Si l'on
  * s'arrêtait au nom, on n'aurait gagné que l'illusion d'avoir fait quelque chose.
@@ -229,7 +229,7 @@ final class ExtPaquet
     /**
      * Sous-chemin du client courant, ou chaîne vide en mono-tenant.
      *
-     * ⚠️ CE QUI A ÉTÉ CORRIGÉ ICI
+     * CE QUI A ÉTÉ CORRIGÉ ICI
      * Le code déplié et l'état d'installation vivaient dans un dossier UNIQUE,
      * partagé par tous les clients d'un même serveur. Installer une extension
      * en étant connecté chez l'un l'installait donc chez TOUS : elle apparaissait
@@ -530,7 +530,7 @@ final class ExtPaquet
         if ($nom === 'LICENSE')        return true;
 
         /**
-         * ⚠️ « parties/ » MANQUAIT À CETTE LISTE.
+         * « parties/ » MANQUAIT À CETTE LISTE.
          *
          * Les fragments référencés par $ref étaient acceptés à l'entrée du
          * paquet — inspecterEntrees() les autorise — puis jamais écrits sur le

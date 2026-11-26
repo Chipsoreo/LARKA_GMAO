@@ -95,6 +95,7 @@ final class AssistantMoteur
                 'fiche'      => $this->fiche($c),
                 'quand'      => $this->quand($c),
                 'chercher'   => $this->chercher($c),
+                'supervision' => $this->supervision($c),
                 default      => $this->incompris($c),
             };
         } catch (\Throwable $e) {
@@ -138,12 +139,14 @@ final class AssistantMoteur
             . "- « Qu'est-ce qui est prévu demain ? », « interventions de la semaine prochaine »\n"
             . "- « Fiche de l'équipement EXT-002 », « quand expire le contrat des ascenseurs ? »\n"
             . "- « Liste des techniciens », « qui a fait la demande 12 ? »\n"
+            . "- Supervision : « combien a consommé l'Hôtel de Ville en octobre ? », « conso d'électricité depuis le début de l'année »,\n"
+            . "  « combien d'alarmes ce mois-ci ? », « la GTB fonctionne ? », « température du bureau R+1 »\n"
             . "Les fautes et abréviations sont comprises (« cb de clims au bat B »).", 'trouve' => true];
     }
 
     private function horsSujet(): array
     {
-        return ['texte' => "Je ne réponds que sur les données Larka : biens, équipements, interventions, contrats, demandes, stock, documents et plans.", 'trouve' => true];
+        return ['texte' => "Je ne réponds que sur les données Larka : biens, équipements, interventions, contrats, demandes, stock, documents, plans et supervision (consommations, alarmes, mesures).", 'trouve' => true];
     }
 
     private function incompris(array $c): array
@@ -312,28 +315,28 @@ final class AssistantMoteur
         if (str_starts_with($type, 'module:')) {
             [, $mid, $lib] = explode(':', $type, 3) + [null, null, ''];
             $desc = $this->resumeLigneModule($row);
-            return ['texte' => "📍 $desc\n[MODULE:$mid:" . AssistantLangue::libelle($lib ?: 'Ouvrir le module') . ']', 'trouve' => true];
+            return ['texte' => "$desc\n[MODULE:$mid:" . AssistantLangue::libelle($lib ?: 'Ouvrir le module') . ']', 'trouve' => true];
         }
         $nom = $this->nomLigne($type, $row);
         switch ($type) {
             case 'plans':
                 $lieu = $this->lieuPlan($row);
-                return ['texte' => "📍 **$nom** ({$this->libelleTypeElement($row)}) : **" . ($lieu ?: 'plan') . "**.\n"
+                return ['texte' => "**$nom** ({$this->libelleTypeElement($row)}) : **" . ($lieu ?: 'plan') . "**.\n"
                     . $this->lienPlan($row, 'Voir sur le plan'), 'trouve' => true];
             case 'stock':
                 $empl = trim((string)($row['Emplacement'] ?? ''));
-                return ['texte' => "📍 **$nom** : " . ($empl !== '' ? '**' . AssistantLangue::texte($empl) . '**' : 'emplacement non renseigné')
+                return ['texte' => "**$nom** : " . ($empl !== '' ? '**' . AssistantLangue::texte($empl) . '**' : 'emplacement non renseigné')
                     . ' — ' . (int)($row['Quantite'] ?? 0) . " en stock.\n" . $this->lien('stock', $row), 'trouve' => true];
             case 'archives':
                 $empl = trim((string)($row['Emplacement'] ?? ''));
-                return ['texte' => "📍 Dossier **" . AssistantLangue::texte($row['NumeroDossier'] ?? '') . '**'
+                return ['texte' => "Dossier **" . AssistantLangue::texte($row['NumeroDossier'] ?? '') . '**'
                     . ($row['NumeroBoite'] ?? '' ? ' (boîte ' . AssistantLangue::texte($row['NumeroBoite']) . ')' : '') . ' : '
                     . ($empl !== '' ? '**' . AssistantLangue::texte($empl) . '**' : 'emplacement non renseigné') . '.', 'trouve' => true];
         }
         // Biens et équipements : position sur plan d'abord, sinon bâtiment/étage/bureau saisis.
         $loc = $this->outil('localiser', ['type' => rtrim($type, 's'), 'id' => (int)$row['Id']]);
         $num = trim((string)($row['Numero'] ?? ''));
-        $tete = "📍 **$nom**" . ($num !== '' && !str_contains(AssistantLangue::norm($nom), AssistantLangue::norm($num)) ? " ($num)" : '');
+        $tete = "**$nom**" . ($num !== '' && !str_contains(AssistantLangue::norm($nom), AssistantLangue::norm($num)) ? " ($num)" : '');
         $plan = $loc['sur_plan'][0] ?? null;
         $lieuSaisi = $this->lieu($row);
         if ($plan) {
@@ -400,11 +403,11 @@ final class AssistantMoteur
         }
         if (count($blocs) === 1) {
             [, $au, $plan, $els] = $blocs[0];
-            $tete = $au !== '' ? "📍 $Le **$nom** se trouve$au." : "📍 $Le **$nom** existe, mais son bâtiment et son étage ne sont pas renseignés.";
+            $tete = $au !== '' ? "$Le **$nom** se trouve$au." : "$Le **$nom** existe, mais son bâtiment et son étage ne sont pas renseignés.";
             return ['texte' => $tete . ($plan !== '' ? "\n" . ltrim($plan, ' ·') : '') . "\nOn y trouve :\n" . implode("\n", $els), 'trouve' => true];
         }
         $txt = "$Le **$nom** existe dans **" . count($blocs) . "** lieux :";
-        foreach ($blocs as [$ou, , $plan, $els]) $txt .= "\n📍 $ou$plan\n" . implode("\n", $els);
+        foreach ($blocs as [$ou, , $plan, $els]) $txt .= "\n $ou$plan\n" . implode("\n", $els);
         return ['texte' => $txt . "\nLequel cherchez-vous ? (précisez le bâtiment)", 'trouve' => true];
     }
 
@@ -777,7 +780,7 @@ final class AssistantMoteur
             case 'stock':
                 $q = (int)($f['Quantite'] ?? 0); $s = (int)($f['SeuilAlerte'] ?? 0);
                 $L[] = '**' . AssistantLangue::texte($v('Designation')) . '**' . ($v('Reference') !== '' ? ' (' . AssistantLangue::texte($v('Reference')) . ')' : '')
-                     . ' : **' . $q . '** en stock' . ($s ? " (seuil $s)" : '') . ($s && $q <= $s ? ' ⚠️ sous le seuil' : '');
+                     . ' : **' . $q . '** en stock' . ($s ? " (seuil $s)" : '') . ($s && $q <= $s ? ' sous le seuil' : '');
                 if ($v('Emplacement') !== '') $L[] = '- Emplacement : ' . AssistantLangue::texte($v('Emplacement'));
                 if ($v('Categorie') !== '') $L[] = '- Catégorie : ' . AssistantLangue::texte($v('Categorie'));
                 if ((float)($f['PrixUnitaire'] ?? 0) > 0) $L[] = '- Prix unitaire : ' . AssistantLangue::montant($f['PrixUnitaire']);
@@ -945,13 +948,36 @@ final class AssistantMoteur
             }
         }
         if ($total === 0 && $cat === 'toutes') {
-            return ['texte' => '✅ Aucune alerte' . ($mots ? $this->descMots($mots) : '') . $this->descLieu($lieu)
+            return ['texte' => 'Aucune alerte' . ($mots ? $this->descMots($mots) : '') . $this->descLieu($lieu)
                 . ($sansLieu ? " : pas d'intervention en retard ni de demande en attente."
                              : ' : pas de contrat à échéance' . ($jours ? " sous $jours jours" : '') . ', de stock sous le seuil, d\'intervention en retard ni de demande en attente.'), 'trouve' => true];
         }
-        $tete = $cat === 'toutes' ? '⚠️ **Alertes**' . $this->descLieu($lieu) . "\n" : '';
+        $tete = $cat === 'toutes' ? '**Alertes**' . $this->descLieu($lieu) . "\n" : '';
+        // Les alarmes de la supervision sont des alertes aussi : on les signale (le détail : « alarmes actives »).
+        if ($cat === 'toutes' && !$lieu && $this->tools->supervisionDisponible()) {
+            $sup = $this->tools->supervisionLire('resume', []);
+            $na = (int)($sup['alarmes_actives'] ?? 0);
+            if ($na) $blocs[] = '**' . $na . '** ' . AssistantLangue::pluriel($na, 'alarme') . ' ' . AssistantLangue::pluriel($na, 'technique') . ' ' . AssistantLangue::pluriel($na, 'active') . ' (supervision) [PAGE:connect_alarmes:Voir les alarmes]';
+        }
         $note = $lieu && in_array($cat, ['contrats', 'stock'], true) ? "\n*(le lieu ne s'applique pas aux " . ($cat === 'contrats' ? 'contrats' : 'articles de stock') . ')*' : '';
         return ['texte' => $tete . implode("\n", $blocs) . $note, 'trouve' => true];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Supervision (Larka Connect) — voir AssistantSupervision
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private function supervision(array $c): array
+    {
+        if (!$this->tools->supervisionDisponible()) {
+            return ['texte' => "La supervision des équipements raccordés n'est pas accessible ici : module Larka Connect fermé pour votre organisation, ou réservé aux gestionnaires et visionneurs.", 'trouve' => true];
+        }
+        $lire = function (string $quoi, array $args): array {
+            $r = $this->tools->supervisionLire($quoi, $args);
+            $this->tracer('supervision', ['quoi' => $quoi] + $args, (int)($r['total'] ?? $r['nb_compteurs'] ?? (isset($r['erreur']) || isset($r['error']) ? 0 : 1)));
+            return $r;
+        };
+        return AssistantSupervision::repondre($c, $lire);
     }
 
     private function stock(array $c): array
@@ -971,7 +997,7 @@ final class AssistantMoteur
         $L = [];
         foreach ($r['lignes'] as $x) {
             $q = (int)($x['Quantite'] ?? 0); $s = (int)($x['SeuilAlerte'] ?? 0);
-            $L[] = '- ' . $this->lien('stock', $x) . " : **$q** en stock" . ($s ? " (seuil $s)" : '') . ($s && $q <= $s ? ' ⚠️' : '')
+            $L[] = '- ' . $this->lien('stock', $x) . " : **$q** en stock" . ($s ? " (seuil $s)" : '') . ($s && $q <= $s ? '' : '')
                  . (!empty($x['Emplacement']) ? ' — ' . AssistantLangue::texte($x['Emplacement']) : '');
         }
         $tot = $r['total'];
@@ -1052,7 +1078,7 @@ final class AssistantMoteur
     private function personneTexte(array $p): string
     {
         $det = array_filter([$p['Role'] ?? '', $p['Service'] ?? '', $p['Poste'] ?? '',
-            ($p['TelPro'] ?? '') !== '' ? '☎ ' . $p['TelPro'] : '', ($p['Bureau'] ?? '') !== '' ? 'bureau ' . $p['Bureau'] : '']);
+            ($p['TelPro'] ?? '') !== '' ? '' . $p['TelPro'] : '', ($p['Bureau'] ?? '') !== '' ? 'bureau ' . $p['Bureau'] : '']);
         return '**' . AssistantLangue::texte($p['Nom'] ?? '?') . '**' . ($det ? ' — ' . AssistantLangue::texte(implode(' · ', $det), 200) : '');
     }
 

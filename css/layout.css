@@ -77,6 +77,66 @@ body.app-mode .content { background: #1a3050; }
 /* Pas de filet ni d'espace avant la toute première section : il n'y a rien
    à séparer du haut de la barre. */
 .nav-section-title:first-child { margin-top: 0; border-top: none; }
+
+/* Section dépliable (« Bâtiments » : plans, supervision, alarmes, connexions).
+   La flèche (::after) et le nombre d'alarmes (::before, visible seulement
+   quand la section est repliée) sont dessinés ici : le texte du titre reste le
+   seul nom de la section, relu tel quel par le panneau de préférences. */
+.nav-section-deroulante {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; user-select: none; transition: color .15s;
+}
+.nav-section-deroulante:hover,
+.nav-section-deroulante:focus-visible { color: rgba(255,255,255,.6); outline: none; }
+.nav-section-deroulante::after {
+  /* Chevron Lucide « chevron-down », dessiné par un masque : un pseudo-élément
+     ne peut pas contenir de SVG, et js/icones.js ne voit pas le CSS. */
+  content: ''; order: 3; margin-left: auto;
+  width: 14px; height: 14px; flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform .15s;
+}
+.nav-section-deroulante.repliee::after { transform: rotate(-90deg); }
+.nav-section-deroulante.repliee[data-alarmes]::before {
+  content: attr(data-alarmes); order: 2;
+  background: #e74c3c; color: #fff; border-radius: 10px;
+  padding: 1px 6px; font-size: 10px; letter-spacing: 0;
+}
+/* « Bâtiments » en liste déroulante : une entrée de menu (icône, nom, chevron)
+   et ses écrans en retrait, reliés par un filet. Le chevron et le nombre
+   d'alarmes sont de vrais éléments : les pseudo-éléments du titre s'effacent. */
+.nav-section-title.nav-parent {
+  margin-top: 4px; padding: 10px 20px; gap: 10px; border-top: none;
+  color: rgba(255,255,255,.75); font-size: 13.5px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+}
+.nav-section-title.nav-parent::after, .nav-section-title.nav-parent::before { content: none; }
+.nav-parent:hover, .nav-parent:focus-visible { color: #fff; background: rgba(255,255,255,.06); }
+.nav-parent .icon { font-size: 16px; width: 20px; text-align: center; }
+.nav-parent .nav-chevron { margin-left: auto; font-size: 12px; transition: transform .15s; opacity: .7; }
+.nav-parent.repliee .nav-chevron { transform: rotate(-90deg); }
+.nav-parent-alarmes { display: none; background: #e74c3c; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 11px; }
+.nav-parent.repliee .nav-parent-alarmes:not(:empty) { display: inline; }
+.nav-parent.repliee .nav-parent-alarmes:not(:empty) + .nav-chevron { margin-left: 6px; }
+.nav-parent-alarmes:not(:empty) { margin-left: auto; }
+/* Retrait seulement dans la barre latérale dépliée : réduite aux icônes ou
+   horizontale, la barre n'a pas de titres et ses entrées gardent leur forme. */
+body:not(.sidebar-pos-top):not(.sidebar-pos-bottom) .sidebar:not(.sidebar-collapsed) .nav-item.nav-enfant {
+  position: relative; padding-left: 46px; font-size: 13px;
+}
+body:not(.sidebar-pos-top):not(.sidebar-pos-bottom) .sidebar:not(.sidebar-collapsed) .nav-item.nav-enfant::before {
+  content: ''; position: absolute; left: 29px; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.12);
+}
+.nav-item.nav-module-ferme { opacity: .6; }
+.nav-item .nav-cadenas { margin-left: auto; font-size: 11px; }
+.nav-item.nav-replie { display: none; }
+/* Barre horizontale : pas de titres, donc rien ne se replie — les entrées
+   restent toujours accessibles. Réduite aux icônes, la barre garde l'icône de
+   chaque groupe (voir plus bas) : le groupe s'y replie comme en barre large. */
+body.sidebar-pos-top .nav-item.nav-replie,
+body.sidebar-pos-bottom .nav-item.nav-replie { display: flex; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 20px; cursor: pointer;
@@ -114,6 +174,18 @@ body.app-mode .content { background: #1a3050; }
 }
 .topbar-title { font-size: 18px; font-weight: 700; color: var(--navy); letter-spacing: -.3px; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ── Sous-bandeau : les boutons propres à la page ──
+   Sous le bandeau principal (qui ne garde que Interface, Mon profil et la
+   cloche), hors de la zone qui défile : les boutons restent à portée de main. */
+.sous-bandeau {
+  flex-shrink: 0; position: relative; z-index: 20;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 8px 28px; min-height: 48px;
+  background: var(--card-bg, #fff); border-bottom: 1px solid var(--gray-border);
+}
+.sous-bandeau[hidden] { display: none; }
+.sous-bandeau .topbar-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* padding-bottom : réserve un dégagement en bas pour que la dernière ligne
    (notamment la barre de pagination et ses contrôles « Page X / Y » alignés à
@@ -155,8 +227,12 @@ body.app-mode .content { background: #1a3050; }
 .sidebar.is-dragging { transition: none !important; }
 
 /* ── Mode icônes (collapsed) ── */
+/* ⚠️ « overflow-y: hidden » : réduite aux icônes, la barre ne défilait plus.
+   Sur un écran de 900 px, tout ce qui passait sous Historique (Demandes,
+   Énergie, Urgences, Archives, Administration…) était injoignable. Elle défile,
+   sans barre de défilement visible (58 px n'en laissent pas la place). */
 .sidebar.sidebar-collapsed {
-  overflow-y: hidden;
+  overflow-y: auto;
   scrollbar-width: none;
 }
 .sidebar.sidebar-collapsed::-webkit-scrollbar { display: none; }
@@ -177,6 +253,36 @@ body.app-mode .content { background: #1a3050; }
 .sidebar.sidebar-collapsed .sidebar-user    { justify-content: center; padding: 12px 0; }
 .sidebar.sidebar-collapsed .user-avatar     { flex-shrink: 0; }
 .sidebar.sidebar-collapsed #sidebarCollapseBtn { display: none; }
+/* Groupes (sections déroulantes) en barre réduite : ⚠️ LEUR TITRE DISPARAISSAIT
+   avec les autres titres de section. Les écrans de Bâtiments et de Maintenance
+   se retrouvaient sans repère, et le groupe ne se repliait plus. L'icône du
+   groupe reste, cliquable ; ses écrans sont teintés pour qu'on voie où il finit. */
+.sidebar.sidebar-collapsed .nav-section-title.nav-parent {
+  opacity: 1; pointer-events: auto; width: auto; overflow: visible;
+  justify-content: center; padding: 10px 0; margin-top: 4px; position: relative;
+}
+.sidebar.sidebar-collapsed .nav-parent .nav-label,
+.sidebar.sidebar-collapsed .nav-parent .nav-chevron { display: none; }
+.sidebar.sidebar-collapsed .nav-parent .icon { width: auto; font-size: 19px; }
+.sidebar.sidebar-collapsed .nav-parent::after {
+  content: ''; position: absolute; right: 9px; bottom: 9px; width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; opacity: .6;
+  transition: transform .15s;
+}
+.sidebar.sidebar-collapsed .nav-parent.repliee::after { transform: rotate(-90deg); }
+.sidebar.sidebar-collapsed .nav-parent.repliee .nav-parent-alarmes:not(:empty) {
+  display: inline; position: absolute; top: 4px; right: 4px; margin: 0; padding: 0 5px; font-size: 9.5px; line-height: 15px;
+  opacity: 1; width: auto;
+}
+.sidebar.sidebar-collapsed .nav-item.nav-enfant { background: rgba(255,255,255,.035); }
+/* Infobulle de la barre réduite : posée par js/nav.js hors de la barre, qui
+   défile (une infobulle en ::after y était coupée). */
+#navInfobulle {
+  position: fixed; z-index: 9000; pointer-events: none;
+  background: var(--navy); color: #fff; font-size: 12px; font-weight: 600;
+  padding: 5px 10px; border-radius: 6px; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3); transform: translateY(-50%);
+}
 
 /* Bouton collapse dans le header */
 .sidebar-header { display: flex; align-items: center; justify-content: space-between; }
@@ -190,24 +296,6 @@ body.sidebar-is-resizing * {
   cursor: col-resize !important;
 }
 
-/* Tooltip au survol icône quand réduit */
-.sidebar.sidebar-collapsed .nav-item { position: relative; }
-.sidebar.sidebar-collapsed .nav-item::after {
-  content: attr(data-label);
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%; transform: translateY(-50%);
-  background: var(--navy); color: white;
-  font-size: 12px; font-weight: 600;
-  padding: 5px 10px; border-radius: 6px;
-  white-space: nowrap; pointer-events: none;
-  opacity: 0; transition: opacity .15s; z-index: 200;
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
-}
-.sidebar.sidebar-collapsed .nav-item:hover::after { opacity: 1; }
-.layout.sidebar-right .sidebar.sidebar-collapsed .nav-item::after {
-  left: auto; right: calc(100% + 10px);
-}
 /* Bouton collapse visible côté droit en sidebar-right */
 .layout.sidebar-right .sidebar-header { flex-direction: row-reverse; }
 

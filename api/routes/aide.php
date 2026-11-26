@@ -219,7 +219,7 @@ function aide_fiches_serveur(array $env, bool $multi, bool $en, ?array $pre, ?ar
             : ($sauv['planificateur_actif']
                 ? $L('Actives', 'Enabled') . " ({$sauv['actives']}) — " . $L('planificateur en marche', 'scheduler running')
                 : $L('Activées, mais le planificateur ne tourne pas', 'Enabled, but the scheduler is not running'))
-              . ($sauv['en_retard'] ? ' — ⚠ ' . $sauv['en_retard'] . ' ' . $L('en retard ou en échec', 'late or failed') : ''));
+              . ($sauv['en_retard'] ? ' — ' . $sauv['en_retard'] . ' ' . $L('en retard ou en échec', 'late or failed') : ''));
     $tableau = [
         [$L('Système', 'System'), $env['os']],
         [$L('Fonctionnement', 'Running mode'), aide_libelle_mode($env, $en)],
@@ -308,12 +308,39 @@ function aide_fiches_serveur(array $env, bool $multi, bool $en, ?array $pre, ?ar
                      . ' ' . $L('État :', 'Status:') . ' ' . $etatSauv,
             'etapes' => [
                 $multi ? $L('Réglages : Super Admin → fiche de chaque organisation → **Sauvegardes**.', 'Settings: Super Admin → each organisation\'s record → **Backups**.')
-                       : $L('Réglages : **Configuration → 🖥️ Serveur → Sauvegardes automatiques**.', 'Settings: **Settings → 🖥️ Server → Automatic backups**.'),
+                       : $L('Réglages : **Configuration → Serveur → Sauvegardes automatiques**.', 'Settings: **Settings → Server → Automatic backups**.'),
                 $L('Fichiers : dossier ' . ($win ? '`data\\backups`' : '`data/backups`') . ' par défaut — la base et `…-fichiers.tar.gz`, au même horodatage.', 'Files: ' . ($win ? '`data\\backups`' : '`data/backups`') . ' folder by default — the database and `…-fichiers.tar.gz`, with the same timestamp.'),
                 $L('Journal : ' . ($win ? '`data\\logs\\sauvegardes.log`' : '`data/logs/sauvegardes.log`') . '.', 'Log: ' . ($win ? '`data\\logs\\sauvegardes.log`' : '`data/logs/sauvegardes.log`') . '.'),
             ],
             'code' => $win ? '' : ($prod ? "php $r/api/outils/sauvegarde-auto.php --etat\nphp $r/api/outils/sauvegarde-auto.php --forcer" : "php api/outils/sauvegarde-auto.php --etat\nphp api/outils/sauvegarde-auto.php --forcer"),
             'note' => $L('Copiez régulièrement les sauvegardes hors du serveur, avec .env et config.key. Pour restaurer, arrêtez Larka et remettez en place la base et l\'archive des fichiers du même horodatage.', 'Regularly copy backups off the server, together with .env and config.key. To restore, stop Larka and put back the database and the file archive with the same timestamp.')];
+
+    // Larka Connect : collecte des équipements raccordés et service des bornes de recharge
+    $cxDecl = $win ? $L('le lanceur Larka.cmd, tant que Larka tourne', 'the Larka.cmd launcher, while Larka runs')
+        : ($prod ? $L('une tâche cron (/etc/cron.d/gmao)', 'a cron job (/etc/cron.d/gmao)')
+        : ($m === 'systemd' ? $L('la minuterie systemd larka-connect.timer', 'the larka-connect.timer systemd timer')
+        : $L('le planificateur lancé avec ./start.sh start', 'the scheduler started with ./start.sh start')));
+    $cxOcpp = $win ? $L('relancé par le lanceur s\'il s\'arrête', 'restarted by the launcher if it stops')
+        : (($prod || $m === 'systemd') ? $L('service systemd larka-ocpp.service', 'larka-ocpp.service systemd service')
+        : $L('lancé par le même planificateur', 'started by the same scheduler'));
+    $cxOuvrir = $multi
+        ? $L('**Config serveur → Larka Connect** du Super Admin, puis **** sur la carte de chaque organisation', 'the Super Admin\'s **Server config → Larka Connect**, then **** on each organisation\'s card')
+        : $L('**Configuration → Serveur → Larka Connect**', '**Settings → Server → Larka Connect**');
+    $cxJournaux = $win ? '`data\\logs\\connect.log`, `data\\logs\\connect-ocpp.log`'
+        : ($m === 'systemd' ? '`journalctl -u larka-connect -u larka-ocpp`' : '`data/logs/connect.log`, `data/logs/connect-ocpp.log`');
+    $f[] = ['id' => 'srv-connect', 'titre' => $L('Larka Connect : collecte et bornes de recharge', 'Larka Connect: collection and EV chargers'),
+            'mots' => $L('larka connect gtb gtc collecte équipements raccordés ocpp bornes recharge pare-feu port 9000 modbus bacnet mqtt api csv', 'larka connect bms collection connected devices ocpp chargers charging firewall port 9000 modbus bacnet mqtt api csv'),
+            'texte' => $L("Fermé par défaut. Une fois ouvert ($cxOuvrir), les équipements sont interrogés par $cxDecl, chacun à son rythme. Les bornes de recharge, elles, appellent le service OCPP ($cxOcpp).",
+                          "Off by default. Once opened ($cxOuvrir), devices are polled by $cxDecl, each at its own pace. EV chargers call the OCPP service ($cxOcpp)."),
+            'etapes' => [
+                $L('Pare-feu, dans le sens serveur → équipements : Modbus 502/TCP, BACnet 47808/UDP, MQTT 1883 ou 8883/TCP, API en HTTP(S). Dans le sens bornes → serveur : le port OCPP (9000/TCP), ou Nginx en wss://.',
+                   'Firewall, server → devices: Modbus 502/TCP, BACnet 47808/UDP, MQTT 1883 or 8883/TCP, API over HTTP(S). Chargers → server: the OCPP port (9000/TCP), or Nginx over wss://.'),
+                $L("Journaux : $cxJournaux.", "Logs: $cxJournaux."),
+            ],
+            'code' => $win ? '' : ($prod ? "php $r/api/outils/connect-collecte.php --etat\nphp $r/api/outils/connect-ocpp.php --etat\nsystemctl status larka-ocpp"
+                                         : "php api/outils/connect-collecte.php --etat\nphp api/outils/connect-ocpp.php --etat"),
+            'note' => $L('Le bouton Tester la connexion de chaque connexion dit ce qui bloque (réseau, pare-feu, droits) et rédige le message à transmettre au service informatique.',
+                         'Each connection\'s Test the connection button says what is blocking (network, firewall, permissions) and drafts the message to send to the IT department.')];
 
     // Journaux
     if ($win) {

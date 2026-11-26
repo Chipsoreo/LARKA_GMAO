@@ -17,7 +17,7 @@
  *    Une clé déjà inscrite n'est JAMAIS remplacée sans --remplacer-cle (voir 4).
  *
  * 2) À chaque version :
- *      php outils/publier-version.php --version 2.1.1 [--canal Stable|Beta]
+ *      php outils/publier-version.php --version 3.0.0 [--canal Stable|Beta]
  *            (canal par défaut : celui de version.json — une version stable ne
  *             redevient pas « Beta » faute d'avoir répété --canal)
  *            [--notes notes.md] [--cle ~/.larka-publication.key] [--url-base https://…/]
@@ -274,7 +274,24 @@ $zip->open($zipF, ZipArchive::CREATE);
 // deploy/install.sh ne la copie jamais en production.
 // php/ : le PHP qu'installe Larka.cmd sous Windows.
 // Variantes de config.json / .env (copies, sauvegardes) : jamais publiées.
-$exclus = '#^(\.git/|\.github/|dist/|node_modules/|php/|data/backups/config/|config\.json($|\.)|\.env($|\.(?!example$))|config\.key|.*\.pem$|.*\.key$)#';
+//
+// Ce qui ne sert qu'à DÉVELOPPER Larka reste dans le dépôt, hors de l'archive
+// publique (3.0.1) — la règle de deploy/install.sh, appliquée à la publication :
+//   - outils/ : épreuves, simulateurs, outils de langue et d'icônes, cet outil-ci.
+//     outils/epreuves/ décrit, épreuve par épreuve, tout ce contre quoi Larka se
+//     défend, donc par où l'attaquer : cette carte n'a pas à voyager. Sans elles,
+//     « start.sh prod » le dit et continue (cmd_epreuves) ;
+//   - Documentations/ : sources des manuels (manuel-source/), exemples de modules
+//     (leur vérificateur est dans outils/), référence du format en Markdown (la
+//     version Word reste), notes de version détaillées NOTES-x.y.z.md (les
+//     correctifs de sécurité y sont expliqués : pas avant que les serveurs aient
+//     eu le temps de se mettre à jour) ;
+//   - .gitignore, .gitattributes, tests/, mobile/ : propres au dépôt.
+// Les manuels, le DAT, les codes d'erreur et LARKA-CONNECT.md restent : l'aide
+// et les messages d'erreur de l'application y renvoient.
+$exclus = '#^(\.git/|\.github/|dist/|node_modules/|php/|data/backups/config/|config\.json($|\.)|\.env($|\.(?!example$))|config\.key|.*\.pem$|.*\.key$'
+        . '|outils/|tests/|mobile/|\.gitignore$|\.gitattributes$'
+        . '|Documentations/(manuel-source/|exemples-declaratifs/|FORMAT-DECLARATIF-REFERENCE(-SPEC|-CATALOGUES)?\.md$|NOTES-\d+\.\d+\.\d+\.md$))#';
 $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($racine, FilesystemIterator::SKIP_DOTS));
 $n = 0;
 foreach ($it as $f) {

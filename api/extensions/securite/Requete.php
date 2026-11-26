@@ -54,6 +54,20 @@ final class ExtRequete
     private string $extension;
     private array $capacites;
 
+    /**
+     * Identifiant SQL (table, colonne) entre les guillemets du moteur.
+     *
+     * ⚠️ Les "…" ne sont des identifiants qu'en SQL standard (SQLite, PostgreSQL).
+     * Sous MySQL / MariaDB ce sont des CHAÎNES : « FROM "ext_…_cles" » y est une
+     * erreur de syntaxe — tous les modules étaient en échec, puis suspendus, sur
+     * une installation MariaDB. Les noms arrivent ici déjà validés ([a-z0-9_]).
+     */
+    private function q(string $nom): string
+    {
+        return $this->db->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+            ? '`' . $nom . '`' : '"' . $nom . '"';
+    }
+
     public function __construct($db, string $extension, array $capacites)
     {
         $this->db        = $db;
@@ -234,7 +248,7 @@ final class ExtRequete
             if (!is_scalar($val) && $val !== null) throw $refus('valeur_de_condition_invalide');
 
             $cle = 'p' . $i++;
-            $clauses[] = '"' . $reel . '" = :' . $cle;
+            $clauses[] = $this->q($reel) . ' = :' . $cle;
             $params[$cle] = $val;
         }
         return [$clauses ? ' WHERE ' . implode(' AND ', $clauses) : '', $params];
@@ -266,7 +280,7 @@ final class ExtRequete
                 if ($reel === null) throw $refus('tri_sur_colonne_inexistante');
                 // Le sens est ramené à deux valeurs closes : rien de l'extension
                 // n'atteint le SQL, même ici.
-                $morceaux[] = '"' . $reel . '" '
+                $morceaux[] = $this->q($reel) . ' '
                             . (strtoupper((string)$sens) === 'DESC' ? 'DESC' : 'ASC');
             }
             if ($morceaux) $orderBy = ' ORDER BY ' . implode(', ', $morceaux);
@@ -275,8 +289,8 @@ final class ExtRequete
         $limite = $this->limite($r);
         $depuis = max(0, min((int)($r['depuis'] ?? 0), 100000));
 
-        $sql = 'SELECT ' . implode(', ', array_map(fn($c) => '"' . $c . '"', $colonnes))
-             . ' FROM "' . $table . '"' . $where . $orderBy
+        $sql = 'SELECT ' . implode(', ', array_map(fn($c) => $this->q($c), $colonnes))
+             . ' FROM ' . $this->q($table) . $where . $orderBy
              . ' LIMIT ' . $limite . ' OFFSET ' . $depuis;
 
         $st = $this->db->getPdo()->prepare($sql);
@@ -304,7 +318,7 @@ final class ExtRequete
     private function compter(string $table, array $r, array $existantes, callable $refus): array
     {
         [$where, $params] = $this->conditions($r, $existantes, $refus);
-        $st = $this->db->getPdo()->prepare('SELECT COUNT(*) FROM "' . $table . '"' . $where);
+        $st = $this->db->getPdo()->prepare('SELECT COUNT(*) FROM ' . $this->q($table) . $where);
         $st->execute($params);
         return ['nombre' => (int)$st->fetchColumn()];
     }
@@ -346,8 +360,8 @@ final class ExtRequete
             $params[$cle] = $val;
         }
 
-        $sql = 'INSERT INTO "' . $table . '" ('
-             . implode(', ', array_map(fn($c) => '"' . $c . '"', array_keys($cols)))
+        $sql = 'INSERT INTO ' . $this->q($table) . ' ('
+             . implode(', ', array_map(fn($c) => $this->q($c), array_keys($cols)))
              . ') VALUES (' . implode(', ', $cols) . ')';
         $pdo = $this->db->getPdo();
         $st = $pdo->prepare($sql);
@@ -373,7 +387,7 @@ final class ExtRequete
                          ['gravite' => ExtJournalSecurite::CRITIQUE]);
         }
 
-        $st = $this->db->getPdo()->prepare('DELETE FROM "' . $table . '"' . $where);
+        $st = $this->db->getPdo()->prepare('DELETE FROM ' . $this->q($table) . $where);
         $st->execute($params);
 
         ExtJournalSecurite::consigner(ExtJournalSecurite::AUTORISE, [
@@ -422,12 +436,12 @@ final class ExtRequete
             if (!is_scalar($val) && $val !== null) throw $refus('valeur_invalide');
 
             $cle = 's' . $i++;
-            $sets[] = '"' . $reel . '" = :' . $cle;
+            $sets[] = $this->q($reel) . ' = :' . $cle;
             $params[$cle] = $val;
         }
 
         $st = $this->db->getPdo()->prepare(
-            'UPDATE "' . $table . '" SET ' . implode(', ', $sets) . $where);
+            'UPDATE ' . $this->q($table) . ' SET ' . implode(', ', $sets) . $where);
         $st->execute($params);
 
         ExtJournalSecurite::consigner(ExtJournalSecurite::AUTORISE, [

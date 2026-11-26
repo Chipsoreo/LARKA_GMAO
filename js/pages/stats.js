@@ -42,7 +42,7 @@ async function renderStatsAvancees() {
     <!-- Filtres -->
     <div class="card" style="padding:0;margin-bottom:20px">
       <div style="padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--gray-border)">
-        <span style="font-size:13px;font-weight:700;color:var(--gray-text)">🔍 Filtres</span>
+        <span style="font-size:13px;font-weight:700;color:var(--gray-text)">${lk('search')} Filtres</span>
         <div>
           <label style="font-size:11px;color:var(--gray-text);display:block;margin-bottom:2px">Période du</label>
           <input type="date" class="form-control" id="fa_dateDebut" style="font-size:13px" value="${filtres.dateDebut||''}" onchange="App.renderCurrentPage()">
@@ -108,58 +108,58 @@ async function renderStatsAvancees() {
 
     // ── Interventions ──
     if (show('showInterv')) {
-    html += graphPie('🔧 Interventions par statut', s.intervParStatut, 'Statut', 'Total');
+    html += graphPie((lk('wrench') + ' Interventions par statut'), s.intervParStatut, 'Statut', 'Total');
 
     // ── Interventions par type ──
-    html += graphPie('⚙️ Interventions par type', s.intervParType, 'Type', 'Total');
+    html += graphPie((lk('settings') + ' Interventions par type'), s.intervParType, 'Type', 'Total');
 
     // ── Coût par mois (courbe) ──
-    html += graphLigne('📈 Coût interventions / mois (12 derniers)', s.intervParMois, 'Mois', 'Cout', true);
+    html += graphLigne((lk('trending-up') + ' Coût interventions / mois (12 derniers)'), s.intervParMois, 'Mois', 'Cout', true);
 
     // ── Nb interventions par mois ──
-    html += graphBarre('📅 Nombre interventions / mois', s.intervParMois, 'Mois', 'Total', false, 'blue');
+    html += graphBarre((lk('calendar') + ' Nombre interventions / mois'), s.intervParMois, 'Mois', 'Total', false, 'blue');
 
     // ── Coût par société ──
-    html += graphBarreH('💼 Coût par société / prestataire', s.coutParSociete, 'Societe', 'Total', true);
+    html += graphBarreH((lk('briefcase') + ' Coût par société / prestataire'), s.coutParSociete, 'Societe', 'Total', true);
 
     } // end interventions
 
     // ── Biens ──
     if (show('showBiens')) {
-    html += graphPie('🏢 Biens par famille', s.biensParFamille, 'Famille', 'Total');
+    html += graphPie((lk('building-complex') + ' Biens par famille'), s.biensParFamille, 'Famille', 'Total');
 
     // ── Biens par bâtiment ──
-    html += graphBarreH('🗺️ Biens par bâtiment', s.biensParBatiment, 'Batiment', 'Total', false);
+    html += graphBarreH((lk('map') + ' Biens par bâtiment'), s.biensParBatiment, 'Batiment', 'Total', false);
 
     } // end biens
 
     // ── Équipements ──
     if (show('showEquip')) {
-    html += graphPie('⚙️ Équipements par famille', s.equipsParFamille, 'Famille', 'Total');
+    html += graphPie((lk('settings') + ' Équipements par famille'), s.equipsParFamille, 'Famille', 'Total');
 
     } // end équipements
 
     // ── Stock ──
     if (show('showStock')) {
-    html += graphBarreH('📦 Valeur stock par catégorie', s.stockValeurParCat, 'Categorie', 'Valeur', true);
+    html += graphBarreH((lk('package') + ' Valeur stock par catégorie'), s.stockValeurParCat, 'Categorie', 'Valeur', true);
 
     // ── Coût pièces par intervention ──
-    html += graphBarreH('🔩 Top coût pièces par intervention', s.coutStockParInterv, 'Numero', 'CoutPieces', true);
+    html += graphBarreH((lk('nut') + ' Top coût pièces par intervention'), s.coutStockParInterv, 'Numero', 'CoutPieces', true);
 
     } // end stock
 
     // ── Demandes ──
     if (show('showDemandes')) {
-    html += graphPie('📝 Demandes par statut', s.demandesParStatut, 'Statut', 'Total');
+    html += graphPie((lk('file-pen-line') + ' Demandes par statut'), s.demandesParStatut, 'Statut', 'Total');
 
     // ── Demandes par urgence ──
-    html += graphPie('🚨 Demandes par urgence', s.demandesParUrgence, 'Urgence', 'Total');
+    html += graphPie((lk('siren') + ' Demandes par urgence'), s.demandesParUrgence, 'Urgence', 'Total');
 
     } // end demandes
 
     // ── Contrats ──
     if (show('showContrats')) {
-    html += graphBarre('📋 Contrats par statut', s.contratsParStatut, 'Statut', 'Total', false, 'teal');
+    html += graphBarre((lk('clipboard-list') + ' Contrats par statut'), s.contratsParStatut, 'Statut', 'Total', false, 'teal');
 
     } // end contrats
 
@@ -167,21 +167,21 @@ async function renderStatsAvancees() {
     if (show('showFactures')) {
     const factTotal = (s.facturesParBudget||[]).reduce((a,r)=>a+(parseFloat(r.MontantTotal)||0),0);
     const factNb    = (s.facturesParBudget||[]).reduce((a,r)=>a+(parseInt(r.Nb)||0),0);
-    html += cardStat('🧾 Total facturé (factures / EJ)', `
+    html += cardStat((lk('receipt') + ' Total facturé (factures / EJ)'), `
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
         <div style="font-size:30px;font-weight:800;color:var(--teal)">${fmtM(factTotal)}</div>
         <div style="font-size:13px;color:var(--gray-text)">sur ${fmtN(factNb)} facture${factNb>1?'s':''}</div>
       </div>
       <div style="font-size:11px;color:var(--gray-text);margin-top:6px">Montant TTC (ou HT si le TTC n'est pas renseigné), toutes interventions confondues.</div>`);
-    html += graphBarre('🏷️ Montant facturé par budget (CBDC / CHMA)', s.facturesParBudget, 'TypeBudget', 'MontantTotal', true, 'teal');
-    html += graphBarreH('🏢 Montant facturé par prestataire', s.facturesParFournisseur, 'Societe', 'Total', true);
-    html += graphLigne('💶 Montant facturé / mois (12 derniers)', s.facturesParMois, 'Mois', 'MontantTotal', true);
+    html += graphBarre((lk('tag') + ' Montant facturé par budget (CBDC / CHMA)'), s.facturesParBudget, 'TypeBudget', 'MontantTotal', true, 'teal');
+    html += graphBarreH((lk('building-complex') + ' Montant facturé par prestataire'), s.facturesParFournisseur, 'Societe', 'Total', true);
+    html += graphLigne((lk('euro') + ' Montant facturé / mois (12 derniers)'), s.facturesParMois, 'Mois', 'MontantTotal', true);
 
     } // end factures
 
     // ── Utilisateurs ──
     if (show('showUsers')) {
-    html += graphPie('👥 Utilisateurs par rôle', s.utilisateursParRole, 'Role', 'Total');
+    html += graphPie((lk('users') + ' Utilisateurs par rôle'), s.utilisateursParRole, 'Role', 'Total');
 
     } // end users
     html += `</div>`;

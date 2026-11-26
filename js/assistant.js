@@ -65,7 +65,7 @@ function initAssistant() {
 
   const bubble = document.createElement('button');
   bubble.id = 'assistantBubble';
-  bubble.innerHTML = '🤖';
+  bubble.innerHTML = lk('bot');
   bubble.title = 'Assistant IA';
   bubble.onclick = toggleAssistant;
   document.body.appendChild(bubble);
@@ -96,7 +96,7 @@ function initAssistant() {
         <button class="assistant-suggestion" onclick="_askSuggestion(this)">Bilan énergie</button>`;
 
   const _rgpdNotice = '<div style="margin-top:8px;padding:6px 10px;background:rgba(26,179,148,.08);border:1px solid rgba(26,179,148,.2);border-radius:8px;font-size:10.5px;color:var(--gray-text);line-height:1.5">'
-    + '🔒 <strong>RGPD</strong> : Les données personnelles (noms, emails, téléphones) sont anonymisées avant envoi à l\'IA. '
+    + (lk('lock') + ' <strong>RGPD</strong> : Les données personnelles (noms, emails, téléphones) sont anonymisées avant envoi à l\'IA. ')
     + 'Aucune conversation n\'est stockée côté serveur. '
     + '<a href="#" onclick="event.preventDefault();_showRgpdDetail()" style="color:var(--teal);text-decoration:underline">En savoir plus</a>'
     + '</div>';
@@ -106,7 +106,7 @@ function initAssistant() {
   panel.innerHTML = `
     <div id="assistantHeader">
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:22px">🤖</span>
+        <span style="font-size:22px">${lk('bot')}</span>
         <div>
           <div style="font-weight:700;font-size:14px">Assistant Larka</div>
           <div style="font-size:11px;opacity:.7">${_isDemandeur ? 'Aide à la création de demandes' : 'Une question ? Demandez-moi !'}</div>
@@ -360,10 +360,10 @@ async function askAssistant() {
       const content = el?.querySelector('.assistant-msg-content');
       const partial = el?.querySelector('.assistant-stream-text')?.textContent || '';
       if (content) content.innerHTML = (partial ? _formatReply(partial) + '<br>' : '')
-        + '<span style="color:var(--gray-text);font-style:italic;font-size:12px">⏹ Réponse interrompue.</span>';
+        + ('<span style="color:var(--gray-text);font-style:italic;font-size:12px">' + lk('square') + ' Réponse interrompue.</span>');
     } else {
       document.getElementById(typingId)?.remove();
-      _addMsg('bot', `<div style="color:var(--red)">❌ ${_escHtml(e.message || 'Erreur inconnue')}</div>`);
+      _addMsg('bot', `<div style="color:var(--red)">${lk('circle-x', 'ko')} ${_escHtml(e.message || 'Erreur inconnue')}</div>`);
     }
   } finally {
     _assistantBusy = false;
@@ -496,7 +496,7 @@ async function _assistantStreamCall(question, history, targetMsgId) {
           toolCallsSeen++;
           if (statusEl) {
             statusEl.style.display = 'block';
-            statusEl.textContent = `🔍 ${evt.name}(${evt.args_summary || ''})…`;
+            statusEl.textContent = `${evt.name}(${evt.args_summary || ''})…`;
           }
         } else if (evt.type === 'tool_result') {
           if (statusEl) {
@@ -569,7 +569,7 @@ function _assistantStatsHtml(done) {
   const titre = mode.startsWith('moteur')
     ? 'Réponse du moteur Larka : identique quel que soit le modèle configuré (' + (done.model || '') + ')'
     : (done.fournisseur || '') + ' · ' + (done.model || '');
-  return '<div class="assistant-stats" title="' + _escAttr(titre) + '">⚡ ' + _escHtml(parts.join(' · ')) + '</div>';
+  return '<div class="assistant-stats" title="' + _escAttr(titre) + ('">' + lk('zap') + ' ') + _escHtml(parts.join(' · ')) + '</div>';
 }
 
 /**
@@ -614,7 +614,7 @@ function _processSpecialTokens(bubble, fullText) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:8px 14px;background:var(--teal,#1ab394);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(26,179,148,.3)';
-    btn.innerHTML = '✏️ Ouvrir la demande pré-remplie';
+    btn.innerHTML = (lk('pencil') + ' Ouvrir la demande pré-remplie');
     btn.onclick = () => _openPrefilledDemande(fields, descFinale);
     content.appendChild(document.createElement('br'));
     content.appendChild(btn);
@@ -824,7 +824,7 @@ function _formatReply(text) {
   html = html.replace(/\[DOC:(\d+):([^\]]+)\]/g, (_, id, nom) => {
     const safeId = String(parseInt(id, 10) || 0);
     const safeNom = _escAttr(nom);
-    return `<a href="api/index.php?action=document_download&amp;id=${safeId}" download="${safeNom}" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;text-decoration:none;margin:2px 0;font-weight:500">📄 ${safeNom}</a>`;
+    return `<a href="api/index.php?action=document_download&amp;id=${safeId}" download="${safeNom}" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;text-decoration:none;margin:2px 0;font-weight:500">${lk('file-text')} ${safeNom}</a>`;
   });
 
   // ── Liens documents SharePoint : [SPDOC:url|nom] → lien externe (nouvel onglet)
@@ -839,13 +839,13 @@ function _formatReply(text) {
     const okDomains = ['sharepoint.com', 'sharepointonline.com', 'onedrive.com', 'onedrive.live.com', '1drv.ms', 'office.com', 'office365.com'];
     const allowed = okDomains.some(d => host === d || host.endsWith('.' + d));
     if (!allowed) return safeNom;
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#0078d4;color:#fff;border-radius:6px;font-size:12px;text-decoration:none;margin:2px 0;font-weight:500">📁 ${safeNom}</a>`;
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#0078d4;color:#fff;border-radius:6px;font-size:12px;text-decoration:none;margin:2px 0;font-weight:500">${lk('folder')} ${safeNom}</a>`;
   });
 
   // ── Liens modules : [MODULE:identifiant:libellé] → écran du module.
   //    L'identifiant est contraint (a-z0-9.-) : rien d'autre n'entre dans l'onclick.
   html = html.replace(/\[MODULE:([a-z0-9\-]+\.[a-z0-9\-]+):([^\]]+)\]/g, (_, id, label) =>
-    `<a href="#" onclick="event.preventDefault();_assistantOpenModule('${id}')" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:6px;font-size:12px;text-decoration:none;color:var(--blue);font-weight:500;margin:2px 0">🧩 ${_escAttr(label)}</a>`);
+    `<a href="#" onclick="event.preventDefault();_assistantOpenModule('${id}')" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:6px;font-size:12px;text-decoration:none;color:var(--blue);font-weight:500;margin:2px 0">${lk('puzzle')} ${_escAttr(label)}</a>`);
 
   // ── Liens fiches : trois formats supportés
   //    [FICHE:type:id:label]                  → fiche simple ou plan sans sélection
@@ -860,13 +860,20 @@ function _formatReply(text) {
     stock:        (id) => `editStock(${id})`,
     plan:         (id) => `_openPlanAtEtage(${id})`,
   };
+  // [PAGE:connect:Ouvrir la supervision] : un écran de Larka (liste fermée — jamais une page arbitraire).
+  const pagesAutorisees = { connect: lk('satellite-dish'), connect_alarmes: lk('bell'), connect_config: lk('plug'), energie: lk('zap') };
+  html = html.replace(/\[PAGE:([a-z_]+):([^\]]+)\]/g, (_, page, label) => {
+    if (!Object.prototype.hasOwnProperty.call(pagesAutorisees, page)) return _escAttr(label);
+    return `<a href="#" onclick="event.preventDefault();toggleAssistant();navigate('${page}')" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:6px;font-size:12px;text-decoration:none;color:var(--blue);font-weight:500;margin:2px 0">${pagesAutorisees[page]} ${_escAttr(label)}</a>`;
+  });
+
   // Regex unifiée qui capture les trois formats : type, id principal, segment optionnel (id ou liste avec virgules+espaces tolérés), label.
   html = html.replace(/\[FICHE:(\w+):(\d+)(?::([\d,\s]+))?:([^\]]+)\]/g, (_, type, id, extra, label) => {
     const safeId = parseInt(id, 10);
     if (!Number.isFinite(safeId) || safeId <= 0) return _escAttr(label);
     const safeLabel = _escAttr(label);
-    const icons = { intervention:'🔧', bien:'🏢', equipement:'⚙️', contrat:'📋', demande:'📝', stock:'📦', plan:'🗺️', plans:'🗺️' };
-    const icon = icons[type] || '📄';
+    const icons = { intervention:lk('wrench'), bien:lk('building-complex'), equipement:lk('settings'), contrat:lk('clipboard-list'), demande:lk('file-pen-line'), stock:lk('package'), plan:lk('map'), plans:lk('map') };
+    const icon = icons[type] || lk('file-text');
 
     let actionCall = null;
 
@@ -987,17 +994,16 @@ async function _openPlanAtEtage(etageId, elementId = null, elementIds = null) {
 function _focusPlanElement(elementId, retries = 20) {
   if (typeof _p === 'undefined' || !_p.elements || !_p.map) {
     if (retries > 0) setTimeout(() => _focusPlanElement(elementId, retries - 1), 150);
-    else console.warn('[Focus] ❌ Page Plans non chargée après timeout');
+    else console.warn('[Focus] Page Plans non chargée après timeout');
     return;
   }
   const el = _p.elements.find(e => Number(e.Id) === Number(elementId));
   if (!el) {
     if (retries > 0) setTimeout(() => _focusPlanElement(elementId, retries - 1), 150);
-    else console.warn('[Focus] ❌ Élément id=' + elementId + ' introuvable. IDs dispo :',
+    else console.warn('[Focus] Élément id=' + elementId + ' introuvable. IDs dispo :',
       _p.elements.map(e => e.Id));
     return;
   }
-  console.log('[Focus] ✓ Sélection élément', el.Id, '(', el.Nom, ')');
   if (typeof _pSelectEl === 'function') {
     try { _pSelectEl(el); } catch(_) {}
   }
@@ -1294,7 +1300,7 @@ function _showRgpdDetail() {
   // sur la section de l'assistant. Le texte ci-dessous ne sert qu'en secours.
   if (window.LarkaRgpd) { window.LarkaRgpd.afficher({ section: 'ia' }); return; }
   _addMsg('bot', `<div style="font-size:12px;line-height:1.7">
-    <strong>🔒 Protection des données (RGPD)</strong><br><br>
+    <strong>${lk('lock')} Protection des données (RGPD)</strong><br><br>
     <strong>Anonymisation :</strong> Avant chaque envoi à l'IA, les données personnelles (noms, prénoms, emails, numéros de téléphone) sont automatiquement remplacées par des marqueurs anonymes ([personne], [email], [téléphone]). L'IA ne reçoit jamais vos données personnelles.<br><br>
     <strong>Pas de stockage :</strong> Aucune conversation n'est enregistrée côté serveur. L'historique est uniquement en mémoire dans votre navigateur et disparaît à la fermeture de la page.<br><br>
     <strong>Minimisation :</strong> Seules les données strictement nécessaires à la réponse sont transmises (pas d'export en masse). Les résultats sont limités à 30 éléments maximum par catégorie.<br><br>

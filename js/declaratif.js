@@ -195,9 +195,9 @@ const LarkaDeclaratif = (() => {
       // Les mêmes attributs que la liste : les gestionnaires d'événements
       // existants les reconnaissent, il n'y a rien à brancher en plus.
       if (peutEditer) btn.push(`<button class="dp-cal-b" data-modif="${l.id}"
-        title="Modifier">✎</button>`);
+        title="Modifier">${lk('pencil')}</button>`);
       if (peutOter) btn.push(`<button class="dp-cal-b" data-suppr="${l.id}"
-        style="border-color:#b91c1c;color:#b91c1c" title="Supprimer">🗑</button>`);
+        style="border-color:#b91c1c;color:#b91c1c" title="Supprimer">${lk('trash')}</button>`);
       return `<div class="dp-cal-resa">
         <div class="dp-cal-qui">${esc(qui) || '—'}</div>
         ${plaque ? `<div class="dp-cal-sub">${esc(plaque)}</div>` : ''}
@@ -209,6 +209,66 @@ const LarkaDeclaratif = (() => {
 
   function teinte(v) {
     return /^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v) : '#6b7280';
+  }
+
+  /**
+   * États d'une mesure lue sur le bâtiment connecté — le vocabulaire fermé du
+   * serveur (ExtSchemaDeclaratif::ETATS_MESURE), avec sa couleur.
+   */
+  const ETATS_MESURE = {
+    normal:       ['Normal', '#16a34a'],
+    alarme:       ['En alarme', '#b91c1c'],
+    defaut:       ['En défaut', '#ea580c'],
+    partiel:      ['Partiel', '#d97706'],
+    ancienne:     ['Valeur ancienne', '#6b7280'],
+    sans_valeur:  ['Sans valeur', '#6b7280'],
+    inactif:      ['Inactif', '#6b7280'],
+    indisponible: ['Larka Connect fermé', '#6b7280'],
+  };
+
+  /**
+   * Une mesure, telle que la supervision l'aurait montrée : le nombre avec
+   * l'unité du point, grisé quand la valeur est trop ancienne pour décrire le
+   * présent, une cloche quand le point est en alarme. Le serveur fournit
+   * <champ>, <champ>_unite et <champ>_etat ; rien n'est calculé ici.
+   */
+  function afficherMesure(ligne, cle, champ) {
+    const v = ligne[cle];
+    const etat = ligne[cle + '_etat'];
+    const [libEtat, couleur] = ETATS_MESURE[etat] || ['', '#6b7280'];
+
+    if (champ.nature === 'etat') {
+      if (!v) return '<span style="color:var(--gray-text)">—</span>';
+      const [lib, c] = ETATS_MESURE[v] || [String(v), '#6b7280'];
+      return `<span class="dp-mesure-etat" style="display:inline-block;padding:1px 8px;
+        border-radius:10px;font-size:12px;color:#fff;background:${teinte(c)}">${esc(lib)}</span>`;
+    }
+    if (v === null || v === undefined || v === '') {
+      return `<span style="color:var(--gray-text)"${libEtat ? ` title="${esc(libEtat)}"` : ''}>—</span>`;
+    }
+
+    let texte;
+    if (champ.nature === 'horodatage') {
+      texte = String(v).replace(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}).*$/, '$3/$2/$1 $4');
+    } else {
+      const n = Number(v);
+      texte = isFinite(n) ? n.toLocaleString('fr-FR', { maximumFractionDigits: 6 }) : String(v);
+      if (ligne[cle + '_unite']) texte += ' ' + ligne[cle + '_unite'];
+    }
+    const alarme = etat === 'alarme' && champ.nature !== 'horodatage';
+    const terne  = ['ancienne', 'defaut', 'inactif', 'indisponible'].includes(etat);
+    const cloche = alarme
+      ? (typeof window !== 'undefined' && typeof window.lk === 'function' ? window.lk('bell') : '!') + ' '
+      : '';
+    return `<span class="dp-mesure${alarme ? ' dp-mesure-alarme' : ''}${terne ? ' dp-mesure-terne' : ''}"
+      style="white-space:nowrap${alarme ? `;color:${couleur};font-weight:600` : ''}${terne ? ';color:var(--gray-text)' : ''}"
+      ${libEtat && etat !== 'normal' ? `title="${esc(libEtat)}"` : ''}>${cloche}${esc(texte)}</span>`;
+  }
+
+  /** Une cellule de liste : mesure, lien (son libellé) ou valeur saisie. */
+  function cellule(l, c, champ) {
+    if (champ && champ.type === 'mesure') return afficherMesure(l, c, champ);
+    return afficher(l[c + '_libelle'] !== undefined ? l[c + '_libelle'] : l[c], champ);
   }
 
   function afficher(valeur, champ) {
@@ -1758,9 +1818,14 @@ const LarkaDeclaratif = (() => {
     const modele = document.getElementById('ap-modele');
     if (modele) modele.addEventListener('click', async () => {
       try {
-        const r = await fetch('lang/fr.json', { credentials: 'same-origin' });
-        if (!r.ok) throw new Error('Le catalogue lang/fr.json est absent.');
-        const txt = await r.text();
+        // Tiré du fichier de traduction unique (lang/traductions.json) : clé et
+        // valeur en français, la forme qu'un traducteur remplit.
+        const r = await fetch('lang/traductions.json', { credentials: 'same-origin' });
+        if (!r.ok) throw new Error('Le fichier de traduction lang/traductions.json est absent.');
+        const j = await r.json();
+        const libelles = {};
+        Object.entries(j.libelles || {}).forEach(([k, e]) => { libelles[k] = (e && e.fr) || k; });
+        const txt = JSON.stringify({ langue: 'fr', nom: 'Français', version: j.version || '', libelles }, null, 2);
         const url = URL.createObjectURL(new Blob([txt], { type: 'application/json' }));
         const a = document.createElement('a');
         a.href = url; a.download = 'larka-libelles-fr.json';
@@ -2024,7 +2089,7 @@ const LarkaDeclaratif = (() => {
           ${peut('exporter') ? `<button id="dp-csv" class="btn btn-secondary btn-sm">
             Exporter</button>` : ''}
           ${peut('exporter') ? `<button id="dp-print" class="btn btn-secondary btn-sm">
-            🖨️ Imprimer</button>` : ''}
+            ${lk('printer')} Imprimer</button>` : ''}
         </div>
         <div id="dp-stat" style="font-size:12px;color:var(--gray-text);margin-top:8px"></div>
       </div></div>
@@ -2119,8 +2184,7 @@ const LarkaDeclaratif = (() => {
 
       const rangee = (l, i) => `<tr${surlignage(l)}
         style="${style.zebre && i % 2 ? 'background:var(--gray-bg)' : ''}">
-        ${cols.map(c => `<td>${afficher(l[c + '_libelle'] !== undefined
-            ? l[c + '_libelle'] : l[c], champs[c])}</td>`).join('')}
+        ${cols.map(c => `<td>${cellule(l, c, champs[c])}</td>`).join('')}
         ${actions ? `<td style="text-align:right;white-space:nowrap">
           ${peut('modifier') ? (vue.actions_rapides || []).map((a, k) =>
             // Un bouton par décision, à même la ligne. La valeur déjà posée
@@ -2203,6 +2267,7 @@ const LarkaDeclaratif = (() => {
               const px = (vue.largeurs || {})[c];
               const l = px ? `width:${px}px;` : '';
               return vue.tri_utilisateur && champs[c].type !== 'formule'
+                  && champs[c].type !== 'mesure'
                 ? `<th style="${l}cursor:pointer;user-select:none" data-tri="${esc(c)}">
                      ${esc(champs[c].libelle)}${_tri.champ === c ? (_tri.sens === 'ASC' ? ' ▲' : ' ▼') : ''}</th>`
                 : `<th${l ? ` style="${l}"` : ''}>${esc(champs[c].libelle)}</th>`;
@@ -2291,7 +2356,9 @@ const LarkaDeclaratif = (() => {
       const saisissables = (retenus.length
           ? retenus.filter(n => champs[n]).map(n => [n, champs[n]])
           : Object.entries(champs))
-        .filter(([, c]) => c.type !== 'formule');
+        // Ni formule ni mesure : l'une se calcule, l'autre se lit sur le
+        // bâtiment. Aucune n'a de case à remplir.
+        .filter(([, c]) => c.type !== 'formule' && c.type !== 'mesure');
 
       // Regroupement visuel : les champs liés au même sujet vont ensemble, et
       // une fiche de quinze champs cesse d'être un mur. Les groupes sont
@@ -2446,7 +2513,7 @@ const LarkaDeclaratif = (() => {
             // vient du moteur, il est écrit pour l'utilisateur.
             toast(e.message, 'error');
           }
-        }, '💾 Enregistrer');
+        }, 'Enregistrer');
     }
 
     function brancher(lignes) {
@@ -2551,6 +2618,7 @@ const LarkaDeclaratif = (() => {
     if (contexte.etageId !== undefined)     charge.etage = contexte.etageId;
     if (contexte.equipementId !== undefined) charge.valeur_lien = contexte.equipementId;
     if (contexte.bienId !== undefined)       charge.valeur_lien = contexte.bienId;
+    if (contexte.pointId !== undefined)      charge.valeur_lien = contexte.pointId;
 
     let d;
     try {
@@ -2562,12 +2630,32 @@ const LarkaDeclaratif = (() => {
       return;
     }
 
-    if (decl.type === 'compteur') {
+    // La jauge était validée, servie par le moteur… et jamais dessinée : sa
+    // tuile restait un cadre vide. Elle partage le rendu du compteur, avec
+    // l'unité déclarée et un nombre lisible.
+    if (decl.type === 'compteur' || decl.type === 'jauge') {
+      const n = Number(d.nombre ?? 0);
+      const valeur = (isFinite(n) ? n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })
+                                  : String(d.nombre ?? 0))
+                   + (decl.type === 'jauge' && decl.unite ? ' ' + decl.unite : '');
+      // Même tuile que celles de Larka (icône teintée, chiffre, libellé) : les tuiles
+      // des modules n'avaient pas d'icône et détonnaient à côté des autres.
+      // Icône déclarée par l'ancrage, sinon le pictogramme de la page du module,
+      // sinon un pictogramme selon le type. Jamais le logo image du module : un
+      // PNG réduit à 18 px dans la pastille teintée se lisait comme une image
+      // cassée — et un module installé avant cette version n'a pas d'« icone ».
+      const coul = teinte(decl.couleur || '#1b3a5c');
+      const defaut = decl.type === 'jauge' ? 'gauge' : 'hash';
+      const icone = decl.icone ? lkValeur(decl.icone, defaut)
+        : (typeof LarkaExtensions !== 'undefined' && LarkaExtensions.iconeLucide
+            ? LarkaExtensions.iconeLucide(ext, defaut) : lk(defaut));
+      hote.classList.add('ext-tuile-hote');
       hote.innerHTML = `
-        <div class="card" style="border-left:4px solid ${esc(decl.couleur || '#1b3a5c')}">
-          <div class="card-body">
-            <div style="font-size:13px;color:var(--gray-text)">${esc(d.libelle)}</div>
-            <div style="font-size:24px;font-weight:700">${esc(String(d.nombre ?? 0))}</div>
+        <div class="stat-card ext-tuile">
+          <div class="stat-icon" style="background:color-mix(in srgb, ${esc(coul)} 14%, transparent);color:${esc(coul)}">${icone}</div>
+          <div class="stat-info">
+            <div class="stat-value">${esc(valeur)}</div>
+            <div class="stat-label">${esc(d.libelle)}</div>
           </div>
         </div>`;
       return;
@@ -2577,12 +2665,16 @@ const LarkaDeclaratif = (() => {
       const lignes = d.lignes || [];
       if (lignes.length === 0) { hote.remove(); return; }
       const cols = decl.colonnes || Object.keys(lignes[0]);
+      // Les colonnes se lisent comme dans la page du module : un lien par son
+      // libellé, une mesure avec son unité et son état.
+      const champsJeu = (((ext.declaration || {}).donnees || {})[decl.source] || {}).champs || {};
       hote.innerHTML = `
         <div class="card"><div class="card-body">
           <div class="section-label">${esc(d.libelle)}</div>
           <table class="table"><tbody>
             ${lignes.map(l => `<tr>${cols.map(c =>
-              `<td>${esc(String(l[c + '_libelle'] ?? l[c] ?? ''))}</td>`).join('')}</tr>`).join('')}
+              `<td>${champsJeu[c] ? cellule(l, c, champsJeu[c])
+                                  : esc(String(l[c + '_libelle'] ?? l[c] ?? ''))}</td>`).join('')}</tr>`).join('')}
           </tbody></table>
         </div></div>`;
       return;
@@ -2604,7 +2696,7 @@ const LarkaDeclaratif = (() => {
         if (!isFinite(lat) || !isFinite(lng)) return;
         const m = L.marker([lat, lng], {
           icon: L.divIcon({ className: 'ext-marqueur', html:
-            `<div style="font-size:18px;line-height:1">${esc(decl.icone || '📍')}</div>`,
+            `<div style="font-size:18px;line-height:1">${lkValeur(decl.icone, 'map-pin')}</div>`,
             iconSize: [22, 22], iconAnchor: [11, 11] }),
         }).addTo(map);
         m.bindTooltip(esc(String(l[decl.etiquette] ?? '')));
@@ -2615,7 +2707,8 @@ const LarkaDeclaratif = (() => {
         const b = document.createElement('button');
         b.className = 'plan-tbtn';
         b.title = decl.libelle || 'Poser un repère';
-        b.textContent = decl.icone || '📍';
+        // Icône déclarée par le module : un nom Lucide (« map-pin »), ou un symbole.
+        b.innerHTML = lkValeur(decl.icone, 'map-pin');
         b.addEventListener('click', () => {
           toast('Cliquez l\'emplacement sur le plan.', 'info');
           contexte.surProchainClic(async ({ lat, lng }) => {

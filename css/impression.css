@@ -28,7 +28,7 @@
 
   /* Ce qui ne sert qu'à naviguer n'a rien à faire sur le papier. */
   .sidebar, .topbar, .toast-container, .modal-overlay, .modal,
-  #topbarActions, .btn, .pagination, .river-canvas,
+  #topbarActions, .sous-bandeau, .btn, .pagination, .river-canvas,
   [data-filtre], .form-control, .nav-item, #ap-barre,
   .dp-actions, .dp-recherche {
     display: none !important;

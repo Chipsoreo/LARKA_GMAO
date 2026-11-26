@@ -368,14 +368,14 @@ const PushManager_GMAO = (function() {
         }
       </style>
       <div style="display:flex;align-items:flex-start;gap:14px">
-        <div style="font-size:28px;line-height:1;flex-shrink:0;margin-top:2px">🔔</div>
+        <div style="font-size:28px;line-height:1;flex-shrink:0;margin-top:2px">${lk('bell')}</div>
         <div style="flex:1">
           <div style="font-weight:700;font-size:14px;margin-bottom:6px">
             Activer les notifications ?
           </div>
           <div style="font-size:12px;color:rgba(255,255,255,.65);line-height:1.5;margin-bottom:14px">
             Recevez une alerte instantanée quand une nouvelle demande arrive ou qu'un contrat arrive à échéance.
-            ${_isIOS && !_isIOSPWA ? '<br><span style="color:#48cae4">📱 Sur iPhone, ajoutez d\'abord l\'app à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil).</span>' : ''}
+            ${_isIOS && !_isIOSPWA ? ('<br><span style="color:#48cae4">' + lk('smartphone') + ' Sur iPhone, ajoutez d\'abord l\'app à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil).</span>') : ''}
           </div>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button id="pushSoftNo" style="
@@ -443,7 +443,7 @@ const PushManager_GMAO = (function() {
             localStorage.setItem(STORAGE_KEY_SYNC, String(Date.now()));
             if (_vapidPublicKey) localStorage.setItem(STORAGE_KEY_VAPID, _vapidPublicKey);
             if (typeof toast === 'function') {
-              toast('Notifications activées ! 🔔', 'success');
+              toast('Notifications activées !', 'success');
             }
           } else {
             // Souscription dans le navigateur mais pas encore au serveur
@@ -666,7 +666,7 @@ const PushManager_GMAO = (function() {
       const synced = !hasPendingSync() && parseInt(localStorage.getItem(STORAGE_KEY_SYNC) || '0', 10) > 0;
       if (typeof toast === 'function') {
         if (synced) {
-          toast('Les notifications sont déjà activées ! 🔔', 'success');
+          toast('Les notifications sont déjà activées !', 'success');
         } else {
           toast('Notifications activées localement, synchronisation serveur en cours…', 'info');
         }

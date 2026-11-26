@@ -976,6 +976,16 @@ cmd_demo() {
     [[ "$etait" == "true" ]] || echo -e "  Démarrez avec : ${BOLD}./start.sh start${NC}"
 }
 
+cmd_connect_demo() {
+    # Larka Connect : deux bâtiments simulés branchés sur les compteurs de la
+    # démonstration, avec des semaines de courbes, d'alarmes et de relevés
+    # automatiques, posés en quelques secondes (api/outils/connect-demo.php).
+    prod_guard_dev_command
+    command -v php >/dev/null 2>&1 || die 20 "PHP absent. Lancez : ./start.sh install"
+    [[ -f api/outils/connect-demo.php ]] || die 2 "Larka Connect absent de cette version."
+    php api/outils/connect-demo.php ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+}
+
 offer_demo() {
     # Proposer la démonstration si son archive est là (l'archive complète la
     # range dans le dossier de Larka ; Téléchargements et le Bureau sont aussi
@@ -1189,12 +1199,18 @@ cmd_start() {
     fi
 }
 
-# ── Planificateur : sauvegardes automatiques ─────────────────────────────────
+# ── Planificateur : sauvegardes automatiques, Larka Connect ──────────────────
 # Le serveur PHP intégré ne sait rien faire « à heure fixe ». Une petite boucle
 # l'accompagne : toutes les 10 minutes, elle lance api/outils/sauvegarde-auto.php,
 # qui ne fait que les sauvegardes DUES (aucune si rien n'est réglé). Elle
 # s'arrête avec le serveur. En production, c'est la tâche cron ; avec le
 # démarrage automatique, la minuterie systemd larka-sauvegardes.timer.
+#
+# Larka Connect : à chaque tour (30 s), la collecte des équipements raccordés
+# (api/outils/connect-collecte.php, qui ne fait rien si le module est fermé et
+# ne traite que ce qui est dû) ; et le service OCPP des bornes de recharge
+# (api/outils/connect-ocpp.php), lancé s'il ne tourne pas — il écoute ou non
+# selon config.json, qu'il relit tout seul.
 planificateur_demarrer() {
     local cible="$1"
     planificateur_arreter
@@ -1205,6 +1221,10 @@ planificateur_demarrer() {
         while kill -0 "$1" 2>/dev/null; do
             if (( n % 20 == 2 )); then
                 php api/outils/sauvegarde-auto.php --silencieux >> data/logs/sauvegardes.log 2>&1
+            fi
+            php api/outils/connect-collecte.php --silencieux >> data/logs/connect.log 2>&1 &
+            if [[ ! -s data/run/connect-ocpp.pid ]] || ! kill -0 "$(cat data/run/connect-ocpp.pid 2>/dev/null)" 2>/dev/null; then
+                nohup php api/outils/connect-ocpp.php --si-absent >> data/logs/connect-ocpp.log 2>&1 &
             fi
             n=$((n + 1)); sleep 30
         done' planificateur-larka "$cible" >/dev/null 2>&1 &
@@ -1218,6 +1238,11 @@ planificateur_arreter() {
         pkill -P "$p" -x sleep 2>/dev/null || true
     fi
     rm -f "$PLANIF_PID_FILE"
+    # Le service OCPP lancé par le planificateur s'arrête avec lui.
+    local o; o="$(cat data/run/connect-ocpp.pid 2>/dev/null || true)"
+    if [[ -n "$o" ]] && ps -o args= -p "$o" 2>/dev/null | grep -q 'connect-ocpp.php'; then
+        kill "$o" 2>/dev/null || true
+    fi
 }
 
 cmd_stop() {
@@ -1518,7 +1543,7 @@ cmd_reset() {
     ok "Bases réinitialisées. Relancez : ./start.sh start"
 }
 
-# Séquelles des versions ≤ 2.1.0 (corrigées en 2.1.1, mais pas réparées d'elles-mêmes) :
+# Séquelles des versions ≤ 2.1.0 (corrigées en 3.0.0, mais pas réparées d'elles-mêmes) :
 #  - .env / config.json / config.key passés à root après un « sudo ./start.sh … » ou une
 #    mise à jour lancée en root : PHP (PHP-FPM, www-data) ne les lit plus → erreurs de base ;
 #  - SharePoint désactivé d'office par un lancement sans terminal ;
@@ -1750,6 +1775,62 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOTMR
+
+    # Larka Connect : collecte des équipements chaque minute, et service OCPP
+    # permanent (il n'écoute que si OCPP est activé dans config.json).
+    as_root tee /etc/systemd/system/larka-connect.service >/dev/null <<EOCSV
+# Généré par ./start.sh autostart — collecte Larka Connect (équipements raccordés).
+[Unit]
+Description=Larka Connect — collecte des équipements raccordés
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=${runuser}
+Group=${rungroup}
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${phpbin} ${SCRIPT_DIR}/api/outils/connect-collecte.php --silencieux
+NoNewPrivileges=true
+PrivateTmp=true
+EOCSV
+    as_root tee /etc/systemd/system/larka-connect.timer >/dev/null <<EOCTM
+# Généré par ./start.sh autostart.
+[Unit]
+Description=Larka Connect — collecte (chaque minute)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOCTM
+    as_root tee /etc/systemd/system/larka-ocpp.service >/dev/null <<EOOCPP
+# Généré par ./start.sh autostart — service OCPP de Larka Connect (bornes de recharge).
+[Unit]
+Description=Larka Connect — service OCPP (bornes de recharge)
+After=network.target postgresql.service ${AUTOSTART_UNIT}
+# Démarre et s'arrête avec Larka (./start.sh stop/start agissent sur les deux).
+PartOf=${AUTOSTART_UNIT}
+
+[Service]
+Type=simple
+User=${runuser}
+Group=${rungroup}
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${phpbin} ${SCRIPT_DIR}/api/outils/connect-ocpp.php
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=${SCRIPT_DIR}
+
+[Install]
+WantedBy=${AUTOSTART_UNIT}
+EOOCPP
 }
 
 cmd_autostart() {
@@ -1787,6 +1868,12 @@ cmd_autostart() {
             as_root systemctl enable --now larka-sauvegardes.timer >/dev/null 2>&1 \
                 && ok "Sauvegardes automatiques : minuterie activée (larka-sauvegardes.timer)." \
                 || warn "Minuterie des sauvegardes non activée : sudo systemctl enable --now larka-sauvegardes.timer"
+            as_root systemctl enable --now larka-connect.timer >/dev/null 2>&1 \
+                && ok "Larka Connect : collecte chaque minute (larka-connect.timer)." \
+                || warn "Minuterie Larka Connect non activée : sudo systemctl enable --now larka-connect.timer"
+            as_root systemctl enable --now larka-ocpp.service >/dev/null 2>&1 \
+                && ok "Larka Connect : service OCPP actif (larka-ocpp.service)." \
+                || warn "Service OCPP non activé : sudo systemctl enable --now larka-ocpp.service"
             sleep 1
             h="$HOST"; [[ "$h" == "0.0.0.0" ]] && h="localhost"
             ok "Larka démarrera désormais TOUT SEUL à chaque boot."
@@ -1799,7 +1886,9 @@ cmd_autostart() {
             autostart_installed || { warn "Le démarrage automatique n'est pas installé — rien à faire."; return 0; }
             as_root systemctl disable --now "$AUTOSTART_UNIT" 2>/dev/null || true
             as_root systemctl disable --now larka-sauvegardes.timer 2>/dev/null || true
-            as_root rm -f "$(autostart_unit_path)" /etc/systemd/system/larka-sauvegardes.service /etc/systemd/system/larka-sauvegardes.timer
+            as_root systemctl disable --now larka-connect.timer larka-ocpp.service 2>/dev/null || true
+            as_root rm -f "$(autostart_unit_path)" /etc/systemd/system/larka-sauvegardes.service /etc/systemd/system/larka-sauvegardes.timer \
+                /etc/systemd/system/larka-connect.service /etc/systemd/system/larka-connect.timer /etc/systemd/system/larka-ocpp.service
             as_root systemctl daemon-reload
             ok "Démarrage automatique désactivé (l'application est arrêtée)."
             info "Relancer à la main : ./start.sh start  (ou réactiver : ./start.sh autostart on)"
@@ -1815,6 +1904,9 @@ cmd_autostart() {
             printf '  %-14s %s\n' "Au boot"   "$(systemctl is-enabled "$AUTOSTART_UNIT" 2>/dev/null || echo '?')"
             printf '  %-14s %s\n' "Actuel"    "$(systemctl is-active  "$AUTOSTART_UNIT" 2>/dev/null || echo '?')"
             printf '  %-14s %s\n' "PostgreSQL" "$(systemctl is-enabled postgresql 2>/dev/null || echo '?') au boot"
+            printf '  %-14s %s\n' "Sauvegardes" "$(systemctl is-active larka-sauvegardes.timer 2>/dev/null || echo '?') (larka-sauvegardes.timer)"
+            printf '  %-14s %s\n' "Connect"     "$(systemctl is-active larka-connect.timer 2>/dev/null || echo '?') (larka-connect.timer, collecte chaque minute)"
+            printf '  %-14s %s\n' "OCPP"        "$(systemctl is-active larka-ocpp.service 2>/dev/null || echo '?') (larka-ocpp.service, bornes de recharge)"
             u="$(grep -oP 'ExecStart=.*-S \K[^ ]+' "$(autostart_unit_path)" 2>/dev/null || true)"
             [[ -n "$u" ]] && printf '  %-14s %s\n' "Adresse" "http://${u/0.0.0.0/localhost}"
             ;;
@@ -1979,6 +2071,9 @@ ${BOLD}Maintenance${NC}
                (ne décompressez plus une nouvelle version par-dessus l'ancienne)
   demo [zip]   Installe la démonstration « Ville de Larkaville » (met la base actuelle de côté)
                — aussi proposée au premier démarrage (start) si son archive est là
+               --sans-connect : sans les bâtiments connectés simulés (Larka Connect)
+  connect-demo Larka Connect : bâtiments simulés avec 60 jours de courbes, d'alarmes et de
+               relevés automatiques (--jours=N, --releves=N, --activer, --refaire, --retirer)
   reset        Recrée les bases depuis zéro (DESTRUCTIF)
   doctor       Diagnostic complet   ·   doctor --fix : auto-réparation
                (dont PostgreSQL après une mise à jour du système : index reconstruits,
@@ -2870,6 +2965,7 @@ case "$COMMAND" in
     journal)            SUBCOMMAND="${SUBCOMMAND:-suivre}"; cmd_journal ;;
     reset)              cmd_reset ;;
     demo|demonstration) cmd_demo ;;
+    connect-demo|demo-connect) cmd_connect_demo ;;
     maj|mise-a-jour|update) cmd_maj ;;
     doctor)             cmd_doctor ;;
     epreuves|test)      title "Vérification des protections"; cmd_epreuves && ok "Toutes les protections répondent." || die 60 "Une protection ne répond plus. → bash outils/epreuves/toutes.sh" ;;

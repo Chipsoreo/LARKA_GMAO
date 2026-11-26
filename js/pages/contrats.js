@@ -69,8 +69,8 @@ function _contratContactsCell(ct) {
   return contacts.map(c => {
     const nom  = escHtml(c.nom || '');
     const role = c.role ? ` <span style="color:var(--gray-text);font-size:11px">(${escHtml(c.role)})</span>` : '';
-    const tel  = c.tel   ? `<a href="tel:${escHtml(String(c.tel).replace(/\s/g,''))}" style="color:var(--blue);text-decoration:none" title="Appeler">📞 ${escHtml(c.tel)}</a>` : '';
-    const mail = c.email ? `<a href="mailto:${escHtml(c.email)}" style="color:var(--blue);text-decoration:none" title="Envoyer un email">✉️ ${escHtml(c.email)}</a>` : '';
+    const tel  = c.tel   ? `<a href="tel:${escHtml(String(c.tel).replace(/\s/g,''))}" style="color:var(--blue);text-decoration:none" title="Appeler">${lk('phone')} ${escHtml(c.tel)}</a>` : '';
+    const mail = c.email ? `<a href="mailto:${escHtml(c.email)}" style="color:var(--blue);text-decoration:none" title="Envoyer un email">${lk('mail')} ${escHtml(c.email)}</a>` : '';
     const coords = [tel, mail].filter(Boolean).join(' &nbsp;·&nbsp; ');
     if (!nom && !coords) return '';
     return `<div style="margin:2px 0;line-height:1.4">
@@ -134,7 +134,7 @@ async function editContrat(id) {
       </div>
       <div class="form-group span-2" style="grid-column:span 2">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <label class="form-label" style="margin:0">👥 Contacts du contrat</label>
+          <label class="form-label" style="margin:0">${lk('users')} Contacts du contrat</label>
           <button type="button" class="btn btn-ghost btn-sm" onclick="_ajouterContact()">+ Ajouter un contact</button>
         </div>
         <div id="contactsList" style="display:flex;flex-direction:column;gap:8px">${(() => {
@@ -159,7 +159,7 @@ async function editContrat(id) {
     </div>
 
     <div id="blocEnergie" style="display:${ct.Type==='Energie'?'block':'none'}">
-      <div class="section-label" style="margin-top:12px">⚡ Paramètres énergie</div>
+      <div class="section-label" style="margin-top:12px">${lk('zap')} Paramètres énergie</div>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Fluide concerné</label>
@@ -196,7 +196,7 @@ async function editContrat(id) {
           <!-- BLOC BASE -->
           <div id="blocBase" style="display:${(!ct.OptionTarifaire||ct.OptionTarifaire==='Base')?'contents':'none'}">
             <div class="form-group span-2" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 16px;grid-column:span 2">
-              <div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📋 Tarif Base</div>
+              <div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">${lk('clipboard-list')} Tarif Base</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <div>
                   <label class="form-label" style="font-size:11px">Abonnement mensuel HT (€)</label>
@@ -229,7 +229,7 @@ async function editContrat(id) {
           <!-- BLOC HP-HC / Tempo / EJP -->
           <div id="blocHPHC" style="display:${['HP-HC','Tempo','EJP'].includes(ct.OptionTarifaire)?'contents':'none'}">
             <div class="form-group span-2" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 16px;grid-column:span 2">
-              <div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📋 Tarif HP/HC</div>
+              <div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">${lk('clipboard-list')} Tarif HP/HC</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <div>
                   <label class="form-label" style="font-size:11px">Abonnement mensuel HT (€)</label>
@@ -275,11 +275,11 @@ async function editContrat(id) {
           <div id="blocHTA5" style="display:${ct.OptionTarifaire==='HTA 5 plages'?'contents':'none'}">
             <div class="form-group" style="grid-column:span 2">
               <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:14px 16px">
-                <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">⚡ Tarif HTA 5 Plages</div>
+                <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">${lk('zap')} Tarif HTA 5 Plages</div>
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
 
                   <div style="background:white;border:1px solid #e5e7eb;border-radius:6px;padding:10px">
-                    <div style="font-size:11px;font-weight:700;color:#b45309;margin-bottom:6px">🌞 HPHS — Hiver HP</div>
+                    <div style="font-size:11px;font-weight:700;color:#b45309;margin-bottom:6px">${lk('sun')} HPHS — Hiver HP</div>
                     <label class="form-label" style="font-size:11px">Prix HT (€/kWh)</label>
                     <input class="form-control" type="number" step="0.0001" id="f_hta_hphs" value="${escHtml(ct.HtaHPHS||'')}" oninput="recalcHtaTVA()">
                     <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
@@ -289,7 +289,7 @@ async function editContrat(id) {
                   </div>
 
                   <div style="background:white;border:1px solid #e5e7eb;border-radius:6px;padding:10px">
-                    <div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:6px">🌙 HCHS — Hiver HC</div>
+                    <div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:6px">${lk('moon')} HCHS — Hiver HC</div>
                     <label class="form-label" style="font-size:11px">Prix HT (€/kWh)</label>
                     <input class="form-control" type="number" step="0.0001" id="f_hta_hchs" value="${escHtml(ct.HtaHCHS||'')}" oninput="recalcHtaTVA()">
                     <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
@@ -299,7 +299,7 @@ async function editContrat(id) {
                   </div>
 
                   <div style="background:white;border:1px solid #e5e7eb;border-radius:6px;padding:10px">
-                    <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:6px">☀️ HPBS — Été HP</div>
+                    <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:6px">${lk('sun')} HPBS — Été HP</div>
                     <label class="form-label" style="font-size:11px">Prix HT (€/kWh)</label>
                     <input class="form-control" type="number" step="0.0001" id="f_hta_hpbs" value="${escHtml(ct.HtaHPBS||'')}" oninput="recalcHtaTVA()">
                     <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
@@ -309,7 +309,7 @@ async function editContrat(id) {
                   </div>
 
                   <div style="background:white;border:1px solid #e5e7eb;border-radius:6px;padding:10px">
-                    <div style="font-size:11px;font-weight:700;color:#5b21b6;margin-bottom:6px">💤 HCBS — Été HC</div>
+                    <div style="font-size:11px;font-weight:700;color:#5b21b6;margin-bottom:6px">${lk('moon-star')} HCBS — Été HC</div>
                     <label class="form-label" style="font-size:11px">Prix HT (€/kWh)</label>
                     <input class="form-control" type="number" step="0.0001" id="f_hta_hcbs" value="${escHtml(ct.HtaHCBS||'')}" oninput="recalcHtaTVA()">
                     <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
@@ -319,7 +319,7 @@ async function editContrat(id) {
                   </div>
 
                   <div style="background:white;border:1px solid #e5e7eb;border-radius:6px;padding:10px">
-                    <div style="font-size:11px;font-weight:700;color:#0e7490;margin-bottom:6px">🌿 CEE</div>
+                    <div style="font-size:11px;font-weight:700;color:#0e7490;margin-bottom:6px">${lk('leaf')} CEE</div>
                     <label class="form-label" style="font-size:11px">Montant HT (€)</label>
                     <input class="form-control" type="number" step="0.01" id="f_hta_cee" value="${escHtml(ct.HtaCEE||'')}" oninput="recalcHtaTVA()">
                     <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
@@ -329,7 +329,7 @@ async function editContrat(id) {
                   </div>
 
                   <div style="background:white;border:1px solid #e5e7eb;border-radius:6px;padding:10px">
-                    <div style="font-size:11px;font-weight:700;color:#9f1239;margin-bottom:6px">⚡ Obligation Capacité</div>
+                    <div style="font-size:11px;font-weight:700;color:#9f1239;margin-bottom:6px">${lk('zap')} Obligation Capacité</div>
                     <label class="form-label" style="font-size:11px">Montant HT (€)</label>
                     <input class="form-control" type="number" step="0.01" id="f_hta_capa" value="${escHtml(ct.HtaCapa||'')}" oninput="recalcHtaTVA()">
                     <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
@@ -342,7 +342,7 @@ async function editContrat(id) {
                 <!-- TVA lignes -->
                 <div style="border-top:1px solid #e5e7eb;padding-top:12px">
                   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-                    <div style="font-size:11px;font-weight:700;color:#374151">🏦 Lignes TVA (applicables par plage)</div>
+                    <div style="font-size:11px;font-weight:700;color:#374151">${lk('landmark')} Lignes TVA (applicables par plage)</div>
                     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                       <span style="font-size:11px;color:var(--gray-text)">Appliquer par défaut à :</span>
                       <select id="f_hta_tva_cible" class="form-control" style="font-size:11px;padding:2px 6px">
@@ -367,7 +367,7 @@ async function editContrat(id) {
           <!-- BLOC Je ne sais pas / Non définissable -->
           <div id="blocJeSaisPas" style="display:${ct.OptionTarifaire==='Je ne sais pas'?'contents':'none'}">
             <div class="form-group span-2" style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;grid-column:span 2">
-              <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:6px">❓ Option tarifaire non définie</div>
+              <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:6px">${lk('circle-question-mark')} Option tarifaire non définie</div>
               <div style="font-size:12px;color:#166534">
                 Le type de tarif n'est pas connu. Les relevés liés à ce contrat permettront de saisir les index, la consommation et le montant facturé.<br>
                 <span style="font-size:11px;color:var(--gray-text)">Un mode avancé est disponible dans les relevés pour détailler les lignes de facture.</span>
@@ -378,7 +378,7 @@ async function editContrat(id) {
         <!-- Champs spécifiques eau -->
         <div id="blocEau" style="display:${(ct.Fluide)==='Eau'?'contents':'none'}">
           <div class="form-group span-2" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;grid-column:span 2">
-            <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">💧 Tarif Eau</div>
+            <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">${lk('droplet')} Tarif Eau</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div>
                 <label class="form-label" style="font-size:11px">Abonnement mensuel HT (€)</label>
@@ -411,7 +411,7 @@ async function editContrat(id) {
         <!-- Champs spécifiques chauffage urbain -->
         <div id="blocChauffage" style="display:${(ct.Fluide)==='Chauffage'?'contents':'none'}">
           <div class="form-group span-2" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:10px 14px">
-            <span style="font-size:12px;color:#991b1b">🔥 Contrat Chauffage Urbain — les paramètres tarifaires (R1, R2…) sont définis au niveau de chaque <strong>compteur</strong>.</span>
+            <span style="font-size:12px;color:#991b1b">${lk('flame')} Contrat Chauffage Urbain — les paramètres tarifaires (R1, R2…) sont définis au niveau de chaque <strong>compteur</strong>.</span>
           </div>
         </div>
 
@@ -447,7 +447,7 @@ async function editContrat(id) {
 
     <!-- Documents joints -->
     <div>
-      <div class="section-label">📎 Documents joints</div>
+      <div class="section-label">${lk('paperclip')} Documents joints</div>
       ${isNew ? docsPanelHtml('Contrat', 0, 'Contrat') : docsPanelHtml('Contrat', id)}
     </div>`, async () => {
     const numero = gv('f_numero'), societe = gv('f_societe');
@@ -757,7 +757,7 @@ function _contactRowHtml(i, c = {}) {
       <div style="font-size:10.5px;color:var(--gray-text);margin-bottom:2px">Téléphone</div>
       <input class="form-control ct-tel" value="${(c.tel||'').replace(/"/g,'&quot;')}" placeholder="06..." style="font-size:12px;padding:6px 8px">
     </div>
-    <button class="icon-btn delete" onclick="_retirerContact(this)" title="Retirer" style="margin-bottom:2px">🗑️</button>
+    <button class="icon-btn delete" onclick="_retirerContact(this)" title="Retirer" style="margin-bottom:2px">${lk('trash')}</button>
   </div>`;
 }
 

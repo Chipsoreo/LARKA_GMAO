@@ -12,6 +12,13 @@
  * Larka — Module Énergie : Relevés & Factures
  * Modales de saisie/modification des relevés et factures énergétiques.
  */
+/** Nombre d'un champ, ou null s'il est vide (0 reste 0). */
+function _nbOuNull(v) {
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  const n = parseFloat(String(v).replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
 // ── Modal relevé / facture ────────────────────────────────────────────────────
 let _releveEditState = { id: null, isNew: true, compteurId: null, type: null };
 
@@ -24,6 +31,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
 
   let r = {};
   if (!isNew) {
+    await EnergieApi.prechargerReleves(compteurs.map(c => c.Id));
     for (const cpt of compteurs) {
       const releves = await EnergieApi.getRelevers(cpt.Id);
       const found   = releves.find(x => x.Id === id);
@@ -68,7 +76,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
       const a = JSON.parse(c.SousCompteurs || '[]');
       scCount = Array.isArray(a) ? a.length : 0;
     } catch(e) {}
-    const tag = scCount >= 2 ? ` ⚡x${scCount}` : '';
+    const tag = scCount >= 2 ? ` ${lk('zap')}x${scCount}` : '';
     return `<option value="${c.Id}" ${(compteurId===c.Id||(!compteurId&&compteurs[0]?.Id===c.Id))?'selected':''}>${escHtml(c.Nom||'')}${c.Site?' ('+c.Site+')':''}${tag}</option>`;
   }).join('');
 
@@ -169,8 +177,8 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
         <div class="form-group">
           <label class="form-label">Type de saisie</label>
           <select class="form-control" id="f_typeSaisie" onchange="toggleReleveFields()">
-            <option value="Releve" ${typeSaisie==='Releve'?'selected':''}>📊 Relevé manuel</option>
-            <option value="Facture" ${typeSaisie==='Facture'?'selected':''}>🧾 Facture</option>
+            <option value="Releve" ${typeSaisie==='Releve'?'selected':''}>Relevé manuel</option>
+            <option value="Facture" ${typeSaisie==='Facture'?'selected':''}>Facture</option>
           </select>
         </div>
         <div class="form-group">
@@ -183,7 +191,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
     <!-- ═══ BLOC SIMPLE : Index & Prix HT/TTC ═══ -->
     ${contratLie ? `
     <div style="padding:8px 12px;background:#eff8ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <span style="font-weight:600;color:var(--blue)">📋 Contrat : ${escHtml(contratLie.Numero||'')} — ${escHtml(contratLie.Societe||'')}</span>
+      <span style="font-weight:600;color:var(--blue)">${lk('clipboard-list')} Contrat : ${escHtml(contratLie.Numero||'')} — ${escHtml(contratLie.Societe||'')}</span>
       <span style="color:var(--gray-text)">|</span>
       <span>Option : <strong>${optionTarifaire}</strong></span>
       ${contratLie.PuissanceSouscrite ? `<span>Puissance : <strong>${escHtml(contratLie.PuissanceSouscrite||'')} kVA</strong></span>` : ''}
@@ -193,7 +201,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
     <div>
       <div class="section-label" style="display:flex;align-items:center;justify-content:space-between">
         <span>Index & Consommation</span>
-        ${dernierReleve ? `<span class="dernier-releve-badge" style="font-size:11px;color:var(--gray-text);background:#f0f9ff;padding:3px 10px;border-radius:20px">📌 Dernier : <strong>${fmtDateFR(dernierReleve.Date)}</strong> — Index : <strong>${dernierReleve.IndexFin ?? '—'}</strong> — Conso : <strong>${dernierReleve.Consommation ?? '—'} ${cfg.unite}</strong></span>` : ''}
+        ${dernierReleve ? `<span class="dernier-releve-badge" style="font-size:11px;color:var(--gray-text);background:#f0f9ff;padding:3px 10px;border-radius:20px">${lk('pin')} Dernier : <strong>${fmtDateFR(dernierReleve.Date)}</strong> — Index : <strong>${dernierReleve.IndexFin ?? '—'}</strong> — Conso : <strong>${dernierReleve.Consommation ?? '—'} ${cfg.unite}</strong></span>` : ''}
       </div>
       <div class="form-grid">
         <div class="form-group">
@@ -235,7 +243,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
 
     <!-- ═══ CARBONE ═══ -->
     <div>
-      <div class="section-label">🌿 Empreinte carbone</div>
+      <div class="section-label">${lk('leaf')} Empreinte carbone</div>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Émission CO₂e (kg)</label>
@@ -244,7 +252,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
             style="color:#16a34a;font-weight:600"
             title="Calculé automatiquement — modifiable manuellement si besoin">
           <div style="font-size:10px;color:#16a34a;margin-top:3px" id="carboneAutoInfo">
-            🔄 Auto (facteur ADEME × conso) — modifiable manuellement
+            ${lk('refresh-cw')} Auto (facteur ADEME × conso) — modifiable manuellement
           </div>
         </div>
       </div>
@@ -258,11 +266,11 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
         ${hasPlages ? `
         <button type="button" class="btn btn-ghost btn-sm" id="btnToggleAdvanced" onclick="toggleAdvancedReleve()"
           style="font-size:12px;border:1px solid #7c3aed;color:#7c3aed">
-          ⚡ ${isAdvancedMode ? 'Version simple' : 'Détail par plage'}
+          ${lk('zap')} ${isAdvancedMode ? 'Version simple' : 'Détail par plage'}
         </button>` : ''}
         <button type="button" class="btn btn-ghost btn-sm" id="btnToggleLignes" onclick="toggleLignesFacture()"
           style="font-size:12px;border:1px solid #0891b2;color:#0891b2">
-          📋 ${(r.ModeFacture === 'facture_lignes' || r.ModeFacture === 'indefini_avance') ? 'Masquer les lignes' : 'Détail des lignes'}
+          ${lk('clipboard-list')} ${(r.ModeFacture === 'facture_lignes' || r.ModeFacture === 'indefini_avance') ? 'Masquer les lignes' : 'Détail des lignes'}
         </button>
         </div>
       </div>
@@ -291,7 +299,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
         return `
       <div id="blocChauffageFacture" style="margin-top:12px">
         <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px 16px">
-          <div style="font-size:12px;font-weight:700;color:#b91c1c;margin-bottom:12px">🔥 Facturation Chauffage Urbain${pref}</div>
+          <div style="font-size:12px;font-weight:700;color:#b91c1c;margin-bottom:12px">${lk('flame')} Facturation Chauffage Urbain${pref}</div>
 
           <div class="form-grid" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr">
             <div class="form-group">
@@ -314,7 +322,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
           </div>
 
           <div style="background:white;border:1px solid #fecaca;border-radius:6px;padding:10px 12px;margin-bottom:10px">
-            <div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:8px">🔴 R1 — Combustible</div>
+            <div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:8px">${lk('circle', 'p rouge')} R1 — Combustible</div>
             <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
               <div class="form-group">
                 <label class="form-label">Prix R1 (€/MWh)</label>
@@ -335,7 +343,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
           </div>
 
           <div style="background:white;border:1px solid #fed7aa;border-radius:6px;padding:10px 12px;margin-bottom:10px">
-            <div style="font-size:11px;font-weight:700;color:#ea580c;margin-bottom:8px">🟠 R2 — Prestations & Investissement</div>
+            <div style="font-size:11px;font-weight:700;color:#ea580c;margin-bottom:8px">${lk('circle', 'p orange')} R2 — Prestations & Investissement</div>
 
             <!-- En-têtes colonnes -->
             <div style="display:grid;grid-template-columns:160px 1fr 1fr 1fr 1fr;gap:6px;align-items:center;padding:0 4px 4px;border-bottom:1px solid #fde68a;margin-bottom:6px">
@@ -390,7 +398,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
       <!-- ═══ BLOC AVANCÉ : Détail par plage tarifaire ═══ -->
       <div id="blocAdvancedReleve" style="display:${isAdvancedMode?'block':'none'};margin-top:12px">
         <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px 16px">
-          <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:10px">⚡ Détail par plage tarifaire — ${optionTarifaire}${Object.keys(plageIdxPrefill).length > 0 ? ' <span style="font-size:10px;color:var(--gray-text)">(index début pré-rempli depuis le dernier relevé)</span>' : ''}</div>
+          <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:10px">${lk('zap')} Détail par plage tarifaire — ${optionTarifaire}${Object.keys(plageIdxPrefill).length > 0 ? ' <span style="font-size:10px;color:var(--gray-text)">(index début pré-rempli depuis le dernier relevé)</span>' : ''}</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px">
             ${_getPlagesForOption(optionTarifaire).map(([key,label,col]) => {
               const pxContrat = contratPrix[key] || 0;
@@ -450,7 +458,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
           <!-- ── Charges & taxes complémentaires (hors HTA 5 plages) ── -->
           ${optionTarifaire !== 'HTA 5 plages' ? `
           <div style="margin-top:12px;border-top:1px dashed #e9d5ff;padding-top:10px">
-            <div style="font-size:10px;font-weight:700;color:#7c3aed;margin-bottom:8px">🧾 Charges & taxes complémentaires</div>
+            <div style="font-size:10px;font-weight:700;color:#7c3aed;margin-bottom:8px">${lk('receipt')} Charges & taxes complémentaires</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px">
               ${[
                 ['abo',      'Abonnement HT',           '#6366f1'],
@@ -507,7 +515,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
     </div>
 
     <div class="form-group" style="grid-column:span 2">
-      <label class="form-label">📄 Joindre la facture (PDF)</label>
+      <label class="form-label">${lk('file-text')} Joindre la facture (PDF)</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="file" id="f_facturePdf" accept="application/pdf,.pdf"
           style="font-size:12px;flex:1;padding:6px;border:1px dashed var(--gray-border);border-radius:8px;background:var(--gray-bg)">
@@ -528,6 +536,13 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
 
     const conso = parseFloat(gv('f_consommation'));
     if (!gv('f_date') || isNaN(conso)) { toast('Date et consommation obligatoires.', 'error'); return; }
+    // Un index ne baisse pas : la consommation affichée n'était alors plus recalculée
+    // (calcFromIndex s'arrête), et le relevé partait avec une consommation périmée.
+    const _idxD = _nbOuNull(gv('f_indexDebut')), _idxF = _nbOuNull(gv('f_indexFin'));
+    if (_idxD !== null && _idxF !== null && _idxF < _idxD) {
+      toast('L\'index est inférieur à l\'index précédent : erreur de saisie, ou compteur remplacé (saisissez alors l\'index de départ du nouveau compteur).', 'error');
+      return;
+    }
 
     // Build detail HTA if advanced mode
     const advancedVisible = document.getElementById('blocAdvancedReleve')?.style.display !== 'none';
@@ -609,15 +624,17 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
       compteurId: parseInt(gv('f_compteurId')),
       type: gv('f_typeSaisie'),
       date: gv('f_date'),
-      indexDebut: parseFloat(gv('f_indexDebut'))||null,
-      indexFin:   parseFloat(gv('f_indexFin'))||null,
+      // _nbOuNull et non « parseFloat(…)||null » : un index à 0 (compteur neuf) partait
+      // à vide, et le relevé suivant n'avait plus d'index précédent.
+      indexDebut: _idxD,
+      indexFin:   _idxF,
       consommation: conso,
-      montant: parseFloat(gv('f_montant'))||null,
-      montantHT: parseFloat(gv('f_montantHT'))||null,
+      montant: _nbOuNull(gv('f_montant')),
+      montantHT: _nbOuNull(gv('f_montantHT')),
       prixUnitHT: null,
-      tva: parseFloat(gv('f_tvaReleve'))||null,
-      tvaReleve: parseFloat(gv('f_tvaReleve'))||null,
-      carbone: parseFloat(gv('f_carbone'))||null,
+      tva: _nbOuNull(gv('f_tvaReleve')),
+      tvaReleve: _nbOuNull(gv('f_tvaReleve')),
+      carbone: _nbOuNull(gv('f_carbone')),
       numeroFacture: gv('f_numeroFacture'),
       periodeDebut: gv('f_periodeDebut'),
       periodeFin: gv('f_periodeFin'),
@@ -685,7 +702,7 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
         const el = document.getElementById('f_facturePdfExisting');
         if (el && pdfs.length > 0) {
           el.innerHTML = pdfs.map(d =>
-            `<a href="api/index.php?action=document_download&id=${d.Id}" download="${escHtml(d.NomFichier)}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--blue-pale);color:var(--blue);border-radius:6px;font-size:11px;text-decoration:none;margin:2px">📄 ${escHtml(d.NomFichier)}</a>`
+            `<a href="api/index.php?action=document_download&id=${d.Id}" download="${escHtml(d.NomFichier)}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--blue-pale);color:var(--blue);border-radius:6px;font-size:11px;text-decoration:none;margin:2px">${lk('file-text')} ${escHtml(d.NomFichier)}</a>`
           ).join('');
         }
       }).catch(() => {});
@@ -697,16 +714,16 @@ async function editReleve(id, compteurId, type, defaultSaisie) {
 function _getPlagesForOption(option) {
   if (option === 'HTA 5 plages') {
     return [
-      ['hphs','🌞 HPHS — Hiver HP','#b45309'],
-      ['hchs','🌙 HCHS — Hiver HC','#0369a1'],
-      ['hpbs','☀️ HPBS — Été HP','#15803d'],
-      ['hcbs','💤 HCBS — Été HC','#5b21b6'],
+      ['hphs',(lk('sun') + ' HPHS — Hiver HP'),'#b45309'],
+      ['hchs',(lk('moon') + ' HCHS — Hiver HC'),'#0369a1'],
+      ['hpbs',(lk('sun') + ' HPBS — Été HP'),'#15803d'],
+      ['hcbs',(lk('moon-star') + ' HCBS — Été HC'),'#5b21b6'],
     ];
   }
   if (['HP-HC','Tempo','EJP'].includes(option)) {
     return [
-      ['hp','🌞 Heures Pleines','#b45309'],
-      ['hc','🌙 Heures Creuses','#0369a1'],
+      ['hp',(lk('sun') + ' Heures Pleines'),'#b45309'],
+      ['hc',(lk('moon') + ' Heures Creuses'),'#0369a1'],
     ];
   }
   return [];
@@ -865,7 +882,7 @@ function toggleAdvancedReleve() {
   if (!bloc) return;
   const show = bloc.style.display === 'none';
   bloc.style.display = show ? 'block' : 'none';
-  if (btn) btn.textContent = show ? '⚡ Version simple' : '⚡ Détail par plage';
+  if (btn) btn.textContent = show ? 'Version simple' : 'Détail par plage';
   if (show) calcDetailPlages();
 }
 
@@ -1071,7 +1088,7 @@ function _updateDernierReleveInfo(dernier) {
     const badge = document.createElement('span');
     badge.className = 'dernier-releve-badge';
     badge.style.cssText = 'font-size:11px;color:var(--gray-text);background:#f0f9ff;padding:3px 10px;border-radius:20px';
-    badge.innerHTML = `📌 Dernier ${dernier.Type === 'Facture' ? '🧾 Facture' : '📊 Relevé'} : <strong>${fmtDateFR(dernier.Date)}</strong> — Index : <strong>${dernier.IndexFin ?? '—'}</strong> — Conso : <strong>${dernier.Consommation ?? '—'} ${cfg.unite}</strong>`;
+    badge.innerHTML = `${lk('pin')} Dernier ${dernier.Type === 'Facture' ? (lk('receipt') + ' Facture') : (lk('chart-column') + ' Relevé')} : <strong>${fmtDateFR(dernier.Date)}</strong> — Index : <strong>${dernier.IndexFin ?? '—'}</strong> — Conso : <strong>${dernier.Consommation ?? '—'} ${cfg.unite}</strong>`;
     badgeContainer.appendChild(badge);
   }
 }
@@ -1266,7 +1283,7 @@ async function _setupSousCompteursReleve(compteurId, existingDetail, lastDetail)
   bloc.style.display = 'block';
   bloc.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0 8px">
-      <div style="font-size:12px;font-weight:700;color:var(--gray-text)">⚡ Multi-compteurs — saisie détaillée</div>
+      <div style="font-size:12px;font-weight:700;color:var(--gray-text)">${lk('zap')} Multi-compteurs — saisie détaillée</div>
       <div style="font-size:11px;color:var(--gray-text)">Les champs Index/Conso ci-dessus sont totalisés automatiquement.</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px">${rowsHtml}</div>
@@ -1385,7 +1402,7 @@ function _updateEauEstimation(conso, contrat) {
 
   bloc.style.display = 'block';
   bloc.innerHTML = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px">'
-    + '<div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">💧 Estimation facture eau (depuis contrat)</div>'
+    + ('<div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">' + lk('droplet') + ' Estimation facture eau (depuis contrat)</div>')
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="background:#dbeafe">'
     + '<th style="padding:5px 8px;text-align:left;border-radius:4px 0 0 4px">Poste</th>'
@@ -1411,7 +1428,7 @@ function _updateEauEstimation(conso, contrat) {
     + '<td style="padding:6px 8px;text-align:right;color:#1d4ed8;border-radius:0 0 4px 0">' + fmt2(totalTTC) + '</td>'
     + '</tr>'
     + '</tbody></table>'
-    + '<div style="font-size:10px;color:var(--gray-text);margin-top:6px">⚠️ Estimation indicative — saisir le montant réel de la facture si disponible</div>'
+    + ('<div style="font-size:10px;color:var(--gray-text);margin-top:6px">' + lk('triangle-exclamation-point', 'warn') + ' Estimation indicative — saisir le montant réel de la facture si disponible</div>')
     + '</div>';
 }
 
@@ -1465,7 +1482,7 @@ function _renderBlocLignesFacture(isVisible, isIndefini, detailIndefini) {
 
   return '<div id="blocLignesFacture" style="display:' + display + ';margin-top:8px">'
     + '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px 16px">'
-    + '<div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">\ud83d\udccb D\xe9tail des lignes de la facture</div>'
+    + ('<div style="font-size:11px;font-weight:700;color:#0369a1;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">' + lk('clipboard-list') + ' D\xe9tail des lignes de la facture</div>')
     + consoFactureHtml
     // Column headers
     + '<div style="display:grid;grid-template-columns:1.6fr 0.85fr 34px 70px 1fr 24px 1fr 36px;gap:6px;padding:0 0 6px;border-bottom:1px solid #bae6fd;margin-bottom:8px">'
@@ -1484,7 +1501,7 @@ function _renderBlocLignesFacture(isVisible, isIndefini, detailIndefini) {
     + '<button type="button" onclick="addLigneFacture()" style="background:#0891b2;color:white;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;margin-top:6px">+ Ajouter une ligne</button>'
     // Totals
     + '<div style="display:grid;grid-template-columns:1fr 100px;gap:6px;margin-top:10px;padding-top:10px;border-top:2px solid #bae6fd">'
-    + '<div style="font-size:12px;font-weight:700;color:#0369a1;display:flex;align-items:center">\ud83d\udcca Total \u2014 report\xe9 dans Montant HT</div>'
+    + ('<div style="font-size:12px;font-weight:700;color:#0369a1;display:flex;align-items:center">' + lk('chart-column') + ' Total \u2014 report\xe9 dans Montant HT</div>')
     + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:6px 10px;text-align:right">'
     + '<div style="font-size:10px;color:var(--gray-text)">Total HT</div>'
     + '<div style="font-size:14px;font-weight:700;color:#15803d" id="lf_total_ht">\u2014</div>'
@@ -1502,7 +1519,7 @@ function toggleLignesFacture() {
   if (!bloc) return;
   var show = bloc.style.display === 'none';
   bloc.style.display = show ? 'block' : 'none';
-  if (btn) btn.textContent = show ? '\ud83d\udccb Masquer les lignes' : '\ud83d\udccb D\xe9tail des lignes';
+  if (btn) btn.textContent = show ? 'Masquer les lignes' : 'D\xe9tail des lignes';
   if (show) calcLignesFacture();
 }
 
@@ -1643,13 +1660,13 @@ function _majMentionCarbone(detail) {
   const el = document.getElementById('carboneAutoInfo');
   if (!el) return;
   if (!detail || !detail.mention) {
-    el.textContent = '🔄 Auto (facteur ADEME × conso) — modifiable manuellement';
+    el.textContent = 'Auto (facteur ADEME × conso) — modifiable manuellement';
     el.style.color = '#16a34a';
     el.title = detail ? ('Facteur ' + detail.anneeFacteur + ' — ' + (detail.source || '')) : '';
     return;
   }
   const alerte = detail.mention.niveau === 'alerte';
-  el.textContent = (alerte ? '⛔ ' : 'ℹ️ ') + detail.mention.texte;
+  el.textContent = (alerte ? '' : '') + detail.mention.texte;
   el.style.color = alerte ? '#dc2626' : '#d97706';
   el.title = detail.source || '';
 }
@@ -1748,4 +1765,48 @@ function recalcAdditionneur(inputEl) {
   }
 
   calcLignesFacture();
+}
+
+// ── Vérification des relevés ──────────────────────────────────────────────────
+/*
+ * « Y A-T-IL MOYEN DE VÉRIFIER ? »
+ * Un index précédent faux, une consommation qui ne colle pas aux index, un doublon
+ * d'import ne se voyaient qu'au détour d'un graphique. Le serveur relit maintenant
+ * chaque série (api/EnergieVerification.php) avec la règle d'enchaînement de ce
+ * formulaire : erreurs à corriger, et points à regarder (compteur remplacé, relevé
+ * manquant…), chacun avec un lien vers la saisie.
+ */
+async function verifierRelevesEnergie(type) {
+  const tous = !type;
+  openModal('Vérification des relevés' + (tous ? '' : ' — ' + type), `<div id="verifEnergie" style="min-height:120px">${lk('hourglass')} Relecture des relevés…</div>`,
+    null, '', 'Fermer', '760px');
+  let r;
+  try { r = await apiRequest('energie_verifier' + (tous ? '' : '&type=' + encodeURIComponent(type))); }
+  catch (e) { const z = document.getElementById('verifEnergie'); if (z) z.innerHTML = errorHtml(e.message); return; }
+  const z = document.getElementById('verifEnergie');
+  if (!z) return;
+  const edit = canEdit();
+  const badge = g => g === 'erreur'
+    ? `<span style="background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:600;white-space:nowrap">Erreur</span>`
+    : `<span style="background:#ffedd5;color:#9a3412;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:600;white-space:nowrap">À vérifier</span>`;
+  const autre = tous ? '' : `<button class="btn btn-ghost btn-sm" onclick="verifierRelevesEnergie('')">Vérifier tous les fluides</button>`;
+  let html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
+      <span>${Number(r.releves || 0).toLocaleString('fr-FR')} saisie(s) relue(s) sur ${r.nb_compteurs || 0} compteur(s) :</span>
+      ${r.erreurs ? `<strong style="color:#b91c1c">${r.erreurs} erreur(s)</strong>` : ''}
+      ${r.a_verifier ? `<strong style="color:#9a3412">${r.a_verifier} à vérifier</strong>` : ''}
+      ${!r.erreurs && !r.a_verifier ? `<strong style="color:var(--teal)">${lk('circle-check', 'ok')} rien à signaler</strong>` : ''}
+      <span style="flex:1"></span>${autre}
+    </div>`;
+  html += (r.compteurs || []).map(c => `
+    <div style="border:1px solid var(--gray-border);border-radius:8px;margin-bottom:10px;overflow:hidden">
+      <div style="background:var(--gray-bg);padding:8px 12px;font-weight:600;font-size:13px">${(ENERGIE_CONFIG[c.type] || {}).icon || ''} ${escHtml(c.nom)}${c.site ? ` <span style="font-weight:400;color:var(--gray-text)">(${escHtml(c.site)})</span>` : ''}</div>
+      ${c.problemes.map(p => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-top:1px solid var(--gray-border);font-size:12px">
+          ${badge(p.gravite)}
+          <span style="white-space:nowrap;color:var(--gray-text)">${escHtml(p.date ? new Date(p.date).toLocaleDateString('fr-FR') : '—')} · ${p.type === 'Facture' ? 'facture' : 'relevé'}</span>
+          <span style="flex:1">${escHtml(p.message)}</span>
+          ${edit ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="closeModal();editReleve(${parseInt(p.releve_id)}, ${parseInt(c.id)}, ${jsArg(c.type)})">Ouvrir</button>` : ''}
+        </div>`).join('')}
+    </div>`).join('');
+  z.innerHTML = html;
 }

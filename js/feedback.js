@@ -40,13 +40,13 @@ function openFeedbackModal() {
         <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:4px">Type de message</label>
         <div style="display:flex;gap:8px">
           <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px 12px;border:1.5px solid var(--gray-border);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="fbType" value="probleme" checked> 🐛 Problème
+            <input type="radio" name="fbType" value="probleme" checked> ${lk('bug')} Problème
           </label>
           <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px 12px;border:1.5px solid var(--gray-border);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="fbType" value="suggestion"> 💡 Suggestion
+            <input type="radio" name="fbType" value="suggestion"> ${lk('lightbulb')} Suggestion
           </label>
           <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px 12px;border:1.5px solid var(--gray-border);border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="radio" name="fbType" value="autre"> 📨 Autre
+            <input type="radio" name="fbType" value="autre"> ${lk('mail')} Autre
           </label>
         </div>
       </div>
@@ -66,7 +66,7 @@ function openFeedbackModal() {
         <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:4px">Capture d'écran (optionnelle)</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input id="fb_file" type="file" accept="image/png,image/jpeg,image/webp" onchange="_fbHandleFile(this)" style="display:none">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fb_file').click()">📎 Joindre une image</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fb_file').click()">${lk('paperclip')} Joindre une image</button>
           <span id="fb_filename" style="font-size:11px;color:var(--gray-text)"></span>
           <button id="fb_clear" type="button" class="btn btn-secondary btn-sm" onclick="_fbClearFile()" style="display:none">✕</button>
         </div>
@@ -76,7 +76,7 @@ function openFeedbackModal() {
       <div id="fb_status" style="font-size:12px"></div>
     </div>
   `;
-  openModal('💬 Un problème ? Une suggestion ?', html, _sendFeedback, 'Envoyer', 'Annuler', '600px');
+  openModal('Un problème ? Une suggestion ?', html, _sendFeedback, 'Envoyer', 'Annuler', '600px');
 }
 
 function _fbHandleFile(input) {
@@ -118,10 +118,10 @@ async function _sendFeedback() {
   const message = (document.getElementById('fb_message')?.value || '').trim();
   const status = document.getElementById('fb_status');
   if (!message) {
-    if (status) status.innerHTML = '<span style="color:#e74c3c">⚠️ Veuillez écrire un message.</span>';
+    if (status) status.innerHTML = ('<span style="color:#e74c3c">' + lk('triangle-exclamation-point', 'warn') + ' Veuillez écrire un message.</span>');
     return false; // empêcher la fermeture
   }
-  if (status) status.innerHTML = '<span style="color:var(--gray-text)">⏳ Envoi en cours…</span>';
+  if (status) status.innerHTML = ('<span style="color:var(--gray-text)">' + lk('hourglass') + ' Envoi en cours…</span>');
 
   const body = {
     type,
@@ -141,7 +141,7 @@ async function _sendFeedback() {
       toast('Merci ! Votre message a bien été envoyé.', 'success');
     }
   } catch (e) {
-    if (status) status.innerHTML = '<span style="color:#e74c3c">❌ ' + (e.message || 'Erreur d\'envoi') + '</span>';
+    if (status) status.innerHTML = ('<span style="color:#e74c3c">' + lk('circle-x', 'ko') + ' ') + (e.message || 'Erreur d\'envoi') + '</span>';
     return false;
   }
 }

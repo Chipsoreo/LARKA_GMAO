@@ -94,7 +94,7 @@ async function editCompteur(id, typeForce) {
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--blue)">
         <input type="checkbox" id="f_multi" ${isMulti?'checked':''}
           onchange="toggleSousCompteursCfg()" style="width:18px;height:18px;accent-color:var(--blue)">
-        🔌 Plusieurs compteurs (multi-compteur)
+        ${lk('plug')} Plusieurs compteurs (multi-compteur)
       </label>
       <div style="font-size:11px;color:var(--gray-text);margin-top:4px">
         Activez si 1 locataire / bâtiment a plusieurs numéros de compteurs (sous-compteurs).
@@ -115,9 +115,9 @@ async function editCompteur(id, typeForce) {
 
   <!-- ═══ CONFIGURATION CHAUFFAGE (si type = Chauffage) ═══ -->
   <div id="blocChauffageTED" style="display:${type==='Chauffage'?'block':'none'};margin-top:16px;border-top:1px solid var(--gray-border);padding-top:16px">
-    <div style="font-size:13px;font-weight:700;color:#ef4444;margin-bottom:10px">🔥 Chauffage Urbain</div>
+    <div style="font-size:13px;font-weight:700;color:#ef4444;margin-bottom:10px">${lk('flame')} Chauffage Urbain</div>
     <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#991b1b">
-      ℹ️ Les prix R1 et R2 étant révisés chaque mois, ils sont saisis directement à la saisie de chaque facture.
+      ${lk('info')} Les prix R1 et R2 étant révisés chaque mois, ils sont saisis directement à la saisie de chaque facture.
       Indiquez ici uniquement la <strong>puissance souscrite</strong>, la <strong>TVA</strong> et le <strong>réseau de chaleur</strong>.
     </div>
     <div class="form-grid">
@@ -134,7 +134,7 @@ async function editCompteur(id, typeForce) {
     </div>
 
     <div style="margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
-      <div style="font-size:12px;font-weight:700;color:#16a34a;margin-bottom:8px">🌿 Réseau de chaleur — Facteur CO₂</div>
+      <div style="font-size:12px;font-weight:700;color:#16a34a;margin-bottom:8px">${lk('leaf')} Réseau de chaleur — Facteur CO₂</div>
       <div style="font-size:11px;color:#166534;margin-bottom:10px">
         Chaque réseau de chaleur a son propre contenu CO₂ (arrêté DPE). Recherchez votre réseau pour utiliser la bonne valeur.
       </div>
@@ -146,7 +146,7 @@ async function editCompteur(id, typeForce) {
               placeholder="Nom du réseau (ex: CPCU Paris)" style="flex:1">
             <button type="button" class="btn btn-sm" onclick="rechercherReseauChaleur()"
               style="background:#16a34a;color:white;border:none;font-size:11px;white-space:nowrap">
-              🔍 Chercher
+              ${lk('search')} Chercher
             </button>
           </div>
         </div>
@@ -175,13 +175,13 @@ async function editCompteur(id, typeForce) {
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--blue)">
         <input type="checkbox" id="f_repartitionActive" ${hasRepart?'checked':''}
           onchange="toggleRepartitionPresta()" style="width:18px;height:18px;accent-color:var(--blue)">
-        💰 Répartir la facture entre plusieurs prestataires
+        ${lk('wallet')} Répartir la facture entre plusieurs prestataires
       </label>
     </div>
 
     <div id="blocRepartition" style="display:${hasRepart?'block':'none'}">
       <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e">
-        ⚠️ Le total des pourcentages doit faire <strong>100%</strong>. Chaque facture sera automatiquement divisée selon cette répartition.
+        ${lk('triangle-exclamation-point', 'warn')} Le total des pourcentages doit faire <strong>100%</strong>. Chaque facture sera automatiquement divisée selon cette répartition.
       </div>
 
       <div id="repartitionLignes" style="display:flex;flex-direction:column;gap:8px">
@@ -369,7 +369,7 @@ function addRepartitionLigne(data) {
     </div>
     <div style="flex:0 0 auto;padding-top:14px">
       <button type="button" class="icon-btn delete" onclick="removeRepartitionLigne(this)" title="Supprimer"
-        style="font-size:14px;padding:4px">🗑️</button>
+        style="font-size:14px;padding:4px">${lk('trash')}</button>
     </div>
   `;
   container.appendChild(ligne);
@@ -410,13 +410,13 @@ function updateRepartitionTotal() {
   }
   if (elStatus) {
     if (Math.abs(total - 100) < 0.1) {
-      elStatus.textContent = '✅';
+      elStatus.textContent = '';
       elStatus.title = 'Total = 100%';
     } else if (total < 100) {
-      elStatus.textContent = '⚠️';
+      elStatus.textContent = '';
       elStatus.title = `Il manque ${(100 - total).toFixed(1)}%`;
     } else {
-      elStatus.textContent = '❌';
+      elStatus.textContent = '';
       elStatus.title = `Excès de ${(total - 100).toFixed(1)}%`;
     }
   }
@@ -478,7 +478,7 @@ function addSousCompteurLigne(data) {
       <input class="form-control souscpt-nom" value="${escHtml(nom)}" placeholder="Ex: Cuisine" style="font-size:12px">
     </div>
     <div style="flex:0 0 auto;padding-top:14px">
-      <button type="button" class="icon-btn delete" onclick="removeSousCompteurLigne(this)" title="Supprimer" style="font-size:14px;padding:4px">🗑️</button>
+      <button type="button" class="icon-btn delete" onclick="removeSousCompteurLigne(this)" title="Supprimer" style="font-size:14px;padding:4px">${lk('trash')}</button>
     </div>
   `;
   cont.appendChild(ligne);
@@ -619,7 +619,7 @@ function _selectReseau(r) {
   }
   var co2Val = r.co2_acv || r.co2 || '?';
   previewEl.innerHTML = '<div style="padding:8px 12px;background:#dcfce7;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#166534;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:16px">✅</span>' +
+    ('<span style="font-size:16px">' + lk('circle-check', 'ok') + '</span>') +
     '<div><strong>' + (r.nom || r.id_reseau) + '</strong> — ' + (r.commune || '') +
     '<br>CO₂ ACV : <strong>' + co2Val + ' gCO₂/kWh</strong> → <strong>' + (co2Val / 1000).toFixed(4) + ' kgCO₂/kWh</strong>' +
     (r.taux_enrr !== null ? ' · EnR&R : ' + r.taux_enrr + '%' : '') +

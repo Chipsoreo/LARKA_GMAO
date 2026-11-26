@@ -55,8 +55,14 @@ final class ExtCapacites
      *   1.1  domaine « plans » (lecture) + ui.ancrage + ancrages
      *   1.2  Security API : requêtes structurées, tables privées.
      *        RETRAIT de donnees.sql_lecture — le SQL brut n'existe plus.
+     *   1.3  dossiers de fichiers, import, retouches de l'interface.
+     *   1.4  connectivité des bâtiments (Larka Connect) : liens vers les points,
+     *        les équipements raccordés et les bâtiments ; champ « mesure » ;
+     *        ancrages connect.supervision et connect.point ; capacité
+     *        connect.alarmes (registre alimenté par les alarmes techniques).
+     *        Larka reste en V3.0.0 : seule la révision de l'API bouge.
      */
-    public const VERSION_API = '1.3';
+    public const VERSION_API = '1.4';
 
     public const RISQUE_FAIBLE   = 'faible';
     public const RISQUE_MOYEN    = 'moyen';
@@ -106,6 +112,31 @@ final class ExtCapacites
                             'lecture_seule' => true],
         'listes'        => ['libelle' => 'Valeurs de listes', 'nominatif' => false,
                             'lecture_seule' => true],
+
+        // ── Connectivité des bâtiments (Larka Connect), API 1.4 ──────────
+        //
+        // Ces trois domaines ne sont PAS des tables ouvertes : ils sont servis
+        // par le cœur (ExtConnectivite) avec des projections FIXES — nom,
+        // unité, dernière valeur, état. Les tables de Larka Connect portent des
+        // secrets chiffrés, des adresses d'équipements et des jetons de PC
+        // releveurs : aucune ligne n'en sort autrement que par ces projections.
+        'points_connect'     => ['libelle' => 'Larka Connect : points et mesures',
+                                 'nominatif' => false, 'lecture_seule' => true,
+                                 'depuis' => '1.4',
+                                 'detail' => 'Nom, unité, dernière valeur, état et statistiques '
+                                           . 'des points suivis (sondes, compteurs, consignes). '
+                                           . 'Ni adresse d\'équipement, ni identifiant, ni secret.'],
+        'connexions_connect' => ['libelle' => 'Larka Connect : équipements raccordés',
+                                 'nominatif' => false, 'lecture_seule' => true,
+                                 'depuis' => '1.4',
+                                 'detail' => 'Nom, protocole, bâtiment et état de chaque connexion '
+                                           . '(automate, passerelle, borne). Jamais son adresse '
+                                           . 'réseau ni ses identifiants.'],
+        'batiments'          => ['libelle' => 'Bâtiments des plans',
+                                 'nominatif' => false, 'lecture_seule' => true,
+                                 'depuis' => '1.4',
+                                 'detail' => 'Nom des bâtiments, et pour Larka Connect le nombre '
+                                           . 'd\'alarmes actives et de connexions en défaut.'],
     ];
 
     /** Capacités hors domaines métier. */
@@ -120,7 +151,7 @@ final class ExtCapacites
             'libelle' => 'Ajouter des boutons dans les pages existantes',
             'detail'  => 'L\'extension s\'insère dans des emplacements prévus par Larka '
                        . '(barre d\'outils des plans, fiche équipement…). '
-                       . '⚠️ Contrairement à sa page, ce code s\'exécute DANS la page de Larka, '
+                       . 'Contrairement à sa page, ce code s\'exécute DANS la page de Larka, '
                        . 'sans isolement : il y a accès au contenu affiché et à la session de '
                        . 'l\'utilisateur. À n\'accorder qu\'à un module dont vous connaissez '
                        . 'l\'auteur.',
@@ -148,10 +179,29 @@ final class ExtCapacites
             'libelle' => 'Masquer ou renommer des entrées de menu',
             'detail'  => 'Le module adapte le menu : masquer un écran inutilisé, le '
                        . 'renommer, ou le faire pointer vers l\'un des siens. '
-                       . '⚠️ C\'est la seule permission qui RETIRE quelque chose de '
+                       . 'C\'est la seule permission qui RETIRE quelque chose de '
                        . 'l\'interface. Le masquage est visuel : l\'écran reste joignable '
                        . 'et les droits sont inchangés. Le journal, les extensions, la '
                        . 'configuration et les comptes ne sont jamais retouchables.',
+            'risque'  => self::RISQUE_MOYEN,
+        ],
+        /**
+         * Le module reçoit les alarmes techniques de Larka Connect.
+         *
+         * C'est LARKA qui écrit, dans la table du module, selon une
+         * correspondance déclarée et vérifiée à l'installation. Le module ne
+         * lit pas la table des alarmes, ne peut ni acquitter ni modifier une
+         * alarme, et ne reçoit que les attributs d'un catalogue fermé (point,
+         * gravité, message, valeur, début, fin…). Aucun nom de personne : qui a
+         * acquitté n'en fait pas partie.
+         */
+        'connect.alarmes' => [
+            'depuis'  => '1.4',
+            'libelle' => 'Recevoir les alarmes techniques des bâtiments',
+            'detail'  => 'Larka inscrit lui-même chaque alarme technique de Larka Connect '
+                       . '(puis sa fin) dans un registre du module, selon un filtre et une '
+                       . 'correspondance de champs déclarés. Le module ne peut ni acquitter, '
+                       . 'ni modifier une alarme, ni écrire vers un équipement.',
             'risque'  => self::RISQUE_MOYEN,
         ],
         'donnees.table_privee' => [
@@ -203,7 +253,7 @@ final class ExtCapacites
                 'libelle' => 'Lire : ' . $d['libelle'],
                 'detail'  => $d['nominatif']
                     ? 'Contient des données personnelles (noms, contacts, affectations). Sortie RGPD à documenter.'
-                    : 'Consultation seule, aucune modification possible avec cette capacité.',
+                    : ($d['detail'] ?? 'Consultation seule, aucune modification possible avec cette capacité.'),
                 'risque'  => $d['nominatif'] ? self::RISQUE_ELEVE : self::RISQUE_MOYEN,
             ];
             // Certains domaines n'ont pas d'accesseur d'écriture dans le

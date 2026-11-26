@@ -210,7 +210,7 @@ if (!function_exists('_annuaireAppToken')) {
 if ($action === 'annuaire_presence') {
     $user = _annuaire_guard($db);
     if ($method !== 'POST') json_error('Méthode non supportée', 405);
-    // ⚠️ FIX DIAGNOSTIC : chaque échec renvoyait « indisponible » sans la moindre
+    // FIX DIAGNOSTIC : chaque échec renvoyait « indisponible » sans la moindre
     // trace ni distinction — quatre causes très différentes, un seul message à
     // l'écran. On journalise la cause exacte ET on la renvoie dans « reason »,
     // que le client affiche en infobulle.
@@ -223,7 +223,7 @@ if ($action === 'annuaire_presence') {
         json_ok(['enabled' => false, 'available' => false, 'reason' => 'no_helper', 'presences' => []]);
     }
 
-    // ⚠️ FIX : contrôler le token AVANT d'appeler ensureMsToken(). Celle-ci ne
+    // FIX : contrôler le token AVANT d'appeler ensureMsToken(). Celle-ci ne
     // lève PAS d'exception quand la session n'a pas de token : elle appelle
     // json_error(401) qui TERMINE la requête. Le try/catch ci-dessous ne se
     // déclenchait donc jamais, le front avalait le 401 en silence, et aucun log

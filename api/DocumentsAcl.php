@@ -9,7 +9,7 @@
 /**
  * Larka — Droits sur les documents joints (fichiers stockés et liens SharePoint).
  *
- * ⚠️ LES DOCUMENTS N'AVAIENT AUCUN CONTRÔLE D'ACCÈS PAR ENTITÉ.
+ * LES DOCUMENTS N'AVAIENT AUCUN CONTRÔLE D'ACCÈS PAR ENTITÉ.
  *
  * Les routes « documents », « document_download », « document_preview » et
  * celles des raccourcis SharePoint n'exigeaient qu'une session. N'importe quel
@@ -48,6 +48,8 @@ function doc_modules_de(string $type): ?array {
         'Stock'          => ['stock'],
         'Contrat'        => ['contrats'],
         'Intervention'   => ['interventions'],
+        // Plan préventif / de contrôle réglementaire : lu comme ses passages.
+        'PlanMaintenance' => ['interventions'],
         'ReleverEnergie' => ['energie', 'carbone'],
     ][$type] ?? null;
 }

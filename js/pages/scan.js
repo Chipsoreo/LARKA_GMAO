@@ -40,7 +40,7 @@ async function renderScan() {
   c.innerHTML = `
     <div id="scanPage" style="display:flex;flex-direction:column;align-items:center;gap:20px;padding:20px 12px;max-width:480px;margin:0 auto;">
       <div style="text-align:center;">
-        <div style="font-size:2.5rem;margin-bottom:6px;">📷</div>
+        <div style="font-size:2.5rem;margin-bottom:6px;">${lk('camera')}</div>
         <p style="margin:0;color:var(--text-muted);font-size:0.95rem;">
           Pointez la caméra vers un <strong>QR code</strong> ou un <strong>code-barre</strong><br>
           associé à un bien ou équipement.
@@ -75,7 +75,7 @@ async function startScan() {
   if (!videoEl || !statusEl) return;
 
   if (typeof ZXingBrowser === 'undefined') {
-    statusEl.textContent = '❌ Bibliothèque ZXing manquante (zxing-browser.min.js).';
+    statusEl.textContent = 'Bibliothèque ZXing manquante (zxing-browser.min.js).';
     return;
   }
 
@@ -109,7 +109,7 @@ async function startScan() {
 
         ScanState.lastCode = code;
         ScanState.lastCodeTime = now;
-        statusEl.textContent = '✅ Code détecté !';
+        statusEl.textContent = 'Code détecté !';
         stopScan();
         onCodeDetecte(code);
       }
@@ -119,9 +119,9 @@ async function startScan() {
   } catch(e) {
     ScanState.running = false;
     if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-      statusEl.textContent = '⛔ Accès caméra refusé. Autorisez dans les paramètres.';
+      statusEl.textContent = 'Accès caméra refusé. Autorisez dans les paramètres.';
     } else {
-      statusEl.textContent = '📵 Caméra indisponible. Utilisez la saisie manuelle.';
+      statusEl.textContent = 'Caméra indisponible. Utilisez la saisie manuelle.';
       console.warn('Scan error:', e);
     }
   }
@@ -167,7 +167,7 @@ async function onCodeDetecte(code) {
 
   resultEl.innerHTML = `
     <div style="text-align:center;padding:24px 0;color:var(--text-muted);">
-      <div style="font-size:1.5rem;">🔍</div>
+      <div style="font-size:1.5rem;">${lk('search')}</div>
       <div>Recherche de <strong>${escHtml(code)}</strong>…</div>
     </div>`;
 
@@ -203,7 +203,7 @@ function afficherResultatBien(code, b) {
   document.getElementById('scanResult').innerHTML = `
     <div style="background:var(--card-bg);border:2px solid var(--success,#22c55e);border-radius:14px;padding:18px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-        <span style="font-size:1.6rem;">🏢</span>
+        <span style="font-size:1.6rem;">${lk('building-complex')}</span>
         <div>
           <div style="font-weight:700;font-size:1.05rem;">Bien trouvé</div>
           <div style="font-size:0.82rem;color:var(--text-muted);">Code scanné : ${escHtml(code)}</div>
@@ -211,9 +211,9 @@ function afficherResultatBien(code, b) {
       </div>
       ${ficheInfoHtml([['N° Bien',b.Numero],['Famille',b.Famille],['Sous-famille',b.SousFamille],['Statut',b.Statut],['État',b.Etat],['Bâtiment',b.Batiment],['Affecté à',b.NomPrenom],['N° Série',b.NumeroSerie]])}
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;">
-        <button class="btn btn-primary" onclick="navigate('biens')">📋 Voir tous les biens</button>
-        ${canEdit() ? `<button class="btn btn-secondary" onclick="stopScan();editBien(${b.Id})">✏️ Modifier</button>` : ''}
-        <button class="btn btn-secondary" onclick="relancerScan()">📷 Scanner un autre</button>
+        <button class="btn btn-primary" onclick="navigate('biens')">${lk('clipboard-list')} Voir tous les biens</button>
+        ${canEdit() ? `<button class="btn btn-secondary" onclick="stopScan();editBien(${b.Id})">${lk('pencil')} Modifier</button>` : ''}
+        <button class="btn btn-secondary" onclick="relancerScan()">${lk('camera')} Scanner un autre</button>
       </div>
     </div>`;
 }
@@ -222,7 +222,7 @@ function afficherResultatEquip(code, e) {
   document.getElementById('scanResult').innerHTML = `
     <div style="background:var(--card-bg);border:2px solid var(--success,#22c55e);border-radius:14px;padding:18px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-        <span style="font-size:1.6rem;">⚙️</span>
+        <span style="font-size:1.6rem;">${lk('settings')}</span>
         <div>
           <div style="font-weight:700;font-size:1.05rem;">Équipement trouvé</div>
           <div style="font-size:0.82rem;color:var(--text-muted);">Code scanné : ${escHtml(code)}</div>
@@ -230,9 +230,9 @@ function afficherResultatEquip(code, e) {
       </div>
       ${ficheInfoHtml([['N° Équip.',e.Numero],['Famille',e.Famille],['Sous-famille',e.SousFamille],['Statut',e.Statut],['État',e.Etat],['Bâtiment',e.Batiment],['Affecté à',e.NomPrenom],['N° Série',e.NumeroSerie]])}
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;">
-        <button class="btn btn-primary" onclick="navigate('equipements')">📋 Voir tous les équipements</button>
-        ${canEdit() ? `<button class="btn btn-secondary" onclick="stopScan();editEquip(${e.Id})">✏️ Modifier</button>` : ''}
-        <button class="btn btn-secondary" onclick="relancerScan()">📷 Scanner un autre</button>
+        <button class="btn btn-primary" onclick="navigate('equipements')">${lk('clipboard-list')} Voir tous les équipements</button>
+        ${canEdit() ? `<button class="btn btn-secondary" onclick="stopScan();editEquip(${e.Id})">${lk('pencil')} Modifier</button>` : ''}
+        <button class="btn btn-secondary" onclick="relancerScan()">${lk('camera')} Scanner un autre</button>
       </div>
     </div>`;
 }
@@ -241,7 +241,7 @@ function afficherCodeInconnu(code) {
   document.getElementById('scanResult').innerHTML = `
     <div style="background:var(--card-bg);border:2px solid var(--warning,#f59e0b);border-radius:14px;padding:18px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-        <span style="font-size:1.6rem;">❓</span>
+        <span style="font-size:1.6rem;">${lk('circle-question-mark')}</span>
         <div>
           <div style="font-weight:700;font-size:1.05rem;">Code non reconnu</div>
           <div style="font-size:0.85rem;color:var(--text-muted);"><strong>${escHtml(code)}</strong> n'existe ni dans les biens ni dans les équipements.</div>
@@ -250,11 +250,11 @@ function afficherCodeInconnu(code) {
       ${canEdit() ? `
       <p style="font-size:0.9rem;margin:0 0 12px;">Voulez-vous créer une nouvelle fiche ?</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <button class="btn btn-primary" onclick="creerBienAvecCode(${jsArg(code)})">🏢 Créer un bien</button>
-        <button class="btn btn-secondary" onclick="creerEquipAvecCode(${jsArg(code)})">⚙️ Créer un équipement</button>
-        <button class="btn btn-secondary" onclick="relancerScan()">📷 Scanner un autre</button>
+        <button class="btn btn-primary" onclick="creerBienAvecCode(${jsArg(code)})">${lk('building-complex')} Créer un bien</button>
+        <button class="btn btn-secondary" onclick="creerEquipAvecCode(${jsArg(code)})">${lk('settings')} Créer un équipement</button>
+        <button class="btn btn-secondary" onclick="relancerScan()">${lk('camera')} Scanner un autre</button>
       </div>` : `
-      <button class="btn btn-secondary" onclick="relancerScan()">📷 Scanner un autre</button>`}
+      <button class="btn btn-secondary" onclick="relancerScan()">${lk('camera')} Scanner un autre</button>`}
     </div>`;
 }
 

@@ -1,0 +1,14 @@
+App mobile Larka proposée par ce serveur
+=======================================
+
+« npm run apk » (dans le dossier de l'app mobile, à côté de ce serveur) dépose ici :
+  larka.apk   l'app Android signée
+  larka.json  sa version
+
+Le serveur la propose alors :
+  - dans Mon profil → Mes appareils mobiles (QR code « Installer l'app ») ;
+  - aux appareils déjà reliés, qui affichent « Mise à jour de l'app disponible »
+    quand la version d'ici est plus récente que la leur.
+
+Si l'app est construite ailleurs, copiez ici ces deux fichiers (mobile/dist/larka.apk et
+mobile/dist/larka.json).

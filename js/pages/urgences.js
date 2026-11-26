@@ -51,13 +51,13 @@
 // ─── Catégories prédéfinies (servent de défaut si rien n'est configuré) ─────
 // Le gestionnaire peut les modifier, les désactiver ou en ajouter d'autres.
 const URGENCES_CATEGORIES_DEFAUT = [
-  { id:'incendie',    icon:'🔥', titre:'Incendie / fumée',         description:'Feu, fumée suspecte, déclenchement alarme incendie', contacts:[] },
-  { id:'medical',     icon:'🚑', titre:'Urgence médicale',         description:'Blessure, malaise, accident corporel',                contacts:[] },
-  { id:'intrusion',   icon:'🚔', titre:'Intrusion / sécurité',     description:'Personne suspecte, vol, agression, violence',         contacts:[] },
-  { id:'plomberie',   icon:'💧', titre:'Plomberie / fuite d\'eau', description:'Fuite, dégât des eaux, canalisation bouchée',         contacts:[] },
-  { id:'electricite', icon:'⚡', titre:'Électricité / panne',       description:'Coupure générale, court-circuit, étincelles',         contacts:[] },
-  { id:'gaz',         icon:'🟡', titre:'Fuite de gaz',             description:'Odeur de gaz, sifflement suspect',                    contacts:[] },
-  { id:'autre',       icon:'❓', titre:'Autre problème',            description:'Cas non listés ci-dessus',                            contacts:[] },
+  { id:'incendie',    icon:'flame', titre:'Incendie / fumée',         description:'Feu, fumée suspecte, déclenchement alarme incendie', contacts:[] },
+  { id:'medical',     icon:'ambulance', titre:'Urgence médicale',         description:'Blessure, malaise, accident corporel',                contacts:[] },
+  { id:'intrusion',   icon:'shield-exclamation-point', titre:'Intrusion / sécurité',     description:'Personne suspecte, vol, agression, violence',         contacts:[] },
+  { id:'plomberie',   icon:'droplet', titre:'Plomberie / fuite d\'eau', description:'Fuite, dégât des eaux, canalisation bouchée',         contacts:[] },
+  { id:'electricite', icon:'zap', titre:'Électricité / panne',       description:'Coupure générale, court-circuit, étincelles',         contacts:[] },
+  { id:'gaz',         icon:'wind', titre:'Fuite de gaz',             description:'Odeur de gaz, sifflement suspect',                    contacts:[] },
+  { id:'autre',       icon:'circle-question-mark', titre:'Autre problème',            description:'Cas non listés ci-dessus',                            contacts:[] },
 ];
 
 // Numéros officiels français — affichés en bandeau permanent
@@ -108,10 +108,10 @@ function _urgSetTelApp(app) {
 }
 
 const URG_TEL_APPS = {
-  tel:      { label: '📞 Appel classique',      icon: '📞', prefix: num => 'tel:' + num },
-  teams:    { label: '🟣 Microsoft Teams',       icon: '🟣', prefix: num => 'https://teams.microsoft.com/l/call/0/0?users=4:' + encodeURIComponent(num) },
-  skype:    { label: '🔵 Skype',                 icon: '🔵', prefix: num => 'skype:' + num + '?call' },
-  whatsapp: { label: '🟢 WhatsApp',              icon: '🟢', prefix: num => 'https://wa.me/' + num.replace(/^\+/, '') },
+  tel:      { label: 'Appel classique',      icon: lk('phone'), prefix: num => 'tel:' + num },
+  teams:    { label: 'Microsoft Teams',       icon: lk('circle', 'p violet'), prefix: num => 'https://teams.microsoft.com/l/call/0/0?users=4:' + encodeURIComponent(num) },
+  skype:    { label: 'Skype',                 icon: lk('circle', 'p bleu'), prefix: num => 'skype:' + num + '?call' },
+  whatsapp: { label: 'WhatsApp',              icon: lk('circle', 'p vert'), prefix: num => 'https://wa.me/' + num.replace(/^\+/, '') },
 };
 
 function _urgBuildCallHref(tel) {
@@ -143,7 +143,7 @@ function _urgShowTelAppChooser(event) {
     ${Object.entries(URG_TEL_APPS).map(([key, app]) => `
       <a href="#" class="urg-tel-popup-option ${key === current ? 'active' : ''}"
          data-app="${key}" data-tel="${_urgEscape(tel)}">
-        ${app.label}
+        ${app.icon} ${app.label}
         ${key === current ? '<span style="margin-left:auto;font-size:11px;opacity:.6">✓ par défaut</span>' : ''}
       </a>
     `).join('')}
@@ -211,7 +211,7 @@ function _urgRefreshTelButtons() {
   // Mettre à jour l'indicateur de préférence
   const prefIndicator = document.getElementById('urg-tel-pref-indicator');
   if (prefIndicator && appInfo) {
-    prefIndicator.innerHTML = `📱 Les appels s'ouvrent avec <strong>${appInfo.label}</strong> — <a onclick="document.querySelector('.urg-btn-tel-choose')?.click()">modifier</a>`;
+    prefIndicator.innerHTML = `${lk('smartphone')} Les appels s'ouvrent avec <strong>${appInfo.icon} ${appInfo.label}</strong> — <a onclick="document.querySelector('.urg-btn-tel-choose')?.click()">modifier</a>`;
   }
 }
 
@@ -525,7 +525,7 @@ async function renderUrgences() {
 
     <div class="urg-wrap">
       <div class="urg-banner">
-        <div class="urg-banner-title">📞 Numéros d'urgence officiels</div>
+        <div class="urg-banner-title">${lk('phone')} Numéros d'urgence officiels</div>
         <div class="urg-officiels">
           ${URGENCES_OFFICIELLES.map(o => `
             <a href="tel:${o.num}" class="urg-officiel-btn">
@@ -537,14 +537,14 @@ async function renderUrgences() {
       </div>
 
       <div class="urg-intro">
-        ℹ️ Cette page liste les contacts à joindre selon le type de problème rencontré sur le site.
+        ${lk('info')} Cette page liste les contacts à joindre selon le type de problème rencontré sur le site.
         Pour toute urgence vitale, composez d'abord les numéros officiels ci-dessus.
         <div class="urg-tel-pref" id="urg-tel-pref-indicator"></div>
       </div>
 
       <div id="urg-preview-slot"></div>
 
-      <div id="urg-content"><div style="text-align:center;padding:30px;color:var(--gray-text)">⏳ Chargement…</div></div>
+      <div id="urg-content"><div style="text-align:center;padding:30px;color:var(--gray-text)">${lk('hourglass')} Chargement…</div></div>
     </div>
   `;
 
@@ -553,7 +553,7 @@ async function renderUrgences() {
   if (prefIndicator) {
     const appKey = _urgGetTelApp();
     const appInfo = URG_TEL_APPS[appKey] || URG_TEL_APPS.tel;
-    prefIndicator.innerHTML = `📱 Les appels s'ouvrent avec <strong>${appInfo.label}</strong> — <a onclick="document.querySelector('.urg-btn-tel-choose')?.click()">modifier</a>`;
+    prefIndicator.innerHTML = `${lk('smartphone')} Les appels s'ouvrent avec <strong>${appInfo.icon} ${appInfo.label}</strong> — <a onclick="document.querySelector('.urg-btn-tel-choose')?.click()">modifier</a>`;
   }
 
   // Bandeau "aperçu" pour Gestionnaire/Admin quand le module est désactivé
@@ -564,13 +564,13 @@ async function renderUrgences() {
     if (isManager && !App._urgencesActif) {
       previewSlot.innerHTML = `
         <div class="urg-preview-banner">
-          <span style="font-size:20px">👁️</span>
+          <span style="font-size:20px">${lk('eye')}</span>
           <div>
             <strong>Mode aperçu</strong> — Cet onglet est actuellement réservé aux
             Gestionnaires et Admins ; les autres rôles ne le voient pas.
             Vous y accédez car vous êtes ${role}. Pour l'ouvrir à tout le monde, allez dans
             <a href="#" onclick="navigate('configuration');setTimeout(()=>switchConfigTab&&switchConfigTab('urgences'),300);return false"
-               style="color:var(--blue);text-decoration:underline">Configuration → 🚨 Urgences</a>.
+               style="color:var(--blue);text-decoration:underline">Configuration → ${lk('siren')} Urgences</a>.
           </div>
         </div>`;
     }
@@ -588,9 +588,9 @@ async function renderUrgences() {
   if (visibles.length === 0) {
     slot.innerHTML = `
       <div class="urg-no-config">
-        <div class="urg-no-config-ico">🚧</div>
+        <div class="urg-no-config-ico">${lk('construction')}</div>
         <div style="font-weight:600;margin-bottom:6px">Procédures d'urgence non encore configurées</div>
-        <div style="font-size:12px">Demandez à un gestionnaire de renseigner les contacts dans Configuration → 🚨 Urgences.</div>
+        <div style="font-size:12px">Demandez à un gestionnaire de renseigner les contacts dans Configuration → ${lk('siren')} Urgences.</div>
       </div>`;
     return;
   }
@@ -613,7 +613,7 @@ let _urgVisibles = [];
  * Rend une carte catégorie avec ses contacts.
  */
 function _urgRenderCard(cat, catIdx) {
-  const icon  = _urgEscape(cat.icon  || '❓');
+  const icon  = lkValeur(cat.icon, 'circle-question-mark');      // nom Lucide (ou emoji d'avant 3.0.0)
   const titre = _urgEscape(cat.titre || 'Sans titre');
   const desc  = _urgEscape(cat.description || '');
   const contacts = Array.isArray(cat.contacts) ? cat.contacts : [];
@@ -632,7 +632,7 @@ function _urgRenderCard(cat, catIdx) {
           <div class="urg-card-titre">${titre}</div>
           ${desc ? `<div class="urg-card-desc">${desc}</div>` : ''}
         </div>
-        ${reserve ? '<span class="urg-badge-resto" title="Cette procédure n\'est visible que par les Gestionnaires et Admins">🔒 Réservé</span>' : ''}
+        ${reserve ? ('<span class="urg-badge-resto" title="Cette procédure n\'est visible que par les Gestionnaires et Admins">' + lk('lock') + ' Réservé</span>') : ''}
       </div>
 
       ${_urgRenderProcedure(cat)}
@@ -672,7 +672,7 @@ function _urgRenderProcedure(cat) {
 
   return `
     <div class="urg-procedure">
-      <div class="urg-procedure-titre"><span>📋</span> Procédure à suivre</div>
+      <div class="urg-procedure-titre"><span>${lk('clipboard-list')}</span> Procédure à suivre</div>
       ${corps}
     </div>
   `;
@@ -716,7 +716,7 @@ function _urgRenderMedias(cat, catIdx) {
 
   return `
     <div class="urg-medias">
-      <div class="urg-medias-titre">🖼️ ${libelle}</div>
+      <div class="urg-medias-titre">${lk('image')} ${libelle}</div>
       <div class="urg-medias-grid">${vignettes}</div>
     </div>
   `;
@@ -744,7 +744,7 @@ function _urgRenderContact(contact) {
       <div class="urg-tel-group">
         <a href="${callHref || '#'}" class="urg-btn-tel" data-tel="${telDisp}"
            target="_blank" rel="noopener"
-           title="Appeler via ${_urgEscape(appInfo.label.replace(/^[^\s]+\s/, ''))}">
+           title="Appeler via ${_urgEscape(appInfo.label)}">
           ${appInfo.icon} <span class="urg-tel-label">${telDisp}</span>
         </a>
         <button class="urg-btn-tel-choose" onclick="_urgShowTelAppChooser(event)"
@@ -754,7 +754,7 @@ function _urgRenderContact(contact) {
     `);
   }
   if (mail) {
-    actions.push(`<a href="mailto:${mailEsc}" class="urg-btn-mail">✉️ ${mailEsc}</a>`);
+    actions.push(`<a href="mailto:${mailEsc}" class="urg-btn-mail">${lk('mail')} ${mailEsc}</a>`);
   }
 
   return `

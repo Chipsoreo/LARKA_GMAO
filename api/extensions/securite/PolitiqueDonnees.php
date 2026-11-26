@@ -64,6 +64,26 @@ final class ExtPolitiqueDonnees
         'sa_sessions',
         'sessions',
         'migrations',
+        // Larka Connect. Un module y accède par ExtConnectivite seulement, avec
+        // des projections FIXES (nom, unité, dernière valeur, état) : ces tables
+        // portent des secrets chiffrés (ConnectPasserelles.Secret), des adresses
+        // d'équipements, l'empreinte des jetons des PC releveurs, et le nom des
+        // personnes qui ont acquitté, validé ou commandé. Aucune requête
+        // structurée ne doit pouvoir les nommer, même avec une capacité.
+        'connectpasserelles',
+        'connectpoints',
+        'connectmesures',
+        'connectregles',
+        'connectalarmes',
+        'connectliaisons',
+        'connectexecutions',
+        'connectcommandes',
+        'connectsessionsve',
+        'connectfichiers',
+        'connectbatiments',
+        'connectexclusions',
+        'connectreleveurs',
+        'connectlorawan',
     ];
 
     /** Tables lisibles sous capacité, mais jamais modifiables par une extension. */
@@ -247,7 +267,7 @@ final class ExtPolitiqueDonnees
     /**
      * Deux identifiants se disputent-ils le même espace de tables ?
      *
-     * ⚠️ LE PRÉFIXE N'EST PAS INJECTIF, ET L'APPARTENANCE EN DÉPEND.
+     * LE PRÉFIXE N'EST PAS INJECTIF, ET L'APPARTENANCE EN DÉPEND.
      *
      * prefixeExtension() remplace tout ce qui n'est pas alphanumérique par « _ ».
      * Deux conséquences, toutes deux vérifiées :

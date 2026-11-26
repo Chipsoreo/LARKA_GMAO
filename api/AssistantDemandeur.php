@@ -158,6 +158,7 @@ final class AssistantDemandeur
             'categories'  => $this->categories($t),
             'modules'     => $this->modules($t),
             'archive'     => $this->archive($message, $t),
+            'supervision' => ['texte' => self::SUPERVISION_RESERVEE, 'trouve' => true],
             'creer'       => $this->creer($message, $historique),
             'demande_vide'=> ['texte' => "D'accord ! " . self::DEMANDE_DETAILS . " en une phrase : quoi (porte, lumière, fuite…), où (bâtiment, étage, bureau) et si c'est urgent. Je préparerai le formulaire pour toi.", 'trouve' => true],
             'hors_sujet'  => ['texte' => "Je ne peux t'aider que pour Larka : préparer une demande d'intervention, suivre tes demandes ou trouver qui contacter.", 'trouve' => true],
@@ -184,6 +185,12 @@ final class AssistantDemandeur
         if ($has('/\bcategories?\b/')) return 'categories';
         if ($has('/\b(?:modules?|reserv\w+|pret de|emprunt\w*)\b/') || $this->moduleCite($t)) return 'modules';
         if ($has('/\b(?:archiv\w*|desarchiv\w*|(?:sortir|recuperer|consulter|ressortir) (?:un |des |le |les |mon |mes )?dossiers?)\b/')) return 'archive';
+        if ($this->questionSupervision($t)) return 'supervision';
+        // « température trop basse au bureau 12 », « CO2 trop élevé en classe » : une gêne
+        // ressentie est un problème à signaler, même sans objet en panne.
+        if (preg_match('/\b(?:temperature|humidite|co2|qualite de l air|air vicie)\b/', $t) && preg_match(self::GENE, $t)) return 'creer';
+        // « et en eau ? » juste après cette réponse : même question, même réponse.
+        if (preg_match('/^ et /', $t) && str_starts_with((string)$this->derniereReponse($historique), 'Les mesures des bâtiments') && !$probleme) return 'supervision';
         if ($probleme) return 'creer';
         if ($has('/\b(?:creer|faire|nouvelle|ouvrir|deposer|preparer|signaler|declarer|remplir) (?:une |un |ma |la |le )?(?:demande|signalement|ticket|probleme|incident)\b|\bsignaler\b/')) return 'demande_vide';
         if ($has('/\b(?:meteo|blague|recette|foot\w*|match|politique|president|poeme|chanson|film|horoscope|tradui\w+|capitale|bitcoin|bourse|l heure|quelle heure|quel jour)\b/')) return 'hors_sujet';
@@ -193,6 +200,38 @@ final class AssistantDemandeur
         $prec = $this->derniereReponse($historique);
         if ($prec !== null && str_contains($prec, self::DEMANDE_DETAILS) && count(AssistantLangue::mots(trim($t))) >= 2) return 'creer';
         return 'inconnue';
+    }
+
+    /** Gêne ressentie (« trop froid », « ne chauffe pas ») : une plainte, donc une demande. */
+    private const GENE = '/\b(?:trop|pas assez|insuffisant\w*|excessi\w*|anormal\w*|froid|chaud|glacial|etouff\w*|ne (?:monte|baisse|descend|marche|fonctionne|chauffe)\w*)\b/';
+
+    /** Réponse aux questions sur les mesures des bâtiments : réservées aux gestionnaires. */
+    private const SUPERVISION_RESERVEE = "Les mesures des bâtiments (consommations, alarmes techniques, températures, état des équipements) "
+        . "sont réservées aux gestionnaires. Si quelque chose ne va pas — une alarme qui sonne, trop chaud ou trop froid, un équipement "
+        . "en panne —, décris-le-moi : je prépare la demande d'intervention.";
+
+    /**
+     * Le message INTERROGE-t-il la supervision (Larka Connect) ?
+     *
+     * Le demandeur n'y a pas accès : sans cette règle, « combien d'alarmes ce
+     * mois-ci ? » devenait une demande « Alarme incendie défectueuse » et
+     * « consommation d'électricité du groupe scolaire » une demande
+     * « Électricité défectueuse ». Un SIGNALEMENT reste une demande : « l'alarme
+     * sonne dans le couloir », « capteur en panne salle 3 » décrivent un problème.
+     */
+    private function questionSupervision(string $t): bool
+    {
+        require_once __DIR__ . '/AssistantSupervision.php';
+        $quoi = AssistantSupervision::detecter(trim($t));
+        if ($quoi === null || $this->probleme($t) !== null) return false;
+        if (preg_match('/\b(?:sonne\w*|bip\w*|clignot\w*|declench\w*|fuite\w*|casse\w*|bruit\w*)\b/', $t)) return false;
+        // « température trop basse au bureau 12 » : une plainte, donc une demande.
+        if (preg_match(self::GENE, $t)) return false;
+        if (preg_match('/^ (?:combien|quel|quelle|quels|quelles|est ce qu\w*|y a t il|ya t il|a combien|c est combien|donne moi|liste|nombre|total) /', $t)) return true;
+        // « valeur » n'est reconnue que sur une vraie question ou un groupe nominal court.
+        if ($quoi === 'conso' || $quoi === 'etat' || $quoi === 'valeur') return true;
+        return $quoi === 'alarmes'
+            && (bool)preg_match('/\b(?:combien|nombre|liste|en cours|actives?|critiques?|majeures?|mineures?|ce mois|cette semaine|cette annee|aujourd hui|historique)\b/', $t);
     }
 
     /**
@@ -239,8 +278,8 @@ final class AssistantDemandeur
         if ($f['batiment'] === '' && $f['bureau'] === '') $txt .= "\nPense à préciser le lieu (bâtiment, étage, bureau) dans le formulaire.";
         if ($f['urgence'] === 'Urgente') {
             $g = $this->ctx['gestionnaires'][0] ?? null;
-            $txt .= "\n⚠️ Si la situation est dangereuse, préviens aussi directement un gestionnaire"
-                  . ($g ? ' : **' . AssistantLangue::texte($g['nom']) . '**' . ($g['tel'] !== '' ? ' (📞 ' . AssistantLangue::texte($g['tel']) . ')' : '') : '') . '.';
+            $txt .= "\n Si la situation est dangereuse, préviens aussi directement un gestionnaire"
+                  . ($g ? ' : **' . AssistantLangue::texte($g['nom']) . '**' . ($g['tel'] !== '' ? ' (' . AssistantLangue::texte($g['tel']) . ')' : '') : '') . '.';
         }
         return ['texte' => $txt . "\n" . $jeton, 'trouve' => true, 'champs' => ['demande' => $f]];
     }
@@ -321,6 +360,17 @@ final class AssistantDemandeur
             $titre = $pb[2] === 'Problème' ? '' : $pb[2];
         } else {
             $titre = '';
+        }
+        // Gêne ressentie sans objet en panne (« température trop basse au bureau 12 ») :
+        // un titre qui dit la gêne, plutôt que les premiers mots du message.
+        if ($titre === '' && preg_match('/\b(?:temperature|humidite|co2|qualite de l air|air vicie)\b/', $t) && preg_match(self::GENE, $t)) {
+            $bas = (bool)preg_match('/\b(?:froid|glacial|basses?|pas assez|insuffisant\w*|ne (?:monte|chauffe)\w*)\b/', $t);
+            $titre = match (true) {
+                (bool)preg_match('/\b(?:co2|qualite de l air|air vicie)\b/', $t) => "Qualité de l'air (CO₂ élevé)",
+                str_contains($t, ' humidite ')            => 'Humidité anormale',
+                $bas                                      => 'Température trop basse',
+                default                                   => 'Température trop élevée',
+            };
         }
         if ($titre === '') {
             // Rien de connu : les premiers mots utiles du message, lieu retiré.
@@ -493,7 +543,7 @@ final class AssistantDemandeur
                   . ($agent !== '' ? ', suivie par **' . AssistantLangue::texte($agent) . '**' : '') . '.';
         } elseif (in_array($statut, ['Nouveau', 'Relancé', 'Demandeur'], true)) {
             $g = $this->ctx['gestionnaires'][0] ?? null;
-            if ($g) $txt .= "\nSi c'est pressé, contacte **" . AssistantLangue::texte($g['nom']) . '**' . ($g['tel'] !== '' ? ' (📞 ' . AssistantLangue::texte($g['tel']) . ')' : '') . '.';
+            if ($g) $txt .= "\nSi c'est pressé, contacte **" . AssistantLangue::texte($g['nom']) . '**' . ($g['tel'] !== '' ? ' (' . AssistantLangue::texte($g['tel']) . ')' : '') . '.';
         }
         if (!empty($d['CommentaireAdmin'])) $txt .= "\nCommentaire du gestionnaire : « " . AssistantLangue::texte($d['CommentaireAdmin'], 200) . ' »';
         return $txt;
@@ -504,7 +554,7 @@ final class AssistantDemandeur
         $g = $this->ctx['gestionnaires'];
         if (!$g) return ['texte' => "Aucun gestionnaire n'est enregistré. En cas d'urgence, contacte ton responsable de service.", 'trouve' => true];
         $l = array_map(function ($p) {
-            $coord = array_filter([$p['tel'] !== '' ? '📞 ' . $p['tel'] : '', $p['email'] !== '' ? '✉️ ' . $p['email'] : '']);
+            $coord = array_filter([$p['tel'] !== '' ? '' . $p['tel'] : '', $p['email'] !== '' ? '' . $p['email'] : '']);
             return '- **' . AssistantLangue::texte($p['nom']) . '**' . ($p['detail'] !== '' ? ' (' . AssistantLangue::texte($p['detail']) . ')' : '')
                  . ($coord ? ' — ' . AssistantLangue::texte(implode(', ', $coord), 160) : '');
         }, $g);

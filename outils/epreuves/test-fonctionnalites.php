@@ -468,6 +468,26 @@ v('Sélecteur de lien', function() use($ap){ return count($ap('dp_cibles',['jeu'
 // qu'en ouvrant le sélecteur — trop tard.
 echo "\nCIBLES DE LIEN\n";
 foreach (ExtSchemaDeclaratif::CIBLES_LIEN as $cible => $def) {
+    // Bâtiment connecté : la cible n'est pas une table ouverte au module, elle
+    // est servie par le cœur (ExtConnectivite). On vérifie donc qu'il SAIT la
+    // servir — une projection qui répond — et que la politique ferme bien
+    // les tables de Larka Connect à toute requête de module.
+    if (($def['servi_par'] ?? '') === 'connect') {
+        require_once $racine . '/api/extensions/declaratif/Connectivite.php';
+        try {
+            $lu = (new ExtConnectivite($db, 'audit.tout', ['donnees.lire:' . $cible]))
+                ->cibles($cible);
+            $ferme = ExtPolitiqueDonnees::niveauTable($db, 'ConnectPoints')
+                === ExtPolitiqueDonnees::SYSTEME_PROTEGE;
+            if (!$ferme) throw new RuntimeException('ConnectPoints ouverte aux requêtes de module');
+            $ok[] = $cible;
+            printf("  ✅ %-14s servie par le cœur (%d valeur(s))\n", $cible, $lu['total']);
+        } catch (\Throwable $e) {
+            $ko[] = "cible « $cible » : " . $e->getMessage();
+            printf("  ❌ %-14s %s\n", $cible, $e->getMessage());
+        }
+        continue;
+    }
     $reel = ExtPolitiqueDonnees::nomReel($db, $cible);
     if ($reel === null) {
         $ko[] = "cible « $cible » : table absente";
@@ -492,14 +512,14 @@ foreach (ExtSchemaDeclaratif::CIBLES_LIEN as $cible => $def) {
 
 // ── Le catalogue de libellés est-il exploitable ? ──────────────────────────
 //
-// lang/fr.json sert de modèle à un traducteur : s'il contient des fragments de
+// lang/traductions.json sert de modèle à un traducteur : s'il contient des fragments de
 // code, le traducteur perd son temps sur des lignes qui ne s'afficheront
 // jamais — et un catalogue pollué décourage plus qu'il n'aide.
 echo "\nCATALOGUE DE LIBELLÉS\n";
-$cat = $racine . '/lang/fr.json';
+$cat = $racine . '/lang/traductions.json';
 if (!is_file($cat)) {
-    $ko[] = 'lang/fr.json absent';
-    printf("  ❌ lang/fr.json absent\n");
+    $ko[] = 'lang/traductions.json absent';
+    printf("  ❌ lang/traductions.json absent\n");
 } else {
     $j = json_decode((string)file_get_contents($cat), true);
     $lib = $j['libelles'] ?? [];
@@ -516,6 +536,19 @@ if (!is_file($cat)) {
         $ko[] = 'catalogue pollué : ' . count($pollue) . ' entrée(s)';
         printf("  ❌ %d fragment(s) de code : %s\n", count($pollue),
                implode(' | ', array_slice($pollue, 0, 3)));
+    }
+    // Un seul fichier de traduction hors packs : plus de catalogue, de
+    // traduction et de compléments séparés à tenir alignés.
+    $autres = array_values(array_filter(glob($racine . '/lang/*') ?: [], fn($f) => basename($f) !== 'traductions.json'));
+    $lignesLib = 0;
+    foreach (file($cat, FILE_IGNORE_NEW_LINES) as $l) if (preg_match('/^  "(?:[^"\\\\]|\\\\.)*": \{.*\},?$/u', $l)) $lignesLib++;
+    if ($autres === [] && $lignesLib === count($lib)) {
+        $ok[] = 'fichier de traduction unique';
+        printf("  ✅ un seul fichier (lang/traductions.json), une ligne par libellé\n");
+    } else {
+        $ko[] = 'fichier de traduction unique';
+        printf("  ❌ %s\n", $autres ? 'autres fichiers dans lang/ : ' . implode(', ', array_map('basename', $autres))
+                                       : "$lignesLib ligne(s) de libellé pour " . count($lib) . ' libellé(s)');
     }
 }
 

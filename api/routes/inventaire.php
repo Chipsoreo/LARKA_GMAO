@@ -17,7 +17,7 @@
 if ($action === 'biens') {
     $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'biens', $db);
     if ($method==='GET') {
-        // ⚠️ FIX PERFS : pagination opt-in (cf. interventions)
+        // FIX PERFS : pagination opt-in (cf. interventions)
         if (!empty($_GET['paginated'])) {
             $limit   = isset($_GET['limit'])  ? (int)$_GET['limit']  : 100;
             $offset  = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
@@ -45,19 +45,41 @@ if ($action === 'biens') {
 }
 
 // ── Cases complémentaires des fiches (définitions) ────────────────────────────
-// GET ?cible=biens|equipements → [{cle, libelle, type}] ; POST {cible, champs:[…]}
-// remplace la liste (ordre compris). Les valeurs vivent dans chaque fiche.
+// GET ?cible=biens|equipements|interventions|stock → [{cle, libelle, type}] ;
+// POST {cible, champs:[…]} remplace la liste (ordre compris). Les valeurs
+// vivent dans chaque fiche. La cible est aussi le nom du module dont la
+// lecture est exigée : voir les cases des interventions, c'est voir l'onglet
+// Interventions.
 if ($action === 'champs_perso') {
     $user = require_auth();
     $cible = (string)($_GET['cible'] ?? (get_body()['cible'] ?? 'biens'));
-    if (!in_array($cible, ['biens', 'equipements'], true)) json_error('Cible inconnue.');
+    if (!Database::champsPersoCibleValide($cible)) json_error('Cible inconnue.');
     require_lecture($user, ['Admin','Gestionnaire','Visionneur'], $cible, $db);
     if ($method === 'GET') json_ok($db->getChampsPersoDefs($cible));
     require_role($user, ['Admin','Gestionnaire']);
     if ($method !== 'POST') json_error('Méthode non supportée', 405);
-    $champs = get_body()['champs'] ?? null;
+    $corps = get_body();
+    $champs = $corps['champs'] ?? null;
     if (!is_array($champs)) json_error('Liste des cases attendue.');
-    json_ok($db->setChampsPersoDefs($cible, $champs));
+    // Une case nouvelle qui ressemble à 75 % ou plus à une case existante ou
+    // retirée : on demande confirmation avant de créer le doublon. La réponse
+    // n'est pas une erreur — rien n'est cassé — mais une question.
+    if (empty($corps['confirmerRessemblances'])) {
+        $ress = $db->champsPersoRessemblances($cible, $champs);
+        if ($ress) json_ok(['aConfirmer' => true, 'ressemblances' => $ress]);
+    }
+    json_ok($db->setChampsPersoDefs($cible, $champs, (string)($user['Login'] ?? '')));
+}
+
+// GET ?cible= → cases retirées des fiches : [{cle, libelle, type, creee_le,
+// creee_par, supprimee_le, supprimee_par, nb_fiches}]. Restaurer une case :
+// la renvoyer dans la liste (action champs_perso) avec SA clé.
+if ($action === 'champs_perso_historique') {
+    $user = require_auth();
+    $cible = (string)($_GET['cible'] ?? 'biens');
+    if (!Database::champsPersoCibleValide($cible)) json_error('Cible inconnue.');
+    require_role($user, ['Admin','Gestionnaire']);
+    json_ok($db->getChampsPersoHistorique($cible, true));
 }
 
 // ── Équipements ───────────────────────────────────────────────────────────────
@@ -120,11 +142,39 @@ if ($action === 'stock') {
     $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'stock', $db);
     if ($method==='GET')    json_ok($db->getAllStock());
     require_role($user, ['Admin','Gestionnaire']);
-    if ($method==='POST')   json_ok(['id' => $db->addStock(get_body(), $user['Login'])]);
-    if ($method==='PUT')    { $db->updateStock($id, get_body(), $user['Login']); json_ok('OK'); }
+    if ($method==='POST') {
+        $b = get_body();
+        $nid = $db->addStock($b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('stock', $nid, $b['champsPerso']);
+        json_ok(['id' => $nid]);
+    }
+    if ($method==='PUT') {
+        $b = get_body();
+        $db->updateStock($id, $b, $user['Login']);
+        if (is_array($b['champsPerso'] ?? null)) $db->setChampsPersoValeurs('stock', $id, $b['champsPerso']);
+        json_ok('OK');
+    }
     if ($method==='DELETE') {
         try { $db->deleteStock($id); json_ok('OK'); }
         catch (\RuntimeException $e) { json_error($e->getMessage(), 409); }
+    }
+}
+
+// ── Import du stock (Excel / CSV lu par le navigateur) ───────────────────────
+// Voir api/ImportStock.php. dryRun : aperçu sans rien modifier. Lecture du
+// module Stock ET gestion exigées : l'import écrit.
+if ($action === 'import_stock') {
+    $user = require_auth();
+    require_lecture($user, ['Admin','Gestionnaire','Visionneur'], 'stock', $db);
+    require_role($user, ['Admin','Gestionnaire']);
+    if ($method !== 'POST') json_error('Méthode invalide.', 405);
+    @ini_set('memory_limit', '512M');
+    @set_time_limit(300);
+    require_once __DIR__ . '/../ImportStock.php';
+    try {
+        json_ok((new ImportStock($db, (string)$user['Login']))->executer(get_body()));
+    } catch (\InvalidArgumentException $e) {
+        json_error($e->getMessage(), 400);
     }
 }
 
@@ -450,6 +500,7 @@ if ($action === 'import_biens') {
             // Nettoyer le buffer de sortie pour ne pas mélanger HTML d'erreur et JSON
             while (ob_get_level() > 0) { @ob_end_clean(); }
             if (!headers_sent()) {
+                header_remove('Content-Encoding'); header_remove('Content-Length');   // réponse gzip déjà préparée
                 http_response_code(500);
                 header('Content-Type: application/json; charset=utf-8');
             }
@@ -490,7 +541,7 @@ if ($action === 'import_biens') {
     }
 
     // ── Helpers de normalisation pour rendre l'import robuste ──
-    // ⚠️ Dates : une date impossible (31/02/2020) ou mal lue passait par
+    // Dates : une date impossible (31/02/2020) ou mal lue passait par
     // strtotime(), qui l'« arrangeait » (3 mars) — ou devenait NULL en silence.
     // Désormais seules les dates RÉELLES sont acceptées ; les autres sont
     // signalées dans le rapport (avertissements de l'aperçu).
@@ -521,7 +572,7 @@ if ($action === 'import_biens') {
         }
         return null;
     };
-    // ⚠️ Nombres : « 1.234,56 » devenait « 1.234.56 » — non numérique — donc 0 €,
+    // Nombres : « 1.234,56 » devenait « 1.234.56 » — non numérique — donc 0 €,
     // sans un mot. Séparateurs de milliers (espace, espace insécable, point,
     // apostrophe) et décimale (virgule ou point) sont maintenant reconnus.
     // null = valeur présente mais illisible (signalée par l'aperçu).
@@ -769,10 +820,20 @@ if ($action === 'import_biens') {
     foreach (array_merge($toCreateIdx, $toUpdateIdx) as $i) {
         $ciblesLignes[($target === 'auto') ? ($biens[$i]['_targetGuess'] ?? 'biens') : $target] = true;
     }
-    $casesACreer = [];
+    $casesACreer = []; $casesRessemblances = [];
     foreach (array_keys($ciblesLignes) as $cb) {
-        $existantes = array_column($db->getChampsPersoDefs($cb), 'cle');
-        foreach ($nouvellesCases as $d) if (!in_array($d['cle'], $existantes, true)) $casesACreer[$d['libelle']] = true;
+        $defsCb = $db->getChampsPersoDefs($cb);
+        $existantes = array_column($defsCb, 'cle');
+        $aCreerCb = [];
+        foreach ($nouvellesCases as $d) if (!in_array($d['cle'], $existantes, true)) { $casesACreer[$d['libelle']] = true; $aCreerCb[] = $d; }
+        // Une case créée par l'import qui ressemble à une case existante ou
+        // retirée : signalée dans l'aperçu (faute de frappe, ancien nom).
+        if ($aCreerCb) {
+            foreach ($db->champsPersoRessemblances($cb, array_merge($defsCb, $aCreerCb)) as $r) {
+                if ($r['statut'] === 'retiree_maintenant') continue;   // l'import ne retire rien
+                $casesRessemblances[] = $r + ['cible' => $cb];
+            }
+        }
     }
     // Champs effectivement lus dans le fichier : les autres ne sont PAS
     // remplacés à la mise à jour d'une fiche existante (null : ancien écran,
@@ -802,6 +863,7 @@ if ($action === 'import_biens') {
             'routedEquipements'  => $routedEquips,
             'sortis'             => $sortis,
             'casesACreer'        => array_keys($casesACreer),
+            'casesRessemblances' => $casesRessemblances,
         ]);
     }
 
@@ -867,7 +929,7 @@ if ($action === 'import_biens') {
     $clesPerso = ['biens' => [], 'equipements' => []];
     foreach (['biens', 'equipements'] as $cb) {
         try {
-            if ($nouvellesCases && !empty($ciblesLignes[$cb])) $db->ajouterChampsPersoDefs($cb, $nouvellesCases);
+            if ($nouvellesCases && !empty($ciblesLignes[$cb])) $db->ajouterChampsPersoDefs($cb, $nouvellesCases, (string)($user['Login'] ?? ''));
             $clesPerso[$cb] = array_column($db->getChampsPersoDefs($cb), 'cle');
         } catch (\Throwable $e) {
             $errors[] = ['row' => '—', 'message' => 'Cases complémentaires non créées : ' . mb_substr($e->getMessage(), 0, 150)];
@@ -960,7 +1022,7 @@ if ($action === 'import_biens') {
 
             $existKey = strtolower($itemData['numero']);
             $itemId = null;
-            // ⚠️ Mise à jour : seuls les champs LUS DANS LE FICHIER remplacent la
+            // Mise à jour : seuls les champs LUS DANS LE FICHIER remplacent la
             // fiche. Avant, tout champ non associé à une colonne était vidé
             // (affectation, étage, date de sortie…) — réimporter un inventaire
             // partiel effaçait ce qui avait été saisi dans Larka.

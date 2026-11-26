@@ -29,9 +29,9 @@ FiltresEngine.register('utilisateurs', {
       label: 'Type de connexion',
       type: 'chips',
       options: [
-        { value: 'local',     label: '🔑 Local'     },
-        { value: 'microsoft', label: '🔵 Microsoft'  },
-        { value: 'google',    label: '🔴 Google'     },
+        { value: 'local',     label: 'Local'     },
+        { value: 'microsoft', label: 'Microsoft'  },
+        { value: 'google',    label: 'Google'     },
       ],
     },
     {
@@ -39,8 +39,8 @@ FiltresEngine.register('utilisateurs', {
       label: 'Statut',
       type: 'chips',
       options: [
-        { value: '1', label: '✅ Actif'      },
-        { value: '0', label: '🚫 Désactivé' },
+        { value: '1', label: 'Actif'      },
+        { value: '0', label: 'Désactivé' },
       ],
     },
   ],

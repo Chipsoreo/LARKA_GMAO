@@ -102,6 +102,36 @@ class AssistantTools {
     }
 
     public function hasModules(): bool { return $this->modules !== []; }
+
+    /** Supervision lisible ? (calculé une fois : le schéma des outils doit rester stable). */
+    private ?bool $supervisionOk = null;
+    public function supervisionDisponible(): bool {
+        return $this->supervisionOk ??= (function () {
+            if (!$this->user) return false;
+            require_once __DIR__ . '/AssistantSupervision.php';
+            return AssistantSupervision::disponible($this->db, $this->user);
+        })();
+    }
+
+    /** Outil « supervision » : lectures de synthèse (ici ou sur le serveur de supervision). */
+    private function tool_supervision(array $args): array {
+        return $this->supervisionLire((string)($args['quoi'] ?? 'resume'), array_diff_key($args, ['quoi' => 1]));
+    }
+
+    /**
+     * La même lecture, sans le compactage destiné au modèle : le moteur rédige
+     * lui-même et a besoin des champs vides (« conso » nulle = pas de mesure).
+     * Ni nom ni coordonnée de personne dans ces données : rien à anonymiser.
+     */
+    public function supervisionLire(string $quoi, array $args): array {
+        if (!$this->supervisionDisponible()) return ['erreur' => 'Supervision non accessible.'];
+        try {
+            return AssistantSupervision::lire($this->db, $quoi, $args);
+        } catch (\Throwable $e) {
+            error_log('[Larka][assistant] supervision: ' . $e->getMessage());
+            return ['erreur' => 'lecture impossible pour le moment.'];
+        }
+    }
     public function modules(): array  { return $this->modules; }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -195,6 +225,26 @@ class AssistantTools {
                 'description' => "Documents SharePoint/OneDrive de l'utilisateur (si absents de Larka).",
                 'parameters' => [
                     'query' => ['type' => 'string', 'required' => true],
+                ],
+            ];
+        }
+
+        // Supervision (Larka Connect) : seulement si elle est ouverte et lisible par ce compte.
+        if ($this->supervisionDisponible()) {
+            $defs[] = [
+                'name' => 'supervision',
+                'description' => 'Équipements raccordés (supervision) : consommations des compteurs sur une période (quoi=conso), '
+                    . 'alarmes techniques (quoi=alarmes), état des connexions (quoi=resume), dernière valeur des points (quoi=valeurs).',
+                'parameters' => [
+                    'quoi'     => ['type' => 'string', 'enum' => ['resume', 'conso', 'alarmes', 'valeurs'], 'required' => true],
+                    'debut'    => ['type' => 'string', 'description' => 'AAAA-MM-JJ'],
+                    'fin'      => ['type' => 'string', 'description' => 'AAAA-MM-JJ (incluse)'],
+                    'batiment' => ['type' => 'string'],
+                    'type'     => ['type' => 'string', 'enum' => ['Electricite', 'Gaz', 'Eau', 'Chauffage', 'Ambiance', 'Autre']],
+                    'etat'     => ['type' => 'string', 'enum' => ['active', 'toutes']],
+                    'gravite'  => ['type' => 'string', 'enum' => ['info', 'mineure', 'majeure', 'critique']],
+                    'mots'     => ['type' => 'array', 'items' => 'string', 'description' => 'Mots du nom du point (valeurs)'],
+                    'nature'   => ['type' => 'string', 'enum' => ['compteur', 'mesure', 'etat', 'consigne'], 'description' => 'Nature du point (valeurs) : etat = marche / arrêt'],
                 ],
             ];
         }

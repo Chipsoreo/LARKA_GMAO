@@ -44,7 +44,7 @@ class TenantResolver {
                 // connect_timeout borne la connexion (PG ignore PDO::ATTR_TIMEOUT au connect).
                 $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s;sslmode=%s;connect_timeout=3',
                     $cfg['host'] ?? '127.0.0.1', $cfg['port'] ?? 5432,
-                    $cfg['dbname'] ?? 'gmao_admin', $cfg['sslmode'] ?? 'prefer');
+                    $cfg['dbname'] ?? 'gmao_admin', larka_pg_sslmode($cfg['host'] ?? '127.0.0.1', $cfg['sslmode'] ?? 'prefer'));
                 self::$pdo = new PDO($dsn, $cfg['user'] ?? '', $cfg['password'] ?? '', [PDO::ATTR_TIMEOUT => 3]);
             } elseif ($driver === 'mariadb' || $driver === 'mysql') {
                 $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
@@ -57,21 +57,85 @@ class TenantResolver {
                 $dir = dirname($path);
                 if (!is_dir($dir)) mkdir($dir, 0755, true);
                 self::$pdo = new PDO('sqlite:' . $path);
-                self::$pdo->exec("PRAGMA journal_mode=WAL;");
+                larka_sqlite_reglages(self::$pdo);
             }
 
             self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             self::$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-            self::initTables();
-            self::seedFromJson();
-            self::chiffrerMotsDePasseExistants();
+            // Tables, import initial et chiffrement : une fois par base, pas à
+            // chaque requête (voir registreAJour()).
+            self::preparerRegistre(self::registreAJour($cfg));
 
         } catch (\Throwable $e) {
             throw new \RuntimeException("Impossible de se connecter à la base super admin : " . $e->getMessage());
         }
 
         return self::$pdo;
+    }
+
+    /**
+     * Version du schéma du registre. À INCRÉMENTER à chaque changement de
+     * initTables() : les installations rejoueront alors la préparation.
+     */
+    private const REGISTRE_VERSION = 1;
+    private static string $_sentinelle = '';
+
+    /**
+     * LE REGISTRE ÉTAIT PRÉPARÉ À CHAQUE REQUÊTE.
+     * Trois CREATE TABLE, deux ALTER TABLE et deux lectures de contrôle
+     * précédaient toute réponse de l'API — et sous PostgreSQL, ALTER TABLE
+     * prend un verrou exclusif sur sa_tenants même quand la colonne existe :
+     * les requêtes simultanées s'attendaient les unes les autres. Comme pour
+     * la base principale (Database::schemaIsCurrent), une sentinelle par base
+     * physique dit « déjà préparé » ; si la base a disparu entre-temps,
+     * isMultiTenant() la répare (reparerRegistre()).
+     */
+    private static function registreAJour(array $cfg): bool {
+        $driver = $cfg['driver'] ?? 'sqlite';
+        $ident = $driver === 'sqlite'
+            ? 'sqlite:' . ($cfg['path'] ?? 'data/superadmin.db')
+            : $driver . ':' . ($cfg['host'] ?? '127.0.0.1') . ':' . ($cfg['port'] ?? '') . '/' . ($cfg['dbname'] ?? 'gmao_admin');
+        $dossier = __DIR__ . '/../data/.schema';
+        self::$_sentinelle = $dossier . '/registre-' . sha1($ident) . '.flag';
+        if (trim((string)@file_get_contents(self::$_sentinelle)) !== (string)self::REGISTRE_VERSION) return false;
+        if (self::$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            // Fichier SQLite recréé vide : la sentinelle ne suffit pas (même piège
+            // que Database::schemaIsCurrent).
+            try {
+                if (!self::$pdo->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sa_tenants'")->fetchColumn()) return false;
+            } catch (\Throwable $e) { return false; }
+        }
+        self::$initialized = true;
+        return true;
+    }
+
+    /**
+     * Tables (sauf si la sentinelle les dit prêtes), puis import initial et
+     * chiffrement des mots de passe — ces deux-là vérifiés à chaque ouverture,
+     * en une seule lecture : une sauvegarde ancienne restaurée (mots de passe
+     * en clair) doit être chiffrée, sentinelle ou pas.
+     */
+    private static function preparerRegistre(bool $tablesPretes): void {
+        if (!$tablesPretes) self::initTables();
+        $faits = self::$pdo->query("SELECT cle FROM sa_config WHERE cle IN ('seeded', 'mdp_tenants_chiffres')")
+            ->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        if (!in_array('seeded', $faits, true)) self::seedFromJson();
+        if (!in_array('mdp_tenants_chiffres', $faits, true)) self::chiffrerMotsDePasseExistants();
+        if (!$tablesPretes && self::$_sentinelle !== '') {
+            $dossier = dirname(self::$_sentinelle);
+            if (is_dir($dossier) || @mkdir($dossier, 0755, true)) {
+                @file_put_contents(self::$_sentinelle, (string)self::REGISTRE_VERSION);
+            }
+        }
+    }
+
+    /** Sentinelle présente mais tables absentes (base recréée, purgée) : on reprépare. */
+    private static function reparerRegistre(): bool {
+        if (self::$pdo === null || self::$_sentinelle === '' || !is_file(self::$_sentinelle)) return false;
+        @unlink(self::$_sentinelle);
+        self::$initialized = false;
+        try { self::preparerRegistre(false); return true; } catch (\Throwable $e) { return false; }
     }
 
     /**
@@ -178,7 +242,7 @@ class TenantResolver {
     // — une sauvegarde, par exemple — obtenait l'accès à toutes les bases.
     // Ils sont désormais chiffrés (AES-256-GCM) avec config.key, la clé qui
     // protège déjà les secrets de config.json et qui vit hors de data/.
-    // ⚠️ Plusieurs serveurs partageant le même registre : même config.key partout.
+    // Plusieurs serveurs partageant le même registre : même config.key partout.
 
     private static function chiffrerMdp(string $v): string {
         if ($v === '' || str_starts_with($v, 'enc:v1:')) return $v;
@@ -205,10 +269,10 @@ class TenantResolver {
     }
 
     /** Une fois : chiffre les mots de passe encore en clair (installations antérieures). */
-    private static function chiffrerMotsDePasseExistants(): void {
+    private static function chiffrerMotsDePasseExistants(): bool {
         try {
             $fait = (int)self::$pdo->query("SELECT COUNT(*) FROM sa_config WHERE cle='mdp_tenants_chiffres'")->fetchColumn();
-            if ($fait > 0) return;
+            if ($fait > 0) return true;
             $maj = self::$pdo->prepare("UPDATE sa_tenants SET db_password=? WHERE cle=?");
             $tous = true;
             foreach (self::$pdo->query("SELECT cle, db_password FROM sa_tenants")->fetchAll() as $r) {
@@ -219,7 +283,8 @@ class TenantResolver {
                 $maj->execute([$c, $r['cle']]);
             }
             if ($tous) self::$pdo->prepare("INSERT INTO sa_config (cle, valeur) VALUES ('mdp_tenants_chiffres', ?)")->execute([date('c')]);
-        } catch (\Throwable $e) { /* nouvel essai à la prochaine ouverture */ }
+            return $tous;
+        } catch (\Throwable $e) { return false; /* nouvel essai à la prochaine ouverture */ }
     }
 
     /**
@@ -310,7 +375,11 @@ class TenantResolver {
         try {
             $count = (int) self::db()->query("SELECT COUNT(*) FROM sa_tenants")->fetchColumn();
             return $count > 0;
-        } catch (\Throwable $e) { return false; }
+        } catch (\Throwable $e) {
+            if (!self::reparerRegistre()) return false;
+            try { return (int) self::db()->query("SELECT COUNT(*) FROM sa_tenants")->fetchColumn() > 0; }
+            catch (\Throwable $e2) { return false; }
+        }
     }
 
     /**
@@ -800,7 +869,7 @@ class TenantResolver {
      * Tenant d'un compte au moment de la CONNEXION (login local, mot de passe
      * oublié, réinitialisation, callbacks OAuth).
      *
-     * ⚠️ FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
+     * FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
      * locaux) ignoraient l'état « actif » du tenant ; une organisation
      * désactivée restait accessible par ce chemin. Et chaque point d'entrée
      * avait sa propre copie de la logique (mot de passe oublié n'en avait pas).
@@ -902,7 +971,7 @@ class TenantResolver {
     }
 
     public static function authenticateSuperAdmin(string $login, string $password): bool {
-        // ⚠️ FIX SÉCURITÉ : refuser TOUT login si le compte principal a encore
+        // FIX SÉCURITÉ : refuser TOUT login si le compte principal a encore
         // le mot de passe par défaut « SuperAdmin2025! » (binaire connu).
         // Sans ça, n'importe qui qui découvre le projet a immédiatement accès
         // super-admin à toute installation non configurée.
@@ -920,7 +989,7 @@ class TenantResolver {
         // Vérifier parmi TOUS les comptes super admin (principal + supplémentaires)
         $accounts = self::getAllSuperAdmins();
 
-        // ⚠️ FIX TIMING ATTACK : on parcourt TOUS les comptes même quand un
+        // FIX TIMING ATTACK : on parcourt TOUS les comptes même quand un
         // login a matché, et on utilise hash_equals pour la comparaison du
         // login. Sinon, le temps de réponse révèle si un login existe.
         $found = false;
@@ -964,14 +1033,66 @@ class TenantResolver {
     }
 
     /**
-     * Supprimer un compte super admin supplémentaire (pas le principal)
+     * Supprimer un compte super admin supplémentaire (pas le principal).
+     *
+     * SUPPRIMÉ, LE COMPTE SE CONNECTAIT ENCORE PAR MICROSOFT.
+     * addSuperAdminAccount() ajoute l'adresse du compte à la liste des adresses
+     * autorisées par Microsoft ; la suppression, elle, ne la retirait pas : le
+     * compte « supprimé » ouvrait toujours une session super admin par la
+     * connexion Microsoft. L'adresse part avec le compte — sauf si elle est
+     * celle du compte principal ou d'un autre compte restant.
      */
     public static function removeSuperAdminAccount(string $login): bool {
         $extra = self::getConfig('sa_accounts');
         $accounts = $extra ? (json_decode($extra, true) ?? []) : [];
+        $email = '';
+        foreach ($accounts as $a) if (($a['login'] ?? null) === $login) $email = strtolower(trim((string)($a['email'] ?? '')));
         $accounts = array_values(array_filter($accounts, fn($a) => $a['login'] !== $login));
         self::setConfig('sa_accounts', json_encode($accounts));
+        if ($email !== '') {
+            $encore = [strtolower(trim((string)(self::getConfig('sa_email') ?? '')))];
+            foreach ($accounts as $a) $encore[] = strtolower(trim((string)($a['email'] ?? '')));
+            if (!in_array($email, $encore, true)) {
+                self::setSuperAdminEmails(array_values(array_filter(self::getSuperAdminEmails(),
+                    fn($e) => strtolower(trim((string)$e)) !== $email)));
+            }
+        }
         return true;
+    }
+
+    /** Compte super admin local de ce login (principal ou supplémentaire), ou null. */
+    public static function superAdminParLogin(string $login): ?array {
+        foreach (self::getAllSuperAdmins() as $a) {
+            if ($login !== '' && hash_equals((string)($a['login'] ?? ''), $login)) return $a;
+        }
+        return null;
+    }
+
+    /** Ce que la session garde du mot de passe d'un compte super admin : une empreinte, jamais le hash. */
+    public static function empreinteSuperAdmin(string $hash): string {
+        return substr(hash('sha256', 'larka-sa|' . $hash), 0, 32);
+    }
+
+    /**
+     * Une session super admin vaut-elle encore ? (api/index.php, à chaque requête)
+     * Connexion locale : le compte existe toujours et a le mot de passe de la
+     * connexion (empreinte posée par superadmin_login ; une session plus ancienne,
+     * sans empreinte, n'est jugée que sur l'existence du compte). Connexion
+     * Microsoft : l'adresse est toujours dans la liste autorisée.
+     */
+    public static function sessionSuperAdminValide(array $s): bool {
+        $login = (string)($s['login'] ?? '');
+        if ($login === '') return false;
+        if (($s['provider'] ?? 'local') === 'microsoft') {
+            foreach (self::getSuperAdminEmails() as $e) {
+                if (strtolower(trim((string)$e)) === strtolower(trim($login))) return true;
+            }
+            return false;
+        }
+        $a = self::superAdminParLogin($login);
+        if ($a === null) return false;
+        $emp = (string)($s['empreinte'] ?? '');
+        return $emp === '' || hash_equals(self::empreinteSuperAdmin((string)($a['mot_de_passe'] ?? '')), $emp);
     }
 
     public static function updateSuperAdmin(string $login, string $hashedPassword, string $email = ''): bool {
@@ -997,7 +1118,9 @@ class TenantResolver {
             $decoded = json_decode($extra, true);
             if (is_array($decoded)) $emails = array_merge($emails, $decoded);
         }
-        return array_unique(array_filter($emails));
+        // Liste (clés 0, 1, 2…) : array_unique gardait les clés d'origine, et une
+        // adresse en double faisait partir un OBJET JSON au lieu d'une liste.
+        return array_values(array_unique(array_filter($emails)));
     }
 
     /**
@@ -1180,7 +1303,11 @@ class TenantResolver {
         return $existing !== null && $existing !== $currentTenantKey;
     }
 
-    public static function registerLocalAccount(string $login, string $tenantKey): true|string {
+    // « bool|string » et non « true|string » : le type « true » n'existe qu'à partir de
+    // PHP 8.2 ; Larka en exige 8.1 (version.json) et ce fichier est lu à chaque requête —
+    // sous PHP 8.1, toute l'application s'arrêtait sur une erreur de compilation.
+    // Rend true, ou le message d'erreur.
+    public static function registerLocalAccount(string $login, string $tenantKey): bool|string {
         $existing = self::resolveLocalAccount($login);
         if ($existing !== null && $existing !== $tenantKey) {
             $t = self::getTenant($existing);
@@ -1199,7 +1326,7 @@ class TenantResolver {
         return true;
     }
 
-    public static function renameLocalAccount(string $oldLogin, string $newLogin, string $tenantKey): true|string {
+    public static function renameLocalAccount(string $oldLogin, string $newLogin, string $tenantKey): bool|string {   // true, ou le message (cf. ci-dessus)
         if (strtolower($oldLogin) !== strtolower($newLogin)) {
             $taken = self::resolveLocalAccount($newLogin);
             if ($taken !== null && $taken !== $tenantKey) {

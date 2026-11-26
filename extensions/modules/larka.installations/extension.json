@@ -1,0 +1,591 @@
+{
+  "identifiant": "larka.installations",
+  "format": "declaratif/1",
+  "nom": "Compteurs et santé des installations",
+  "version": "1.0.1",
+  "auteur": "Larka",
+  "description": "Le complément de la supervision : consommation du jour et du mois de chaque compteur face à son objectif, état de chaque automate et passerelle, et registre des pannes de communication et des défauts d'équipement tenu tout seul à partir des alarmes techniques. Module d'exemple de Larka Connect : compteurs, connexions, bâtiments, alarmes filtrées par origine, jauge et tuiles de supervision, listes liées.",
+  "logo": "assets/logo.png",
+  "reglages": {
+    "tolerance_objectif": {
+      "type": "entier",
+      "libelle": "Tolérance sur l'objectif",
+      "defaut": 10,
+      "min": 0,
+      "max": 100,
+      "unite": "%",
+      "aide": "Au-delà de l'objectif plus cette marge, le compteur est signalé « au-dessus »."
+    }
+  },
+  "donnees": {
+    "compteurs": {
+      "libelle": "Compteur",
+      "libelle_pluriel": "Compteurs",
+      "champs": {
+        "nom": {
+          "type": "texte",
+          "libelle": "Compteur",
+          "obligatoire": true,
+          "max": 80,
+          "exemple": "Électricité général mairie, Gaz chaufferie école…"
+        },
+        "fluide": {
+          "type": "choix",
+          "libelle": "Fluide",
+          "valeurs": [
+            "Électricité",
+            "Gaz",
+            "Eau",
+            "Chaleur",
+            "Froid"
+          ],
+          "defaut": "Électricité",
+          "couleurs": {
+            "Électricité": "jaune",
+            "Gaz": "orange",
+            "Eau": "bleu",
+            "Chaleur": "rouge",
+            "Froid": "violet"
+          }
+        },
+        "batiment": {
+          "type": "lien",
+          "vers": "batiments",
+          "libelle": "Bâtiment"
+        },
+        "point": {
+          "type": "lien",
+          "vers": "points_connect",
+          "libelle": "Point de comptage",
+          "aide": "Le point de Larka Connect qui relève l'index de ce compteur (un point de nature « compteur »)."
+        },
+        "objectif_mois": {
+          "type": "decimal",
+          "libelle": "Objectif mensuel",
+          "min": 0,
+          "aide": "Dans l'unité du compteur (kWh, m³…). Vide : pas de comparaison."
+        },
+        "index": {
+          "type": "mesure",
+          "de": "point",
+          "grandeur": "valeur",
+          "libelle": "Index"
+        },
+        "conso_jour": {
+          "type": "mesure",
+          "de": "point",
+          "grandeur": "conso_jour",
+          "libelle": "Aujourd'hui"
+        },
+        "conso_mois": {
+          "type": "mesure",
+          "de": "point",
+          "grandeur": "conso_mois",
+          "libelle": "Ce mois-ci"
+        },
+        "releve": {
+          "type": "mesure",
+          "de": "point",
+          "grandeur": "horodatage",
+          "libelle": "Dernier relevé",
+          "masque_liste": true
+        },
+        "etat": {
+          "type": "mesure",
+          "de": "point",
+          "grandeur": "etat",
+          "libelle": "Relevé"
+        },
+        "part_objectif": {
+          "type": "formule",
+          "libelle": "% de l'objectif",
+          "expression": "{{if(isEmpty(record.objectif_mois), '—', if(isEmpty(record.conso_mois), '0 %', round(record.conso_mois / record.objectif_mois * 100) + ' %'))}}"
+        },
+        "tendance": {
+          "type": "formule",
+          "libelle": "Tendance",
+          "expression": "{{if(isEmpty(record.objectif_mois), '—', if(record.conso_mois > record.objectif_mois * (1 + reglages.tolerance_objectif / 100), 'Au-dessus', if(record.conso_mois > record.objectif_mois, 'Dans la marge', 'Dans l\\'objectif')))}}"
+        },
+        "remarques": {
+          "type": "texte_long",
+          "libelle": "Remarques",
+          "max": 1000,
+          "masque_liste": true
+        }
+      }
+    },
+    "automates": {
+      "libelle": "Installation raccordée",
+      "libelle_pluriel": "Installations raccordées",
+      "champs": {
+        "connexion": {
+          "type": "lien",
+          "vers": "connexions_connect",
+          "libelle": "Automate ou passerelle",
+          "obligatoire": true
+        },
+        "batiment": {
+          "type": "lien",
+          "vers": "batiments",
+          "libelle": "Bâtiment"
+        },
+        "usage": {
+          "type": "choix",
+          "libelle": "Usage",
+          "valeurs": [
+            "Chauffage",
+            "Climatisation",
+            "Ventilation",
+            "Éclairage",
+            "Comptage",
+            "Accès",
+            "Bornes de recharge",
+            "Autre"
+          ],
+          "defaut": "Chauffage"
+        },
+        "contrat": {
+          "type": "lien",
+          "vers": "contrats",
+          "libelle": "Contrat de maintenance"
+        },
+        "referent": {
+          "type": "texte",
+          "libelle": "Référent",
+          "max": 80,
+          "suggestions": true,
+          "suggestions_source": "personnes"
+        },
+        "etat": {
+          "type": "mesure",
+          "de": "connexion",
+          "grandeur": "etat",
+          "libelle": "État"
+        },
+        "collecte": {
+          "type": "mesure",
+          "de": "connexion",
+          "grandeur": "horodatage",
+          "libelle": "Dernière collecte"
+        },
+        "alarmes": {
+          "type": "mesure",
+          "de": "connexion",
+          "grandeur": "alarmes",
+          "libelle": "Alarmes"
+        },
+        "etat_batiment": {
+          "type": "mesure",
+          "de": "batiment",
+          "grandeur": "etat",
+          "libelle": "Bâtiment",
+          "masque_liste": true
+        },
+        "defauts_batiment": {
+          "type": "mesure",
+          "de": "batiment",
+          "grandeur": "connexions_en_defaut",
+          "libelle": "Connexions en défaut (bâtiment)",
+          "masque_liste": true
+        }
+      }
+    },
+    "incidents": {
+      "libelle": "Incident technique",
+      "libelle_pluriel": "Incidents techniques",
+      "champs": {
+        "alarme": {
+          "type": "entier",
+          "libelle": "N° d'alarme",
+          "masque_liste": true
+        },
+        "debut": {
+          "type": "horodatage",
+          "libelle": "Début"
+        },
+        "fin": {
+          "type": "horodatage",
+          "libelle": "Fin"
+        },
+        "duree": {
+          "type": "duree",
+          "libelle": "Durée"
+        },
+        "origine": {
+          "type": "choix",
+          "libelle": "Origine",
+          "valeurs": [
+            "regle",
+            "connexion",
+            "equipement",
+            "liaison"
+          ],
+          "couleurs": {
+            "regle": "gris",
+            "connexion": "orange",
+            "equipement": "rouge",
+            "liaison": "violet"
+          }
+        },
+        "gravite": {
+          "type": "choix",
+          "libelle": "Gravité",
+          "valeurs": [
+            "critique",
+            "majeure",
+            "mineure",
+            "info"
+          ],
+          "couleurs": {
+            "critique": "rouge",
+            "majeure": "orange",
+            "mineure": "jaune",
+            "info": "gris"
+          }
+        },
+        "etat": {
+          "type": "choix",
+          "libelle": "Alarme",
+          "valeurs": [
+            "active",
+            "terminee"
+          ],
+          "couleurs": {
+            "active": "rouge",
+            "terminee": "vert"
+          }
+        },
+        "connexion": {
+          "type": "lien",
+          "vers": "connexions_connect",
+          "libelle": "Automate ou passerelle"
+        },
+        "batiment": {
+          "type": "lien",
+          "vers": "batiments",
+          "libelle": "Bâtiment"
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Équipement"
+        },
+        "message": {
+          "type": "texte",
+          "libelle": "Message",
+          "max": 300
+        },
+        "demande": {
+          "type": "entier",
+          "libelle": "N° de demande",
+          "masque_liste": true
+        },
+        "suivi": {
+          "type": "choix",
+          "libelle": "Suivi",
+          "valeurs": [
+            "À traiter",
+            "Intervention demandée",
+            "Réparé",
+            "Sans suite"
+          ],
+          "defaut": "À traiter",
+          "couleurs": {
+            "À traiter": "orange",
+            "Intervention demandée": "bleu",
+            "Réparé": "vert",
+            "Sans suite": "gris"
+          }
+        },
+        "commentaire": {
+          "type": "texte_long",
+          "libelle": "Commentaire",
+          "max": 1000,
+          "masque_liste": true
+        }
+      }
+    }
+  },
+  "alarmes": [
+    {
+      "jeu": "incidents",
+      "si": {
+        "origines": [
+          "connexion",
+          "equipement",
+          "liaison"
+        ]
+      },
+      "champs": {
+        "alarme": "@alarme",
+        "debut": "@debut",
+        "fin": "@fin",
+        "duree": "@duree",
+        "origine": "@origine",
+        "gravite": "@gravite",
+        "etat": "@etat",
+        "connexion": "@connexion",
+        "batiment": "@batiment",
+        "equipement": "@equipement",
+        "message": "@message",
+        "demande": "@demande"
+      },
+      "historique_jours": 30
+    }
+  ],
+  "ancrages": [
+    {
+      "emplacement": "connect.supervision",
+      "type": "compteur",
+      "source": "incidents",
+      "libelle": "Installations en défaut",
+      "icone": "triangle-exclamation-point",
+      "filtre": {
+        "etat": "active"
+      },
+      "couleur": "rouge"
+    },
+    {
+      "emplacement": "connect.supervision",
+      "type": "compteur",
+      "source": "incidents",
+      "libelle": "Incidents à traiter",
+      "icone": "bell",
+      "filtre": {
+        "suivi": "À traiter"
+      },
+      "couleur": "orange"
+    },
+    {
+      "emplacement": "connect.supervision",
+      "type": "jauge",
+      "source": "incidents",
+      "champ": "duree",
+      "agregat": "somme",
+      "unite": "min",
+      "libelle": "Temps cumulé en défaut",
+      "icone": "timer",
+      "couleur": "violet"
+    },
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "incidents",
+      "libelle": "Installations : incidents à traiter",
+      "icone": "bell",
+      "filtre": {
+        "suivi": "À traiter"
+      },
+      "couleur": "orange"
+    },
+    {
+      "emplacement": "connect.point",
+      "type": "liste_liee",
+      "source": "compteurs",
+      "champ_lien": "point",
+      "libelle": "Compteur suivi",
+      "colonnes": [
+        "nom",
+        "conso_jour",
+        "conso_mois",
+        "objectif_mois",
+        "tendance"
+      ]
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "incidents",
+      "champ_lien": "equipement",
+      "libelle": "Défauts remontés par la supervision",
+      "colonnes": [
+        "debut",
+        "gravite",
+        "duree",
+        "suivi"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "cle": "compteurs",
+      "titre": "Compteurs",
+      "icone": "gauge",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "compteurs",
+        "colonnes": [
+          "nom",
+          "fluide",
+          "batiment",
+          "conso_jour",
+          "conso_mois",
+          "objectif_mois",
+          "part_objectif",
+          "tendance",
+          "etat"
+        ],
+        "recherche": [
+          "nom"
+        ],
+        "filtres": [
+          "fluide"
+        ],
+        "grouper_par": "fluide",
+        "tri": {
+          "nom": "ASC"
+        },
+        "totaux": [
+          "conso_mois"
+        ],
+        "surligner": [
+          {
+            "si": {
+              "champ": "tendance",
+              "operateur": "egal",
+              "valeur": "Au-dessus"
+            },
+            "couleur": "rouge",
+            "libelle": "Au-dessus de l'objectif"
+          },
+          {
+            "si": {
+              "champ": "tendance",
+              "operateur": "egal",
+              "valeur": "Dans la marge"
+            },
+            "couleur": "orange",
+            "libelle": "Dans la marge de tolérance"
+          },
+          {
+            "si": {
+              "champ": "etat",
+              "operateur": "egal",
+              "valeur": "ancienne"
+            },
+            "couleur": "gris",
+            "libelle": "Relevé trop ancien"
+          }
+        ],
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ]
+      }
+    },
+    {
+      "cle": "installations",
+      "titre": "Installations raccordées",
+      "icone": "cpu",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "automates",
+        "colonnes": [
+          "connexion",
+          "batiment",
+          "usage",
+          "etat",
+          "collecte",
+          "alarmes",
+          "referent"
+        ],
+        "filtres": [
+          "usage"
+        ],
+        "grouper_par": "batiment",
+        "surligner": [
+          {
+            "si": {
+              "champ": "etat",
+              "operateur": "egal",
+              "valeur": "defaut"
+            },
+            "couleur": "rouge",
+            "libelle": "Liaison en défaut"
+          },
+          {
+            "si": {
+              "champ": "etat",
+              "operateur": "egal",
+              "valeur": "alarme"
+            },
+            "couleur": "orange",
+            "libelle": "En alarme"
+          }
+        ],
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ]
+      }
+    },
+    {
+      "cle": "incidents",
+      "titre": "Incidents techniques",
+      "icone": "bell",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "incidents",
+        "colonnes": [
+          "debut",
+          "origine",
+          "gravite",
+          "connexion",
+          "equipement",
+          "duree",
+          "etat",
+          "suivi"
+        ],
+        "filtres": [
+          "suivi",
+          "origine",
+          "gravite",
+          "etat"
+        ],
+        "tri": {
+          "debut": "DESC"
+        },
+        "champs_formulaire": [
+          "suivi",
+          "commentaire"
+        ],
+        "surligner": [
+          {
+            "si": {
+              "champ": "etat",
+              "operateur": "egal",
+              "valeur": "active"
+            },
+            "couleur": "rouge",
+            "libelle": "Défaut en cours"
+          }
+        ],
+        "actions": [
+          "modifier",
+          "supprimer",
+          "exporter"
+        ]
+      }
+    }
+  ],
+  "api_min": "1.4"
+}

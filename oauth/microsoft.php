@@ -165,6 +165,7 @@ function closeOk(array $user): void {
     if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
     unset($_SESSION['forced_tenant']);
     $_SESSION['user'] = $user;
+    $_SESSION['_authentifie_le'] = time();   // confirmation d'identité récente (Larka Connect)
     session_write_close();
 
     if (isMobileRequest()) {
@@ -204,6 +205,13 @@ function closeError(string $msg): void {
 
 /* ── Erreur MS directe ───────────────────────────────────────────────────── */
 if (isset($_GET['error'])) {
+    // Confirmation d'identité abandonnée (fenêtre fermée, mot de passe refusé) :
+    // c'est la fenêtre de confirmation qui répond, pas celle de la connexion.
+    if (str_starts_with((string)($_GET['state'] ?? ''), 'ra_')) {
+        require_once __DIR__ . '/../api/IdentiteConfirmee.php';
+        echo IdentiteConfirmee::page(false, 'Confirmation abandonnée chez Microsoft.');
+        exit;
+    }
     closeError($_GET['error_description'] ?? $_GET['error']);
 }
 
@@ -240,6 +248,47 @@ if (!$received || !$stateValid) {
 $isSuperAdminOAuth = str_starts_with($received, 'sa_');
 oauth_nonce_effacer();
 unset($_SESSION['oauth_state'], $_SESSION['sa_oauth_state']);
+
+/* ── Confirmation d'identité (« retaper son mot de passe ») ──────────────────
+ * Flux à part, lancé par une session DÉJÀ connectée (api/IdentiteConfirmee.php) :
+ * on relit seulement l'adresse vérifiée du compte, sans toucher à la session
+ * (ni utilisateur, ni jetons SharePoint/présence de la connexion), puis on pose
+ * la confirmation. Son état n'existe que sur le disque : pas de repli session. */
+if (str_starts_with($received, 'ra_')) {
+    require_once __DIR__ . '/../api/IdentiteConfirmee.php';
+    $raRefus = function (string $m) {
+        SecurityLog::audit('connect_reauth_failure', ['login' => (string)($_SESSION['user']['Login'] ?? ''), 'oauth_provider' => 'microsoft',
+                                                      'reason' => mb_substr($m, 0, 160)]);
+        echo IdentiteConfirmee::page(false, $m);
+        exit;
+    };
+    if (!is_array($stateData ?? null) || empty($stateData['reauth'])) $raRefus('Confirmation invalide : recommencez depuis Larka.');
+    $code = (string)($_GET['code'] ?? '');
+    if ($code === '') $raRefus('Code d\'autorisation manquant.');
+    $ch = curl_init('https://login.microsoftonline.com/' . MICROSOFT_TENANT_ID . '/oauth2/v2.0/token');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_TIMEOUT => 15,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_POSTFIELDS => http_build_query([
+            'client_id' => MICROSOFT_CLIENT_ID, 'client_secret' => MICROSOFT_CLIENT_SECRET, 'code' => $code,
+            'redirect_uri' => MICROSOFT_REDIRECT_URI, 'grant_type' => 'authorization_code', 'scope' => 'openid profile email User.Read',
+        ]),
+    ]);
+    $raJeton = json_decode((string)curl_exec($ch), true);
+    if (!is_array($raJeton) || empty($raJeton['access_token'])) $raRefus('Microsoft n\'a pas confirmé le compte.');
+    $ch = curl_init('https://graph.microsoft.com/v1.0/me');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_TIMEOUT => 10,
+                            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $raJeton['access_token']]]);
+    $raProfil = json_decode((string)curl_exec($ch), true);
+    $raCourriel = ms_email_verifie($raJeton, is_array($raProfil) ? $raProfil : [], (string)$raJeton['access_token']);
+    [$raOk, $raRes] = IdentiteConfirmee::conclure($stateData, 'microsoft', $raCourriel,
+                                                  IdentiteConfirmee::revendications((string)($raJeton['id_token'] ?? '')));
+    if (!$raOk) $raRefus((string)$raRes);
+    SecurityLog::audit('connect_reauth', ['login' => (string)($_SESSION['user']['Login'] ?? ''), 'oauth_provider' => 'microsoft']);
+    session_write_close();
+    echo IdentiteConfirmee::page(true, 'Vous pouvez revenir à Larka.');
+    exit;
+}
 
 /* ── Échange code → token ────────────────────────────────────────────────── */
 $code = $_GET['code'] ?? '';

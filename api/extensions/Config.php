@@ -28,7 +28,7 @@
  *
  * Le fichier est la SOURCE. On l'ouvre, on l'édite, on le commit.
  *
- * ⚠️ MULTI-TENANT
+ * MULTI-TENANT
  * Larka résout un tenant par domaine. Un fichier unique serait donc PARTAGÉ
  * entre tous les clients — la nomenclature de l'un deviendrait celle des autres.
  * C'est exactement ce que la table « Listes » évitait, puisqu'elle vit dans la
@@ -42,7 +42,7 @@
  * En mono-tenant, il n'y a que le premier chemin. En multi-tenant, la base sert
  * de modèle et chaque client écrit dans le sien.
  *
- * ⚠️ CE DOSSIER EST DANS LA RACINE DE L'APPLICATION
+ * CE DOSSIER EST DANS LA RACINE DE L'APPLICATION
  * extensions/.htaccess refuse déjà les .json et coupe le moteur PHP, et
  * deploy/nginx.conf porte la règle équivalente. Le contenu n'est donc pas
  * servi. Mais il reste écrit dans l'arborescence du code : si votre déploiement
@@ -160,7 +160,7 @@ final class ExtConfig
     /**
      * Crée le dossier du module et y dépose ses fichiers, à l'installation.
      *
-     * ⚠️ N'ÉCRASE JAMAIS un fichier existant. Réinstaller un module — pour le
+     * N'ÉCRASE JAMAIS un fichier existant. Réinstaller un module — pour le
      * mettre à jour, ou après une désinstallation — ne doit pas effacer la
      * nomenclature que le client a mise des mois à constituer. Les valeurs
      * déclarées sont un POINT DE DÉPART, pas une remise à zéro.
@@ -194,7 +194,7 @@ final class ExtConfig
     /**
      * Extrait de la déclaration les listes ouvertes, sous forme éditable.
      *
-     * ⚠️ LES DRAPEAUX D'AMORÇAGE SE LISENT DANS « amorce », PAS À LA RACINE.
+     * LES DRAPEAUX D'AMORÇAGE SE LISENT DANS « amorce », PAS À LA RACINE.
      *
      * Le schéma range « ajout_autorise » et « libre » sous `amorce` — ce sont
      * des valeurs de DÉPART pour la catégorie, que l'administrateur pourra
@@ -208,7 +208,7 @@ final class ExtConfig
      * la racine pour une déclaration brute (outils, tests, aperçu avant
      * installation). Une seule vérité, lue là où elle se trouve.
      *
-     * ⚠️ DEUX CHAMPS PEUVENT DÉSIGNER LA MÊME CATÉGORIE.
+     * DEUX CHAMPS PEUVENT DÉSIGNER LA MÊME CATÉGORIE.
      * Le premier rencontré gagnait, et l'ORDRE DE DÉCLARATION décidait
      * silencieusement si la saisie libre était permise. On fusionne : les
      * valeurs s'unissent, les droits s'additionnent. Un droit accordé à un
@@ -259,7 +259,7 @@ final class ExtConfig
     /**
      * Les listes effectives d'un module.
      *
-     * ⚠️ GÉNÈRE LE FICHIER S'IL MANQUE.
+     * GÉNÈRE LE FICHIER S'IL MANQUE.
      * Il n'était écrit qu'à l'installation, par preparer() — laquelle ne tourne
      * QU'À l'installation. Un module déjà installé avant ce changement n'avait
      * donc aucun fichier, et n'en aurait jamais eu : rien ne le déclenchait, et

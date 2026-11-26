@@ -180,9 +180,14 @@ foreach ($paquets as $paquet) {
     $compteur = $racine . '/data/securite/compteurs/' . $id . '.json';
     if (is_file($compteur)) unlink($compteur);
 
-    if (is_dir((string)ExtPaquet::dossierCode($id))) {
+    // Les jeux à vider : ceux de la version déjà installée ET ceux de la version
+    // livrée à côté du paquet (son dossier source). Sans le second, une copie
+    // dont data/extensions/ a été effacé — mais pas la base — gardait la ligne
+    // « Épreuve » du passage précédent, et le champ « unique » la refusait.
+    $sources = array_filter([(string)ExtPaquet::dossierCode($id), dirname($paquet) . '/' . $id], 'is_dir');
+    foreach ($sources as $sourceJeux) {
         try {
-            $precedente = ExtManifeste::charger(ExtPaquet::dossierCode($id))->declaration();
+            $precedente = ExtManifeste::charger($sourceJeux)->declaration();
             foreach (array_keys($precedente['donnees'] ?? []) as $jeuPrecedent) {
                 $db->getPdo()->exec('DROP TABLE IF EXISTS "'
                     . ExtPolitiqueDonnees::prefixeExtension($id) . $jeuPrecedent . '"');

@@ -102,7 +102,7 @@ if ($action === 'superadmin_login' && $method === 'POST') {
 
     if (!TenantResolver::authenticateSuperAdmin($login, $password)) {
         rate_limit_noter('sa_login_' . $clientIp);
-        // ⚠️ LES ÉCHECS DE CONNEXION SUPER ADMIN N'ÉTAIENT PAS TRACÉS (seuls
+        // LES ÉCHECS DE CONNEXION SUPER ADMIN N'ÉTAIENT PAS TRACÉS (seuls
         // ceux des comptes de tenant l'étaient) — une attaque par force brute
         // sur le compte le plus puissant passait inaperçue.
         if (class_exists('SecurityLog')) {
@@ -119,6 +119,8 @@ if ($action === 'superadmin_login' && $method === 'POST') {
         'login' => $login,
         'authenticated' => true,
         'ts' => time(),
+        // Mot de passe de la connexion : changé depuis, la session tombe (api/index.php).
+        'empreinte' => TenantResolver::empreinteSuperAdmin((string)(TenantResolver::superAdminParLogin($login)['mot_de_passe'] ?? '')),
     ];
     if (class_exists('SecurityLog')) {
         SecurityLog::audit('sa_login_success', ['login' => $login, 'oauth_provider' => 'local']);
@@ -161,7 +163,7 @@ if ($action === 'superadmin_microsoft_url' && $method === 'GET') {
 
 // ── Callback OAuth Super Admin (vérification après redirection) ───────────────
 if ($action === 'superadmin_oauth_check' && $method === 'POST') {
-    // ⚠️ FIX SÉCURITÉ (CRITIQUE) : ne JAMAIS accorder l'accès super-admin à
+    // FIX SÉCURITÉ (CRITIQUE) : ne JAMAIS accorder l'accès super-admin à
     // partir d'un email fourni dans le corps de la requête. L'identité est
     // toujours établie par le serveur après vérification Microsoft. Deux voies :
     //   (1) la session SA a déjà été posée par oauth/microsoft.php (même origine
@@ -259,7 +261,7 @@ if ($action === 'superadmin_status' && $method === 'GET') {
     $hasSa = $sa !== null && !empty($sa['login']);
     $needsSetup = false;
     $isAuthenticated = !empty($_SESSION['superadmin']['authenticated']);
-    // ⚠️ FIX SÉCURITÉ (F3) : ne JAMAIS révéler à un visiteur non authentifié que
+    // FIX SÉCURITÉ (F3) : ne JAMAIS révéler à un visiteur non authentifié que
     // le mot de passe super-admin par défaut est encore actif (password_verify du
     // défaut) — c'est une aide directe à la prise de contrôle. On n'expose sans
     // authentification que le cas « aucun super-admin configuré » (vrai premier
@@ -271,7 +273,7 @@ if ($action === 'superadmin_status' && $method === 'GET') {
               && ($isAuthenticated || requete_locale() || (bool)(cfg('securite', 'allow_remote_setup') ?? false))) {
         // Détail « mot de passe par défaut » réservé au super-admin authentifié…
         // et à qui peut de toute façon faire la configuration initiale : depuis le
-        // serveur lui-même (ou allow_remote_setup). ⚠️ Sans cela, une installation
+        // serveur lui-même (ou allow_remote_setup). Sans cela, une installation
         // neuve était sans issue : le registre est créé avec le mot de passe par
         // défaut, la connexion avec lui est refusée, et l'écran n'offrait jamais le
         // formulaire de configuration — sous Windows, poste et serveur ne font qu'un.
@@ -360,7 +362,7 @@ if ($action === 'superadmin_tenants' && $method === 'GET') {
     $tenants = TenantResolver::getAllTenants();
     $result = [];
 
-    // ⚠️ FIX "RESTE EN CHARGEMENT" : budget de temps global. Même avec un
+    // FIX "RESTE EN CHARGEMENT" : budget de temps global. Même avec un
     //   connect_timeout par base, plusieurs tenants injoignables pourraient
     //   cumuler. Au-delà de ce budget, on cesse de TESTER la connectivité des
     //   tenants restants (statut 'unknown') et on renvoie quand même la liste :
@@ -402,7 +404,7 @@ if ($action === 'superadmin_tenants' && $method === 'GET') {
                     $dbStatus = 'unknown';
                 } else {
                     // Tester la connexion PG/MySQL avec un timeout court.
-                    // ⚠️ FIX "CHARGE À L'INFINI" : PostgreSQL IGNORE PDO::ATTR_TIMEOUT
+                    // FIX "CHARGE À L'INFINI" : PostgreSQL IGNORE PDO::ATTR_TIMEOUT
                     //   à la connexion → on borne via connect_timeout dans le DSN.
                     $dsn = ($driver === 'pgsql')
                         ? sprintf('pgsql:host=%s;port=%d;dbname=%s;connect_timeout=2', $dbCfg['host'] ?? '127.0.0.1', $dbCfg['port'] ?? 5432, $dbCfg['dbname'] ?? 'gmao')
@@ -421,7 +423,7 @@ if ($action === 'superadmin_tenants' && $method === 'GET') {
                             $userCount = (int) $testPdo->query('SELECT COUNT(*) FROM "utilisateurs" WHERE "actif"=1')->fetchColumn();
                         } catch (\Exception $e2) { $dbStatus = 'schema'; /* connecté, mais tables absentes */ }
                     }
-                    // ⚠️ FIX "POIDS DU DRIVER" : la taille n'était calculée que pour
+                    // FIX "POIDS DU DRIVER" : la taille n'était calculée que pour
                     //   SQLite. On la calcule aussi pour PostgreSQL et MySQL afin que
                     //   la colonne « Taille » ne reste pas sur « — ».
                     try {
@@ -662,7 +664,7 @@ if ($action === 'superadmin_tenant_save' && $method === 'POST') {
             }
         } catch (\Throwable $_) {}
 
-        // ⚠️ Nettoyer les fichiers sentinelle de schéma (data/.schema/*.flag).
+        // Nettoyer les fichiers sentinelle de schéma (data/.schema/*.flag).
         // Ces flags court-circuitent initTables() s'ils sont présents et à jour.
         // Sans ce nettoyage, après un DROP DATABASE le code croirait que le
         // schéma est déjà en place et NE recréerait PAS les tables — provoquant
@@ -711,7 +713,7 @@ if ($action === 'superadmin_tenant_save' && $method === 'POST') {
         try {
             $tenantDb = new Database($tenant['base_de_donnees']);
 
-            // ⚠️ Forcer la création du schéma complet AVANT d'ajouter l'admin.
+            // Forcer la création du schéma complet AVANT d'ajouter l'admin.
             // Si la base vient d'être créée (force_drop OU base toute neuve)
             // et qu'un sentinelle traîne, le constructeur peut sauter initTables()
             // → la table Utilisateurs n'existe pas → INSERT échoue.
@@ -719,7 +721,7 @@ if ($action === 'superadmin_tenant_save' && $method === 'POST') {
             // de manière idempotente : c'est ceinture + bretelles.
             $tenantDb->ensureFullSchema();
 
-            // ⚠️ FIX PERFS : lookup direct par login au lieu de tirer toute
+            // FIX PERFS : lookup direct par login au lieu de tirer toute
             // la table puis foreach. O(1) avec l'index idx_utilisateurs_login.
             $loginExists = $tenantDb->findUtilisateurByLogin($adminLogin) !== null;
             if (!$loginExists) {
@@ -857,7 +859,7 @@ if ($action === 'superadmin_tenant_user_delete' && $method === 'POST') {
     try {
         $tenantDb = new Database($tenants[$key]['base_de_donnees']);
         // Récupérer le login AVANT suppression pour le retirer du registre
-        // ⚠️ FIX PERFS : lookup direct au lieu de scanner toute la table.
+        // FIX PERFS : lookup direct au lieu de scanner toute la table.
         $userToRemove = $tenantDb->findLocalUtilisateurById($userId);
         $loginToRemove = $userToRemove['Login'] ?? null;
         $tenantDb->deleteUtilisateur($userId);
@@ -1037,7 +1039,7 @@ if ($action === 'superadmin_tenant_purge_db' && $method === 'POST') {
             // SQLite : supprimer le fichier puis le recréer vide
             $dbPath = _sa_resolve_path($tenantCfgDb['path'] ?? '');
             if ($dbPath && is_file($dbPath)) {
-                // ⚠️ Sans invalidation, la sentinelle disait encore « schéma à
+                // Sans invalidation, la sentinelle disait encore « schéma à
                 // jour » : la base recréée restait SANS TABLES (« no such
                 // table: Utilisateurs »), contrairement au message ci-dessous.
                 // (Database vérifie aussi désormais l'inode du fichier.)
@@ -1053,7 +1055,7 @@ if ($action === 'superadmin_tenant_purge_db' && $method === 'POST') {
             // PG / MariaDB : DROP de tout puis recréation du schéma vide
             $dbDel = new \Database($tenantCfgDb);
             _sa_purge_database($dbDel->getPdo(), $driverSup);
-            // ⚠️ La sentinelle de schéma de cette base dit encore « à jour » alors
+            // La sentinelle de schéma de cette base dit encore « à jour » alors
             //    qu'on vient de DROP toutes les tables. Sans invalidation, le
             //    new Database() ci-dessous court-circuiterait initTables() et les
             //    tables ne seraient JAMAIS recréées → « relation utilisateurs
@@ -1159,7 +1161,7 @@ if ($action === 'superadmin_tenant_modules') {
         // Filtrer aux modules connus uniquement
         $known = ['dashboard','biens','equipements','stock','plans','interventions','contrats',
                   'gestion_materiel','historique','demandes','energie','carbone','mobilite_carbone',
-                  'archives','statsAvancees','legifrance','chorus','configuration'];
+                  'archives','statsAvancees','legifrance','chorus','configuration','connect'];
         $disabled = array_values(array_filter($disabled, fn($m) => in_array($m, $known, true)));
 
         // Extensions : on ne retient que celles réellement installées et non
@@ -1219,11 +1221,11 @@ if ($action === 'superadmin_switch_tenant' && $method === 'POST') {
 
     try {
         $tenantDb = new Database($tenants[$key]['base_de_donnees']);
-        // ⚠️ FIX PERFS : lookup direct au lieu de full-scan + foreach.
+        // FIX PERFS : lookup direct au lieu de full-scan + foreach.
         $saUser = $tenantDb->findUtilisateurByLoginOrEmail($saLogin, $saEmail);
 
         if (!$saUser) {
-            // ⚠️ FIX BUG : créer un compte Admin (accès complet) cohérent avec
+            // FIX BUG : créer un compte Admin (accès complet) cohérent avec
             // le statut super-admin. Auparavant le rôle était 'Demandeur' alors
             // que le commentaire disait "accès complet" — un super-admin
             // basculant sur un tenant se retrouvait avec des droits de simple
@@ -1273,7 +1275,7 @@ if ($action === 'superadmin_test_db' && $method === 'POST') {
     try {
         if ($driver === 'sqlite') {
             $pathBrut = (string)($body['path'] ?? '');
-            // ⚠️ RÉSOLU DEPUIS api/ AU LIEU DE LA RACINE : « __DIR__ . '/../' »
+            // RÉSOLU DEPUIS api/ AU LIEU DE LA RACINE : « __DIR__ . '/../' »
             // vaut api/ ici (on est dans api/routes). Tester « data/x.db »
             // créait api/data/x.db, et force_drop supprimait ce mauvais fichier.
             // Même résolution et mêmes bornes que l'enregistrement du tenant.
@@ -1394,28 +1396,28 @@ if ($action === 'superadmin_test_db' && $method === 'POST') {
                     // On ne fait pas échouer le test : on signale juste l'échec du drop.
                     // L'utilisateur saura qu'il doit vérifier les connexions manuellement.
                     json_ok(['status' => 'error',
-                        'message' => "❌ Impossible de supprimer la base existante : " . $e->getMessage()
+                        'message' => "Impossible de supprimer la base existante : " . $e->getMessage()
                             . " — Vérifiez qu'aucune autre application n'est connectée à « {$dbname} »."]);
                 }
             }
 
             if (!$dbname) {
-                json_ok(['status' => 'ok', 'message' => '✅ Serveur accessible. Renseignez un nom de base.']);
+                json_ok(['status' => 'ok', 'message' => 'Serveur accessible. Renseignez un nom de base.']);
             }
             // PostgreSQL : joindre le serveur ne suffit pas — vérifier que Larka
             // pourra créer la base, ou y créer ses tables si elle existe.
             if ($driver === 'pgsql') {
                 $_diag = TenantResolver::diagnosticPg(['host' => $host, 'port' => $port, 'dbname' => $dbname,
                     'user' => $user, 'password' => $password, 'sslmode' => $body['sslmode'] ?? 'prefer']);
-                if (!$_diag['ok']) json_ok(['status' => 'error', 'message' => '❌ ' . $_diag['message']]);
+                if (!$_diag['ok']) json_ok(['status' => 'error', 'message' => '' . $_diag['message']]);
             }
             if ($dbExists) {
-                $_avert = ($driver === 'pgsql' && !empty($_diag['avertissement'])) ? ' ⚠️ ' . $_diag['avertissement'] : '';
-                json_ok(['status' => 'ok', 'message' => "✅ Serveur OK. La base « {$dbname} » existe déjà — elle sera réutilisée." . $_avert]);
+                $_avert = ($driver === 'pgsql' && !empty($_diag['avertissement'])) ? ' ' . $_diag['avertissement'] : '';
+                json_ok(['status' => 'ok', 'message' => "Serveur OK. La base « {$dbname} » existe déjà — elle sera réutilisée." . $_avert]);
             } else {
                 $createMsg = $forceDrop && $dropMsg
-                    ? "✅ Serveur OK{$dropMsg}. La base « {$dbname} » sera recréée à l'enregistrement."
-                    : "✅ Serveur OK. La base « {$dbname} » sera créée à l'enregistrement.";
+                    ? "Serveur OK{$dropMsg}. La base « {$dbname} » sera recréée à l'enregistrement."
+                    : "Serveur OK. La base « {$dbname} » sera créée à l'enregistrement.";
                 json_ok(['status' => 'ok', 'message' => $createMsg]);
             }
         }
@@ -1609,19 +1611,27 @@ if ($action === 'superadmin_change_password' && $method === 'POST') {
     $newPwd = $body['newPassword'] ?? '';
 
     if (!$oldPwd || !$newPwd) json_error('Ancien et nouveau mot de passe requis.');
-    if (strlen($newPwd) < 6) json_error('Minimum 6 caractères.');
+    // 8 caractères, comme à la configuration initiale et à l'ajout d'un compte (il en suffisait de 6 ici).
+    if (strlen($newPwd) < 8) json_error('Le mot de passe doit contenir au moins 8 caractères.');
+    check_rate_limit('sa_chgpwd_' . client_ip(), 5, 600);
 
     $sa = TenantResolver::getSuperAdmin();
     if (!$sa || !password_verify($oldPwd, $sa['mot_de_passe'])) {
         json_error('Ancien mot de passe incorrect.');
     }
 
+    $nouveau = password_hash($newPwd, PASSWORD_BCRYPT);
     $ok = TenantResolver::updateSuperAdmin(
         $sa['login'],
-        password_hash($newPwd, PASSWORD_BCRYPT),
+        $nouveau,
         $sa['email'] ?? ''
     );
     if (!$ok) json_error('Erreur lors de la mise à jour.');
+    // Cette session reste ouverte ; les autres sessions du compte tombent (api/index.php).
+    if (($_SESSION['superadmin']['login'] ?? '') === $sa['login'] && ($_SESSION['superadmin']['provider'] ?? 'local') !== 'microsoft') {
+        $_SESSION['superadmin']['empreinte'] = TenantResolver::empreinteSuperAdmin($nouveau);
+    }
+    if (class_exists('SecurityLog')) SecurityLog::audit('password_changed', ['login' => 'superadmin:' . $sa['login']]);
     json_ok('Mot de passe super admin modifié.');
 }
 
@@ -1632,7 +1642,7 @@ if ($action === 'superadmin_emails' && $method === 'GET') {
 }
 
 if ($action === 'superadmin_emails_save' && $method === 'POST') {
-    // ⚠️ AJOUTER UNE ADRESSE ICI, C'EST CRÉER UN SUPER ADMIN.
+    // AJOUTER UNE ADRESSE ICI, C'EST CRÉER UN SUPER ADMIN.
     // Toute adresse de cette liste ouvre la session super admin via la
     // connexion Microsoft. La route n'exigeait que require_superadmin() : un
     // compte SECONDAIRE, à qui superadmin_account_add est refusé, pouvait donc
@@ -1737,7 +1747,7 @@ if ($action === 'superadmin_branding_public' && $method === 'GET') {
 
 // ── Setup initial du super admin (première utilisation) ───────────────────────
 if ($action === 'superadmin_setup' && $method === 'POST') {
-    // ⚠️ FIX SÉCURITÉ : le setup initial est NON authentifié (il faut bien
+    // FIX SÉCURITÉ : le setup initial est NON authentifié (il faut bien
     // pouvoir créer le premier compte). Sur une installation fraîche encore au
     // mot de passe par défaut, n'importe qui pouvait donc appeler cette action
     // à distance, fixer SES propres identifiants super-admin et verrouiller
@@ -1746,7 +1756,7 @@ if ($action === 'superadmin_setup' && $method === 'POST') {
     // setup à distance délibéré, activer temporairement
     // securite.allow_remote_setup=true dans config.json.
     //
-    // ⚠️ FIX SÉCURITÉ : le contrôle portait sur REMOTE_ADDR. Derrière un
+    // FIX SÉCURITÉ : le contrôle portait sur REMOTE_ADDR. Derrière un
     // reverse proxy local (Caddy, tunnel, nginx devant « php -S »), REMOTE_ADDR
     // vaut 127.0.0.1 pour tous les visiteurs : le setup redevenait ouvert à
     // Internet. On regarde désormais l'IP réelle du client (client_ip) et on
@@ -1806,7 +1816,7 @@ function _sa_resolve_path(string $p): string {
 /**
  * Instantané COHÉRENT d'une base SQLite vers un nouveau fichier.
  *
- * ⚠️ UNE SIMPLE copy() DU .db N'EST PAS UNE SAUVEGARDE FIABLE.
+ * UNE SIMPLE copy() DU .db N'EST PAS UNE SAUVEGARDE FIABLE.
  * La base tourne en mode WAL (PRAGMA journal_mode=WAL) : les dernières écritures
  * vivent dans le fichier « .db-wal » tant qu'un checkpoint ne les a pas repliées.
  * Copier le seul « .db » pendant que l'application tourne rend donc une
@@ -1841,7 +1851,7 @@ function _sa_snapshot_sqlite(string $src, string $destDb): void {
 //  GARDE-FOUS : BASES PARTAGÉES
 // ══════════════════════════════════════════════════════════════════════════════
 //
-// ⚠️ SUPPRIMER UN TENANT DÉTRUISAIT SA BASE, MÊME PARTAGÉE.
+// SUPPRIMER UN TENANT DÉTRUISAIT SA BASE, MÊME PARTAGÉE.
 // Aucune vérification n'empêchait un tenant de pointer sur la base principale
 // (config.json), sur le registre super admin, ou sur la base d'un autre
 // tenant — une faute de frappe dans le nom de base suffit. Reproduit : un
@@ -1962,7 +1972,7 @@ function _sa_backup_filename(string $tenantKey, string $driver, bool $compress):
 /**
  * Dossiers de FICHIERS d'un client — ce que le SQL ne contient pas.
  *
- * ⚠️ UNE SAUVEGARDE SQL N'EST PAS UNE SAUVEGARDE.
+ * UNE SAUVEGARDE SQL N'EST PAS UNE SAUVEGARDE.
  * Le dump couvre toutes les tables, y compris celles créées par les modules
  * (« ext_… ») et les documents, stockés en base dans une colonne. Mais six
  * familles de fichiers vivent SUR LE DISQUE et n'y figurent pas :
@@ -1996,7 +2006,7 @@ function _sa_dossiers_fichiers(string $tenantKey): array
         'data/plans' . $t,
         'data/fonds' . $t,
         'data/extensions' . $t,
-        // ⚠️ « data/thematiques » MANQUAIT : c'est là que vivent les thèmes et
+        // « data/thematiques » MANQUAIT : c'est là que vivent les thèmes et
         // les packs de langue installés, isolés par client comme les modules.
         // Une restauration rendait donc une interface revenue à l'habillage
         // d'origine, sans que rien ne dise pourquoi.
@@ -2053,7 +2063,7 @@ function _sa_dossiers_fichiers(string $tenantKey): array
  * retrouvent ensemble dans le dossier de sauvegarde, et l'on voit du premier
  * coup d'œil s'il en manque un.
  *
- * ⚠️ CETTE SAUVEGARDE NE SE FAISAIT PRESQUE JAMAIS, ET LE DISAIT À PEINE.
+ * CETTE SAUVEGARDE NE SE FAISAIT PRESQUE JAMAIS, ET LE DISAIT À PEINE.
  *
  * Elle appelait « tar » par exec(), après avoir testé sa présence par
  * shell_exec(). Or le pool PHP-FPM livré avec Larka désactive les deux :
@@ -2265,7 +2275,7 @@ const SA_TABLES_EXCLUES_IMPORT_EXPORT = ['Utilisateurs', 'PushSubscriptions'];
  * afin que les comptes de la base cible soient préservés à l'import.
  */
 function _sa_dump_sql_via_pdo(PDO $pdo, string $driver, ?array $exclure = null): string {
-    // ⚠️ L'EXCLUSION DÉPEND DE L'USAGE, ET ELLE ÉTAIT FIGÉE.
+    // L'EXCLUSION DÉPEND DE L'USAGE, ET ELLE ÉTAIT FIGÉE.
     //
     // « Utilisateurs » et « PushSubscriptions » sont écartés d'un EXPORT : on
     // transfère des données d'un client à un autre sans écraser ses comptes.
@@ -2304,7 +2314,7 @@ function _sa_dump_sql_via_pdo(PDO $pdo, string $driver, ?array $exclure = null):
     foreach ($tables as $table) {
         $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
         $out .= "-- Table: {$safe}\n";
-        // ⚠️ LE DUMP NE PORTAIT QUE DES INSERT.
+        // LE DUMP NE PORTAIT QUE DES INSERT.
         // L'import recrée le schéma avec Database — qui ignore les tables des
         // modules (ext_*) et le journal. Leurs INSERT échouaient donc tous, et
         // l'import s'arrêtait… après avoir purgé la base cible. Chaque table
@@ -2361,7 +2371,7 @@ function _sa_dump_sql_via_pdo(PDO $pdo, string $driver, ?array $exclure = null):
  * Avant d'exécuter un dump : crée les tables et les colonnes qu'il remplit mais
  * que ni le schéma de Larka ni le dump lui-même (CREATE TABLE) ne créent —
  * tables de modules et colonnes ajoutées à la volée (par un écran, par un
- * module), quand le dump est antérieur à 2.1.1 et n'en porte pas la structure.
+ * module), quand le dump est antérieur à 3.0.0 et n'en porte pas la structure.
  * Les types sont déduits des valeurs : entiers, décimaux, sinon texte.
  *
  * @param string[] $stmts ordres du dump
@@ -2509,7 +2519,7 @@ function _sa_valeurs_insert(string $liste, bool $antislash = false): array {
  * chaînes littérales. Bien plus robuste qu'un simple explode(';') qui casse dès
  * qu'une valeur texte contient ";".
  *
- * ⚠️ LES ÉCHAPPEMENTS PAR ANTISLASH DE MARIADB N'ÉTAIENT PAS COMPRIS.
+ * LES ÉCHAPPEMENTS PAR ANTISLASH DE MARIADB N'ÉTAIENT PAS COMPRIS.
  * Notre propre dump MariaDB passe par PDO::quote(), qui échappe l'apostrophe en
  * « \' » (et non « '' »). Le découpage ne connaissait que « '' » : sur la
  * première valeur contenant une apostrophe (« l'équipement »), il croyait la
@@ -2688,7 +2698,7 @@ function _sa_purge_database(PDO $pdo, string $driver): void {
  * Applique la rotation : au-delà de « garder » SAUVEGARDES, les plus anciennes
  * sont supprimées.
  *
- * ⚠️ ELLE COMPTAIT DES FICHIERS, PAS DES SAUVEGARDES. Chaque sauvegarde en
+ * ELLE COMPTAIT DES FICHIERS, PAS DES SAUVEGARDES. Chaque sauvegarde en
  * produit deux (la base, et « …-fichiers.tar.gz ») : « garder 30 » n'en
  * gardait que 15, et pouvait séparer une base de ses fichiers. Et le préfixe
  * « tenant_alpha_ » attrapait aussi les sauvegardes d'un tenant « alpha_b » :
@@ -2886,7 +2896,7 @@ if ($action === 'superadmin_tenant_import_db' && $method === 'POST') {
     $isGz = str_ends_with(strtolower($origName), '.gz');
 
     // Sauvegarde de sûreté AVANT l'import (automatique).
-    // ⚠️ L'IMPORT CONTINUAIT MÊME QUAND ELLE AVAIT ÉCHOUÉ.
+    // L'IMPORT CONTINUAIT MÊME QUAND ELLE AVAIT ÉCHOUÉ.
     // Un import purge la base cible avant d'écrire : sans filet, une sauvegarde
     // ratée transforme la moindre erreur d'import en perte définitive. On refuse
     // donc l'import si la sauvegarde ne s'est pas faite, sauf override explicite
@@ -2947,7 +2957,7 @@ if ($action === 'superadmin_tenant_import_db' && $method === 'POST') {
                 $debug['snapshot_avant']['_fichier'] = 'absent (nouvelle base)';
             }
 
-            // ⚠️ Écraser le .db en laissant un ancien WAL/SHM à côté corrompt la
+            // Écraser le .db en laissant un ancien WAL/SHM à côté corrompt la
             // base rouverte (SQLite rejoue un journal qui n'est plus le sien).
             // On invalide la sentinelle de schéma et on retire les fichiers
             // annexes AVANT de poser le nouveau fichier.
@@ -3101,7 +3111,7 @@ if ($action === 'superadmin_tenant_import_db' && $method === 'POST') {
 
             // Tables que le schéma de Larka ne crée pas : le journal, et celles
             // des modules ou d'autres tables encore, quand le dump (antérieur à
-            // 2.1.1) n'en porte pas la structure.
+            // 3.0.0) n'en porte pas la structure.
             try { Journal::creerTable($pdo); } catch (\Throwable $_) {}
             try { _sa_preparer_tables_import($pdo, $driver, $stmts); } catch (\Throwable $_) {}
 
@@ -3112,7 +3122,7 @@ if ($action === 'superadmin_tenant_import_db' && $method === 'POST') {
             $executed = 0;
             try {
                 foreach ($stmts as $s) {
-                    // ⚠️ UN COMMENTAIRE EN TÊTE FAISAIT SAUTER L'ORDRE QUI SUIT.
+                    // UN COMMENTAIRE EN TÊTE FAISAIT SAUTER L'ORDRE QUI SUIT.
                     //
                     // Le découpage se fait sur « ; », donc un fichier commenté
                     // produit des morceaux de la forme :

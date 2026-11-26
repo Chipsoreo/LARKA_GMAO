@@ -24,6 +24,7 @@
 
 require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/Expression.php';
+require_once __DIR__ . '/Connectivite.php';
 require_once __DIR__ . '/../securite/Securite.php';
 require_once __DIR__ . '/../Fichiers.php';
 require_once __DIR__ . '/../Paquet.php';
@@ -37,6 +38,8 @@ final class ExtMoteurDeclaratif
 
     private $db;
     private array $utilisateur;
+    /** Lecteur du bâtiment connecté, créé à la première mesure ou au premier lien. */
+    private ?ExtConnectivite $connectivite = null;
 
     public function __construct(string $identifiant, array $declaration, $db,
                                 array $utilisateur = [])
@@ -187,6 +190,22 @@ final class ExtMoteurDeclaratif
                 array_column($lignes, $cle), fn($v) => (int)$v > 0)));
             if ($ids === []) continue;
 
+            // Bâtiment connecté : libellés composés par le cœur, jamais lus
+            // dans les tables de Larka Connect par une requête du module.
+            if (ExtConnectivite::sert($champ['vers'])) {
+                try {
+                    $index = $this->connectivite()->libelles($champ['vers'], $ids);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+                foreach ($lignes as $i => $l) {
+                    $v = (int)($l[$cle] ?? 0);
+                    $lignes[$i][$cle . '_libelle'] = $v > 0
+                        ? ($index[$v] ?? 'Supprimé (#' . $v . ')') : null;
+                }
+                continue;
+            }
+
             $affichage = ExtSchemaDeclaratif::CIBLES_LIEN[$champ['vers']]['affichage'] ?? ['Id'];
             $index = [];
             try {
@@ -213,6 +232,63 @@ final class ExtMoteurDeclaratif
                 // d'afficher un vide qui ferait croire à une absence de lien.
                 $lignes[$i][$cle . '_libelle'] = $v > 0
                     ? ($index[$v] ?? 'Supprimé (#' . $v . ')') : null;
+            }
+        }
+        return $lignes;
+    }
+
+    private function connectivite(): ExtConnectivite
+    {
+        return $this->connectivite ??= new ExtConnectivite($this->db, $this->identifiant,
+            ExtSchemaDeclaratif::capacitesRequises($this->declaration));
+    }
+
+    /**
+     * Lit les champs « mesure » de chaque ligne sur le bâtiment connecté.
+     *
+     * Groupées par lien et par cible : une page de cinquante salles qui
+     * affiche la température, le CO₂ et leur état fait UNE lecture par cible,
+     * pas cent cinquante. Pour chaque mesure, la ligne reçoit :
+     *   <champ>         la valeur (nombre, horodatage ou état)
+     *   <champ>_unite   l'unité du point, pour une valeur chiffrée
+     *   <champ>_etat    l'état du point (normal, alarme, ancienne…), pour que
+     *                   l'écran grise une valeur périmée et signale une alarme
+     *
+     * Avant les formules : une formule peut donc s'appuyer sur une mesure —
+     * « {{if(record.co2 >= record.seuil_alerte, 'À aérer', 'Bon')}} ».
+     */
+    private function enrichirMesures(array $lignes, array $jeu): array
+    {
+        $mesures = array_filter($jeu['champs'], fn($c) => ($c['type'] ?? '') === 'mesure');
+        if ($mesures === [] || $lignes === []) return $lignes;
+
+        // Par lien : quelles grandeurs lire, pour quels objets.
+        $parLien = [];
+        foreach ($mesures as $cle => $m) {
+            $parLien[$m['de']]['vers'] = $m['vers'];
+            $parLien[$m['de']]['grandeurs'][] = $m['grandeur'];
+        }
+        $lu = [];
+        foreach ($parLien as $lien => $q) {
+            $ids = array_values(array_unique(array_filter(
+                array_map('intval', array_column($lignes, $lien)), fn($v) => $v > 0)));
+            try {
+                $lu[$lien] = $ids === [] ? [] : $this->connectivite()->mesures(
+                    $q['vers'], $ids, $q['grandeurs']);
+            } catch (\Throwable $e) {
+                // Capacité retirée, Larka Connect absent : la case reste vide,
+                // la liste s'affiche.
+                $lu[$lien] = [];
+            }
+        }
+
+        foreach ($lignes as $i => $l) {
+            foreach ($mesures as $cle => $m) {
+                $obj = (int)($l[$m['de']] ?? 0);
+                $r = $obj > 0 ? ($lu[$m['de']][$obj][$m['grandeur']] ?? null) : null;
+                $lignes[$i][$cle] = $r['valeur'] ?? null;
+                $lignes[$i][$cle . '_etat'] = $obj > 0 ? ($r['etat'] ?? 'sans_valeur') : null;
+                if (isset($r['unite'])) $lignes[$i][$cle . '_unite'] = $r['unite'];
             }
         }
         return $lignes;
@@ -289,7 +365,8 @@ final class ExtMoteurDeclaratif
             foreach ($jeu['champs'] as $cle => $champ) {
                 // Un champ calculé n'a pas de colonne : il est recalculé à la
                 // lecture. En créer une le laisserait se désynchroniser.
-                if (($champ['type'] ?? '') === 'formule') continue;
+                if (!empty($champ['calcule'])
+                    || in_array($champ['type'] ?? '', ['formule', 'mesure'], true)) continue;
 
                 $colonnes[$cle] = ExtSchemaDeclaratif::TYPES[$champ['type']]['sql'];
             }
@@ -332,6 +409,19 @@ final class ExtMoteurDeclaratif
         foreach ($vue['filtres'] as $f) {
             $v = $charge['filtres'][$f['champ']] ?? null;
             if ($v !== null && $v !== '') $ou[$f['champ']] = $v;
+        }
+
+        // Jeu alimenté par les alarmes techniques : on relève ce qui est
+        // arrivé depuis le dernier passage de la collecte, pour que l'écran
+        // ne montre jamais un registre en retard d'une minute sur l'alarme
+        // que l'utilisateur vient de recevoir. Espacé, et sans effet sur
+        // l'affichage s'il échoue.
+        foreach ($this->declaration['alarmes'] ?? [] as $rec) {
+            if (($rec['jeu'] ?? '') === $jeuNom) {
+                ExtConnectivite::recevoirDepuisEcran($this->db, $this->identifiant,
+                                                     $this->declaration);
+                break;
+            }
         }
 
         // ── Pagination ───────────────────────────────────────────────────
@@ -381,6 +471,7 @@ final class ExtMoteurDeclaratif
         }
 
         $lignes = $this->enrichirLiens($lignes, $jeu);
+        $lignes = $this->enrichirMesures($lignes, $jeu);
         $lignes = $this->enrichirFormules($lignes, $jeu);
         $lignes = $this->enrichirCalculs($lignes);
 
@@ -520,6 +611,11 @@ final class ExtMoteurDeclaratif
         $champ = $jeu['champs'][(string)($charge['champ'] ?? '')] ?? null;
         if (!$champ || ($champ['type'] ?? '') !== 'lien') {
             throw new ExtErreurUtilisateur('Champ de lien inconnu.');
+        }
+
+        if (ExtConnectivite::sert($champ['vers'])) {
+            return $this->connectivite()->cibles($champ['vers'],
+                                                 (string)($charge['recherche'] ?? ''));
         }
 
         $affichage = ExtSchemaDeclaratif::CIBLES_LIEN[$champ['vers']]['affichage'] ?? ['Id'];
@@ -684,7 +780,7 @@ final class ExtMoteurDeclaratif
         $categorie = (string)$champ['liste'];
 
         /**
-         * ⚠️ CE CONTRÔLE ÉTAIT TOUJOURS VRAI, DONC L'AJOUT TOUJOURS REFUSÉ.
+         * CE CONTRÔLE ÉTAIT TOUJOURS VRAI, DONC L'AJOUT TOUJOURS REFUSÉ.
          *
          * `ajout_autorise` est bien une propriété du CHAMP — deux champs
          * peuvent puiser dans la même catégorie sans avoir le même droit de
@@ -767,6 +863,9 @@ final class ExtMoteurDeclaratif
             'table'    => $this->table($a['source']),
             'colonnes' => ['*'],
             'ou'       => $ou,
+            // Une liste liée montre d'abord le plus récent : sous la courbe
+            // d'une sonde, le dépassement d'hier avant celui du mois dernier.
+            'tri'      => $a['type'] === 'liste_liee' ? ['id' => 'DESC'] : [],
             'limite'   => 500,
         ]);
 
@@ -787,9 +886,20 @@ final class ExtMoteurDeclaratif
             $valeur = round($valeur, 2);
         }
 
+        // Une liste liée affiche des COLONNES du jeu : un lien doit y montrer
+        // son libellé, une mesure sa valeur, une formule son résultat — comme
+        // dans la page du module. Elle montrait des numéros bruts.
+        $lignes = $r['lignes'] ?? [];
+        if ($a['type'] === 'liste_liee' && $lignes !== []) {
+            $jeu = $this->jeu((string)$a['source']);
+            $lignes = $this->enrichirLiens($lignes, $jeu);
+            $lignes = $this->enrichirMesures($lignes, $jeu);
+            $lignes = $this->enrichirFormules($lignes, $jeu);
+        }
+
         return ['type' => $a['type'], 'libelle' => $a['libelle'],
                 'nombre' => $valeur,
-                'lignes' => $r['lignes'] ?? [], 'declaration' => $a];
+                'lignes' => $lignes, 'declaration' => $a];
     }
 
     public function exporter(string $jeuNom, array $charge): array
@@ -846,7 +956,7 @@ final class ExtMoteurDeclaratif
 
             // ── Mise à jour PARTIELLE ────────────────────────────────────
             //
-            // ⚠️ UN CHAMP ABSENT DE LA SAISIE ÉTAIT ÉCRASÉ.
+            // UN CHAMP ABSENT DE LA SAISIE ÉTAIT ÉCRASÉ.
             // La boucle reconstruit tout le jeu de champs : ce qui n'était pas
             // envoyé repartait à null ou à son défaut. Un appel qui ne porte
             // qu'une valeur — un bouton « Accepter », un script — vidait donc
@@ -862,7 +972,7 @@ final class ExtMoteurDeclaratif
             // Sans cette ligne, l'écriture était refusée par la Security API
             // — « colonne inexistante » — ce qui était exact, mais le message
             // ne désignait pas la cause.
-            if (($champ['type'] ?? '') === 'formule') continue;
+            if (in_array($champ['type'] ?? '', ['formule', 'mesure'], true)) continue;
             $brut = $saisie[$cle] ?? null;
             $lib  = $champ['libelle'];
 
@@ -873,7 +983,7 @@ final class ExtMoteurDeclaratif
 
             $vide = $brut === null || (is_string($brut) && trim($brut) === '');
             if ($vide) {
-                // ⚠️ LE DÉFAUT PASSE AVANT LE CONTRÔLE D'OBLIGATION.
+                // LE DÉFAUT PASSE AVANT LE CONTRÔLE D'OBLIGATION.
                 //
                 // Il était consulté APRÈS : un champ obligatoire absent du
                 // formulaire levait « est obligatoire » alors qu'il avait une
@@ -934,7 +1044,9 @@ final class ExtMoteurDeclaratif
                               ['max_jours', '>', 'ne peut pas être postérieure au']]
                              as [$b, $op, $texte]) {
                         if (!isset($champ[$b]) || $champ[$b] === null) continue;
-                        $borne = date('Y-m-d', strtotime('+' . (int)$champ[$b] . ' days'));
+                        // sprintf('%+d') : « +-30 days » était lu « +30 days » par strtotime(),
+                        // si bien qu'une borne négative (« pas plus de 30 jours en arrière ») se retournait.
+                        $borne = date('Y-m-d', strtotime(sprintf('%+d days', (int)$champ[$b])));
                         $cmp = strcmp($s, $borne);
                         if (($op === '<' && $cmp < 0) || ($op === '>' && $cmp > 0)) {
                             throw new ExtErreurUtilisateur("« $lib » $texte "
@@ -968,11 +1080,13 @@ final class ExtMoteurDeclaratif
                         $out[$cle] = null;
                         break;
                     }
-                    $existe = $this->securite->requeter([
-                        '_intention' => 'lien.verification',
-                        'action' => 'COUNT', 'table' => $champ['vers'],
-                        'ou' => ['Id' => $id],
-                    ])['nombre'] ?? 0;
+                    $existe = ExtConnectivite::sert($champ['vers'])
+                        ? (int)$this->connectivite()->existe($champ['vers'], $id)
+                        : ($this->securite->requeter([
+                            '_intention' => 'lien.verification',
+                            'action' => 'COUNT', 'table' => $champ['vers'],
+                            'ou' => ['Id' => $id],
+                        ])['nombre'] ?? 0);
                     if ($existe < 1) {
                         throw new ExtErreurUtilisateur("« $lib » : l'enregistrement "
                             . "sélectionné n'existe pas ou plus.");
@@ -1157,7 +1271,7 @@ final class ExtMoteurDeclaratif
         foreach ($t as $champ => $sens) {
             $champ = (string)$champ;
             if (!isset($jeu['champs'][$champ])) continue;
-            if (($jeu['champs'][$champ]['type'] ?? '') === 'formule') continue;
+            if (in_array($jeu['champs'][$champ]['type'] ?? '', ['formule', 'mesure'], true)) continue;
             $out[$champ] = strtoupper((string)$sens) === 'DESC' ? 'DESC' : 'ASC';
         }
         return $out;
@@ -1174,7 +1288,7 @@ final class ExtMoteurDeclaratif
     /**
      * L'action est-elle déclarée par une page que CET utilisateur peut utiliser ?
      *
-     * ⚠️ LA PREMIÈRE PAGE DÉCLARÉE DÉCIDAIT POUR TOUTES LES AUTRES.
+     * LA PREMIÈRE PAGE DÉCLARÉE DÉCIDAIT POUR TOUTES LES AUTRES.
      *
      * Le contrôle lisait `pageDe()`, qui rend la PREMIÈRE page dont la source
      * correspond. Un module qui présente le même jeu à deux publics — c'est le
@@ -1215,7 +1329,7 @@ final class ExtMoteurDeclaratif
      * notion d'autorisation du format — l'auteur ne déclare rien d'autre — et
      * c'est donc elle qui doit décider, partout.
      *
-     * ⚠️ ELLE NE DÉCIDAIT QUE POUR « supprimer » ET « exporter ».
+     * ELLE NE DÉCIDAIT QUE POUR « supprimer » ET « exporter ».
      *
      * `lister`, `enregistrer`, `cibles`, `suggestions`, `ancrage` et l'ajout de
      * valeurs de liste ne la consultaient pas. Le seul contrôle qu'ils
@@ -1392,7 +1506,7 @@ final class ExtMoteurDeclaratif
     /**
      * Crée les dossiers de fichiers déclarés par le module.
      *
-     * ⚠️ CETTE MÉTHODE N'ÉTAIT APPELÉE DE NULLE PART.
+     * CETTE MÉTHODE N'ÉTAIT APPELÉE DE NULLE PART.
      * Le manifeste pouvait déclarer « fichiers », le schéma le validait, la
      * capacité apparaissait à l'installation — et aucun dossier n'était créé.
      * Un module qui livre des icônes n'avait donc nulle part où les ranger, et

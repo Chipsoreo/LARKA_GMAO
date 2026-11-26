@@ -18,6 +18,8 @@
  *    - journal_export   (GET)  Export CSV du résultat filtré
  *    - journal_purge    (POST) Purge manuelle (Admin)
  *    - log_client       (POST) Réception des erreurs JavaScript du navigateur
+ *    - journal_codes    (GET)  Catalogue des codes d'erreur : explication et marche à suivre
+ *                              (tout utilisateur connecté : un message d'erreur à l'écran y renvoie)
  *
  *  Le journal contient des adresses IP, des identifiants de connexion et le
  *  détail des modifications : sa consultation est réservée aux Admin et
@@ -28,7 +30,7 @@
 // ── Liste filtrée ────────────────────────────────────────────────────────────
 if ($action === 'journal' && $method === 'GET') {
     /**
-     * ⚠️ LE SUPER ADMIN N'Y AVAIT PAS ACCÈS.
+     * LE SUPER ADMIN N'Y AVAIT PAS ACCÈS.
      *
      * Le journal a rejoint la Super Administration — c'est la trace de ce que
      * TOUT LE MONDE a fait, administrateurs de tenant compris, et la laisser à
@@ -58,12 +60,17 @@ if ($action === 'journal' && $method === 'GET') {
         'requestId'  => 'RequestId',
         'methode'    => 'Methode',
         'route'      => 'Route',
+        'code'       => 'Code',
     ] as $param => $colonne) {
         $v = trim((string)($_GET[$param] ?? ''));
         if ($v !== '') { $where[] = "$colonne = :$param"; $p[$param] = $v; }
     }
 
     if (!empty($_GET['entiteId'])) { $where[] = "EntiteId = :entiteId"; $p['entiteId'] = (int)$_GET['entiteId']; }
+    // Domaine du code d'erreur (« CXL » : capteurs LoRaWAN…) ; « avec_code » : les incidents expliqués seulement.
+    $dom = strtoupper(trim((string)($_GET['domaine'] ?? '')));
+    if ($dom !== '' && isset(CodesErreur::DOMAINES[$dom])) { $where[] = "Code LIKE :domaine"; $p['domaine'] = $dom . '-%'; }
+    if (!empty($_GET['avecCode'])) $where[] = "Code IS NOT NULL AND Code != ''";
     if (!empty($_GET['codeMin']))  { $where[] = "CodeHttp >= :codeMin"; $p['codeMin']  = (int)$_GET['codeMin']; }
     if (!empty($_GET['lentesMs'])) { $where[] = "DureeMs >= :lentesMs"; $p['lentesMs'] = (int)$_GET['lentesMs']; }
     if (!empty($_GET['depuis']))   { $where[] = "DateHeure >= :depuis";  $p['depuis']   = substr((string)$_GET['depuis'], 0, 19); }
@@ -121,12 +128,32 @@ if ($action === 'journal_stats' && $method === 'GET') {
             'parCanal'  => $db->fetchAll("SELECT Canal, COUNT(*) AS Total FROM Journal WHERE DateHeure >= :d GROUP BY Canal ORDER BY Total DESC", ['d' => $depuis]),
             'parJour'   => $db->fetchAll("SELECT SUBSTR(DateHeure,1,10) AS Jour, COUNT(*) AS Total FROM Journal WHERE DateHeure >= :d GROUP BY SUBSTR(DateHeure,1,10) ORDER BY Jour", ['d' => $depuis]),
             'topErreurs'=> $db->fetchAll("SELECT Message, COUNT(*) AS Total FROM Journal WHERE DateHeure >= :d AND Niveau IN ('error','critique') GROUP BY Message ORDER BY Total DESC LIMIT 10", ['d' => $depuis]),
-            'lentes'    => $db->fetchAll("SELECT Route, COUNT(*) AS Total, MAX(DureeMs) AS PireMs FROM Journal WHERE DateHeure >= :d AND DureeMs >= 2000 GROUP BY Route ORDER BY PireMs DESC LIMIT 10", ['d' => $depuis]),
+            // Incidents par code : le même problème, quelle que soit la formulation de ses messages.
+            'parCode'   => array_map(fn($r) => $r + ['Titre' => CodesErreur::fiche((string)$r['Code'])['titre'] ?? ''],
+                $db->fetchAll("SELECT Code, COUNT(*) AS Total, MAX(DateHeure) AS Dernier FROM Journal WHERE DateHeure >= :d AND Code IS NOT NULL AND Code != ''
+                               AND Niveau IN ('warning','error','critique') GROUP BY Code ORDER BY Total DESC LIMIT 12", ['d' => $depuis])),
+            // Sans les routes longues par nature (pont de supervision, flux de l'assistant : api/index.php).
+            'lentes'    => $db->fetchAll("SELECT Route, COUNT(*) AS Total, MAX(DureeMs) AS PireMs FROM Journal WHERE DateHeure >= :d AND DureeMs >= 2000"
+                                       . " AND COALESCE(Route, '') NOT IN ('supervision_pont', 'assistant_stream') GROUP BY Route ORDER BY PireMs DESC LIMIT 10", ['d' => $depuis]),
             'actifs'    => $db->fetchAll("SELECT Login, COUNT(*) AS Total FROM Journal WHERE DateHeure >= :d AND Login != '' GROUP BY Login ORDER BY Total DESC LIMIT 10", ['d' => $depuis]),
         ]);
     } catch (\Throwable $e) {
-        json_ok(['parNiveau' => [], 'parCanal' => [], 'parJour' => [], 'topErreurs' => [], 'lentes' => [], 'actifs' => []]);
+        json_ok(['parNiveau' => [], 'parCanal' => [], 'parJour' => [], 'topErreurs' => [], 'parCode' => [], 'lentes' => [], 'actifs' => []]);
     }
+}
+
+// ── Catalogue des codes d'erreur ─────────────────────────────────────────────
+// Rien de sensible : des explications et des marches à suivre. Ouvert à tout
+// utilisateur connecté, parce qu'un message d'erreur à l'écran y renvoie.
+if ($action === 'journal_codes' && $method === 'GET') {
+    if (empty($_SESSION['superadmin']['authenticated'])) require_auth();
+    $code = strtoupper(trim((string)($_GET['code'] ?? '')));
+    if ($code !== '') {
+        $f = CodesErreur::fiche($code);
+        if (!$f) json_error("Code « $code » inconnu.", 404);
+        json_ok($f);
+    }
+    json_ok(['domaines' => CodesErreur::DOMAINES, 'codes' => CodesErreur::catalogue()]);
 }
 
 // ── Toutes les entrées d'une même requête ────────────────────────────────────
@@ -181,7 +208,7 @@ if ($action === 'journal_export' && $method === 'GET') {
 // ── Purge manuelle ───────────────────────────────────────────────────────────
 if ($action === 'journal_purge' && $method === 'POST') {
     /**
-     * ⚠️ L'ADMINISTRÉ POUVAIT EFFACER SA PROPRE TRACE.
+     * L'ADMINISTRÉ POUVAIT EFFACER SA PROPRE TRACE.
      *
      * require_role(['Admin']) laisse passer le Gestionnaire (require_role traite
      * les deux comme administrateurs). Reproduit : un gestionnaire de tenant
@@ -460,7 +487,7 @@ if ($action === 'presence_effectif' && $method === 'GET') {
         // c'est plus fiable que le champ « Lieu de travail » d'Outlook, que
         // presque personne ne remplit.
         //
-        // ⚠️ CONFIDENTIALITÉ : l'objet des rendez-vous est comparé aux mots-clés
+        // CONFIDENTIALITÉ : l'objet des rendez-vous est comparé aux mots-clés
         // PUIS IMMÉDIATEMENT JETÉ. Il n'est ni stocké, ni journalisé, ni renvoyé
         // au client. Seuls les compteurs sortent d'ici. Lire l'intitulé des
         // réunions de toute une organisation serait disproportionné ; le
@@ -529,7 +556,7 @@ if ($action === 'presence_effectif' && $method === 'GET') {
                         // NOUS de respecter le choix de l'utilisateur.
                         if (!empty($it['isPrivate'])) continue;
 
-                        // ⚠️ Le créneau doit COUVRIR L'INSTANT PRÉSENT.
+                        // Le créneau doit COUVRIR L'INSTANT PRÉSENT.
                         // Sans ce test, un « CP après-midi » posé de 14h à 18h
                         // comptait la personne absente dès 8h du matin, et un
                         // « TT le matin » la comptait à distance jusqu'au soir.
@@ -563,7 +590,7 @@ if ($action === 'presence_effectif' && $method === 'GET') {
         // télétravail. Volontairement bornée à 0 et présentée comme une
         // estimation — un TT non déclaré est compté sur site, c'est la limite
         // structurelle de la méthode.
-        // ⚠️ Correction : la soustraction ne vaut QUE parmi les personnes
+        // Correction : la soustraction ne vaut QUE parmi les personnes
         // effectivement en ligne. Deux erreurs symétriques sinon :
         //   • un salarié en RTT qui laisse Teams ouvert sur son téléphone était
         //     compté « sur place » — les absences n'étaient pas déduites ;
@@ -638,7 +665,7 @@ if ($action === 'log_page' && $method === 'POST') {
 // Clics, saisies validées, soumissions, changements d'onglet. Envoyé par lots
 // par js/journal-interactions.js.
 //
-// ⚠️ DÉSACTIVÉ PAR DÉFAUT. Enregistrer les actions détaillées de salariés est
+// DÉSACTIVÉ PAR DÉFAUT. Enregistrer les actions détaillées de salariés est
 // un traitement de contrôle d'activité : information préalable des personnes
 // (C. trav. L1222-4), consultation du CSE (L2312-38), inscription au registre
 // des traitements et durée de conservation limitée. L'activation est donc un

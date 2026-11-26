@@ -185,7 +185,7 @@ function _aideCorps(f) {
     const etat = r.ok ? (r.avertissements ? 'avert' : 'ok') : 'bloquant';
     c.appendChild(_aideEl('p', `aide-bilan aide-${etat}`, r.bilan));
     const ul = _aideEl('ul', 'aide-prerequis');
-    const icone = { ok: '✓', avertissement: '⚠️', bloquant: '✗' };
+    const icone = { ok: '✓', avertissement: '', bloquant: '✗' };
     (r.points || []).forEach(x => {
       const li = _aideEl('li', 'aide-' + x.statut);
       li.appendChild(_aideEl('span', null, icone[x.statut] || '·'));
@@ -337,7 +337,7 @@ function _aidePied(requete) {
   const actions = _aideEl('div', 'aide-actions');
   const assistant = _AIDE_ACTIONS.assistant();
   if (assistant && !_aideConsoleSA()) {
-    const b = _aideEl('button', 'btn btn-sm', "🤖 Demander à l'assistant");
+    const b = _aideEl('button', 'btn btn-sm', "Demander à l'assistant");
     b.type = 'button';
     b.onclick = () => {
       assistant();
@@ -347,7 +347,7 @@ function _aidePied(requete) {
     actions.appendChild(b);
   }
   if (_aideDonnees && _aideDonnees.feedback && typeof openFeedbackModal === 'function') {
-    const b = _aideEl('button', 'btn btn-sm', '💬 Un problème ? Une suggestion ?');
+    const b = _aideEl('button', 'btn btn-sm', 'Un problème ? Une suggestion ?');
     b.type = 'button';
     b.onclick = () => openFeedbackModal();
     actions.appendChild(b);
@@ -397,7 +397,7 @@ async function renderAide() {
   // En-tête : profil, version, liens
   const tete = _aideEl('div', 'aide-tete');
   const g = _aideEl('div');
-  g.appendChild(_aideEl('h2', null, '❓ Aide'));
+  g.appendChild(_aideEl('h2', null, 'Aide'));
   const sous = _aideEl('div', 'aide-sous');
   sous.appendChild(_aideEl('span', null, d.role || ''));
   if (d.version) sous.appendChild(document.createTextNode(' · Larka ' + d.version));
@@ -405,7 +405,7 @@ async function renderAide() {
   tete.appendChild(g);
   const act = _aideEl('div', 'aide-actions');
   if (typeof LarkaRgpd !== 'undefined') {
-    const b = _aideEl('button', 'btn btn-sm', '🛡️ Protection des données');
+    const b = _aideEl('button', 'btn btn-sm', 'Protection des données');
     b.type = 'button';
     b.onclick = () => LarkaRgpd.afficher();
     act.appendChild(b);
@@ -415,7 +415,7 @@ async function renderAide() {
 
   // Recherche
   const rech = _aideEl('div', 'aide-recherche');
-  rech.appendChild(_aideEl('span', 'aide-loupe', '🔍'));
+  rech.appendChild(_aideEl('span', 'aide-loupe', ''));
   const champ = _aideEl('input');
   champ.type = 'search';
   champ.id = 'aideRecherche';
@@ -460,7 +460,15 @@ async function renderAide() {
   page.appendChild(_aideEl('div', null)).id = 'aideResultats';
   main.textContent = '';
   main.appendChild(page);
+  // Ouverte depuis un écran (« 📖 Fiche d'aide ») : sa rubrique, la fiche dépliée.
+  const voulue = (typeof App !== 'undefined' && App._aideFiche) ? _aideFiches.find(f => f.id === App._aideFiche) : null;
+  if (typeof App !== 'undefined') App._aideFiche = null;
+  if (voulue) _aideCat = voulue.cat;
   _aideAfficher();
+  if (voulue) {
+    const t = document.querySelector(`#aideResultats .aide-fiche[data-id="${voulue.id}"] .aide-fiche-titre`);
+    if (t) { t.click(); t.scrollIntoView({ block: 'start' }); t.focus(); return; }
+  }
   // Sur un ordinateur, la recherche est prête à recevoir la frappe.
   if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) champ.focus();
 }

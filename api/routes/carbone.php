@@ -28,7 +28,7 @@
  *   3. année courante et source active         → appel ADEME puis figement
  *   4. rien                                    → repli navigateur
  *
- * ⚠️ L'API ADEME ne sert que ses valeurs COURANTES : impossible de reconstituer
+ * L'API ADEME ne sert que ses valeurs COURANTES : impossible de reconstituer
  * un millésime passé après coup. Une année non figée à l'époque le restera.
  * D'où le figement automatique à la première consultation d'une année.
  *
@@ -63,7 +63,7 @@
  *   • `PART_CO2` = 0,99 : le CO₂ représente ~99 % des GES de combustion des
  *     carburants routiers, le CH₄ et le N₂O étant marginaux.
  *
- * ⚠️ Les périmètres 3 et 4 sont donc des ESTIMATIONS dérivées, pas des valeurs
+ * Les périmètres 3 et 4 sont donc des ESTIMATIONS dérivées, pas des valeurs
  * publiées telles quelles par l'ADEME. Les `partCombustion` des modes mixtes
  * (TER, Intercités) sont des ordres de grandeur à affiner. L'UI les signale.
  *
@@ -420,7 +420,7 @@ if ($action === 'facteurs_carbone' && $method === 'GET') {
     // 2) Année courante UNIQUEMENT, et source active → on interroge l'ADEME et
     //    on fige le résultat. C'est le seul moment où un millésime peut naître :
     //    l'API ne sert que ses valeurs du jour, une année ratée l'est pour de bon.
-    //    ⚠️ Surtout pas les années futures : ouvrir 2030 aujourd'hui y scellerait
+    //    Surtout pas les années futures : ouvrir 2030 aujourd'hui y scellerait
     //    définitivement les valeurs du jour, alors qu'elles auront changé.
     if ($actif && $annee === $anneeActive) {
         $res = _carboneFetchImpactCo2(_carboneCle());

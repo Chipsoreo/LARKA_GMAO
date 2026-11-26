@@ -2,21 +2,23 @@
 // SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
 // SPDX-License-Identifier: LicenseRef-Larka-Proprietary
 /**
- * Construit un pack de langue à partir de lang/<code>.json.
+ * Construit un pack de langue à partir du fichier de traduction unique
+ * lang/traductions.json (voir outils/langues/traductions.php).
  *
- * lang/<code>.json est le fichier du TRADUCTEUR : mêmes clés, dans le même
- * ordre, que le catalogue lang/fr.json — donc exactement le même nombre de
- * lignes, ligne pour ligne. On traduit les valeurs, jamais les clés.
+ * Le traducteur travaille dans ce seul fichier : une ligne par libellé, la clé
+ * en français (jamais modifiée), une traduction par langue dans la valeur. Le
+ * pack (seul fichier à part, puisque c'est lui qu'on installe) en est tiré.
  *
  * Avant 2.1.0, la traduction anglaise vivait directement dans le pack, avec
  * ses propres lignes : 4 309 entrées face à 4 160 au catalogue, 54 libellés
  * absents et 203 orphelins. Impossible de comparer les deux fichiers d'un
  * coup d'œil, et rien ne signalait l'écart.
  *
- *   php outils/langues/construire-pack.php en             met à jour lang/en.json (nouvelles clés
- *                                                         du catalogue en attente de traduction),
- *                                                         puis construit le pack
- *   php outils/langues/construire-pack.php en --version=4.2.1
+ *   php outils/langues/construire-pack.php en             construit le pack anglais
+ *   php outils/langues/construire-pack.php de             nouvelle langue : l'ajoute à « langues »
+ *                                                         du fichier ; on traduit ensuite ligne par
+ *                                                         ligne ({"en": "…", "de": "…"})
+ *   php outils/langues/construire-pack.php en --version=4.3.2
  *
  * Produit :
  *   extensions/langues/larka.langue-<code>/extension.json
@@ -36,23 +38,23 @@ if (!preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $code) || $code === 'fr') {
 $version = null;
 foreach ($argv as $a) if (preg_match('/^--version=(\d+\.\d+\.\d+)$/', $a, $m)) $version = $m[1];
 
-$cat = json_decode((string)file_get_contents("$racine/lang/fr.json"), true)['libelles'] ?? [];
-if (!$cat) { fwrite(STDERR, "lang/fr.json illisible.\n"); exit(2); }
-$fTrad = "$racine/lang/$code.json";
-$trad = is_file($fTrad) ? (json_decode((string)file_get_contents($fTrad), true) ?: []) : [];
-$dico = $trad['libelles'] ?? [];
+require __DIR__ . '/traductions.php';
+$fichier = trad_lire($racine);
+if (!$fichier['libelles']) { fwrite(STDERR, TRAD_CHEMIN . " illisible.\n"); exit(2); }
 
-// 1. Aligner le fichier du traducteur sur le catalogue : mêmes clés, même ordre.
-$aligne = [];
-foreach ($cat as $k => $_) $aligne[$k] = array_key_exists($k, $dico) ? (string)$dico[$k] : $k;
-$orphelins = array_diff_key($dico, $cat);
-$trad = [
-    'langue'   => $code,
-    'nom'      => $trad['nom'] ?? $code,
-    'version'  => date('Y-m-d'),
-    'libelles' => $aligne,
-];
-file_put_contents($fTrad, json_encode($trad, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+// 1. Langue nouvelle : déclarée dans le fichier, pour qu'on la traduise ligne par ligne.
+$dossier = "$racine/extensions/langues/larka.langue-$code";
+$fPack = "$dossier/extension.json";
+$pack = is_file($fPack) ? (json_decode((string)file_get_contents($fPack), true) ?: []) : [];
+if (!isset($fichier['langues'][$code])) {
+    $fichier['langues'][$code] = $pack['nom'] ?? $code;
+    trad_ecrire($racine, $fichier);
+    printf("✓ langue « %s » ajoutée à %s\n", $code, TRAD_CHEMIN);
+}
+$trad = ['nom' => $fichier['langues'][$code]];
+// Clés du catalogue, dans son ordre ; une ligne pas encore traduite garde le français.
+$aligne = trad_langue($fichier, $code);
+$orphelins = [];
 
 // 2. Libellés encore en français (valeur identique, accent ou mot outil).
 $MOTS_FR = '/\b(le|la|les|un|une|des|du|au|aux|pour|dans|sur|avec|par|sans|cette|ces|ce|qui|que|est|sont|aucun|aucune|votre|vos|nous|vous)\b/iu';
@@ -65,9 +67,6 @@ foreach ($aligne as $k => $v) {
 }
 
 // 3. Le pack : en-tête conservé, libellés dans l'ordre du catalogue.
-$dossier = "$racine/extensions/langues/larka.langue-$code";
-$fPack = "$dossier/extension.json";
-$pack = is_file($fPack) ? (json_decode((string)file_get_contents($fPack), true) ?: []) : [];
 $pack = [
     'identifiant' => $pack['identifiant'] ?? "larka.langue-$code",
     'format'      => 'declaratif/1',
@@ -90,12 +89,10 @@ $zip->setCompressionName('mimetype', ZipArchive::CM_STORE);
 $zip->addFromString('extension.json', json_encode($pack, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 $zip->close();
 
-printf("✓ lang/%s.json — %d libellés, alignés sur le catalogue (%d lignes, comme lang/fr.json)\n",
-    $code, count($aligne), count(file($fTrad)));
-if ($orphelins) printf("  %d libellé(s) retiré(s) : absents du catalogue\n", count($orphelins));
+printf("✓ %s — %d libellés lus (langue « %s »)\n", TRAD_CHEMIN, count($aligne), $code);
 printf("✓ %s (version %s)\n✓ %s\n", substr($fPack, strlen($racine) + 1), $pack['version'], substr($fZip, strlen($racine) + 1));
 if ($aFaire) {
-    printf("⚠ %d libellé(s) encore en français, à traduire dans lang/%s.json :\n", count($aFaire), $code);
+    printf("⚠ %d libellé(s) encore en français, à traduire (« %s ») dans %s :\n", count($aFaire), $code, TRAD_CHEMIN);
     foreach (array_slice($aFaire, 0, 15) as $k) echo "    $k\n";
     exit(1);
 }

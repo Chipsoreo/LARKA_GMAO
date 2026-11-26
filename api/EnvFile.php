@@ -53,7 +53,7 @@ class EnvFile {
      *   - secret=false : identifiants/adresses de connexion (Azure AD, Google…),
      *                    privés mais visibles/éditables dans l'interface.
      *
-     * ⚠️ Toute évolution de cette table doit rester cohérente avec :
+     * Toute évolution de cette table doit rester cohérente avec :
      *   - config.php           (injection depuis l'env vers $_cfg)
      *   - .env.example         (documentation des variables)
      *   - configuration.js     (UI : champs marqués « géré par .env »)

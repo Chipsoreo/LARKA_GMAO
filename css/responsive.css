@@ -129,6 +129,10 @@ body.sidebar-locked { overflow: hidden; }
 @media (max-width: 900px) {
   .hamburger-btn { display: flex; }
   .dashboard-grid { grid-template-columns: 1fr; }
+  /* Une carte ne s'élargit pas au-delà de l'écran : un tableau large défile
+     dans sa carte au lieu de pousser l'en-tête (onglets, boutons) hors champ. */
+  .dashboard-grid > * { min-width: 0; }
+  .dashboard-grid .card { overflow-x: auto; }
   .dashboard-interv-grid { grid-template-columns: 1fr !important; }
   .form-grid { grid-template-columns: 1fr; }
   .form-group.span-2 { grid-column: span 1; }
@@ -183,6 +187,10 @@ body.sidebar-locked { overflow: hidden; }
   .page-action-bar .page-action-info { margin-right: 0; text-align: center; }
   .topbar { padding: 0 12px; height: 48px; }
   .topbar-title { font-size: 14px; }
+  /* Sous-bandeau : une ligne qui défile de côté plutôt que trois lignes de boutons. */
+  .sous-bandeau { padding: 6px 12px; min-height: 0; justify-content: flex-start; overflow-x: auto; }
+  .sous-bandeau .topbar-actions { flex-wrap: nowrap; justify-content: flex-start; }
+  .sous-bandeau .btn { white-space: nowrap; }
   /* Cacher le texte des boutons topbar (Interface, Mon profil, Feedback) sur mobile */
   #uiPrefsBtnTopbar .hide-sm,
   #myProfileBtnTopbar .hide-sm,

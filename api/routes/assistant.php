@@ -206,12 +206,16 @@ if ($action === 'import_biens_ia') {
         if (!is_array($c) || !preg_match('/^_?[A-Za-z]{2,40}$/', (string)($c['cle'] ?? ''))) continue;
         $champs[(string)$c['cle']] = $court($c['libelle'] ?? $c['cle'], 60);
     }
+    // Import d'interventions : même aide, autre vocabulaire (types, statuts,
+    // priorités d'intervention au lieu des statuts et états d'un inventaire).
+    $interventions = ($b['contexte'] ?? '') === 'interventions';
+    $clesValeurs = $interventions ? ['type', 'statut', 'priorite'] : ['Statut', 'Etat'];
     $valeursCibles = [];
-    foreach (['Statut', 'Etat'] as $k) {
+    foreach ($clesValeurs as $k) {
         $valeursCibles[$k] = array_values(array_filter(array_map(fn($x) => $court($x, 40), (array)($b['valeurs'][$k]['cibles'] ?? [])), 'strlen'));
     }
     $valeursSource = [];
-    foreach (['Statut', 'Etat'] as $k) {
+    foreach ($clesValeurs as $k) {
         $valeursSource[$k] = array_values(array_filter(array_map(fn($x) => $court($x, 40), array_slice((array)($b['valeurs'][$k]['source'] ?? []), 0, 40)), 'strlen'));
     }
     if (!$colonnes || !$champs) json_error('Rien à analyser.', 400);
@@ -224,16 +228,18 @@ if ($action === 'import_biens_ia') {
     foreach ($champs as $k => $l) $listeChamps[] = "$k = $l";
     $question = "Champs Larka disponibles :\n" . implode("\n", $listeChamps)
         . "\n\nColonnes du fichier :\n" . implode("\n", $lignes);
-    foreach (['Statut', 'Etat'] as $k) {
+    foreach ($clesValeurs as $k) {
         if ($valeursSource[$k] && $valeursCibles[$k]) {
             $question .= "\n\nValeurs « $k » du fichier : " . implode(' | ', $valeursSource[$k])
                 . "\nValeurs « $k » autorisées dans Larka : " . implode(' | ', $valeursCibles[$k]);
         }
     }
-    $system = "Tu prépares l'import d'un inventaire (mobilier, informatique, équipements techniques d'un bâtiment) dans le logiciel de maintenance Larka.\n"
+    $system = ($interventions
+            ? "Tu prépares l'import d'un historique d'interventions de maintenance (préventif, curatif, contrôles réglementaires, dépannages) dans le logiciel de maintenance Larka.\n"
+            : "Tu prépares l'import d'un inventaire (mobilier, informatique, équipements techniques d'un bâtiment) dans le logiciel de maintenance Larka.\n")
         . "Pour chaque colonne du fichier, choisis le champ Larka qui lui correspond (par sa clé), d'après son libellé ET ses exemples, "
         . "ou ignore-la si aucun champ ne convient. Un champ ne sert qu'une fois. Ne devine pas : une colonne douteuse est ignorée.\n"
-        . "confiance : 0 à 100. Pour les valeurs Statut / État, associe chaque valeur du fichier à une valeur autorisée, seulement si le sens est clair.\n"
+        . "confiance : 0 à 100. Pour les valeurs (" . implode(' / ', $clesValeurs) . "), associe chaque valeur du fichier à une valeur autorisée, seulement si le sens est clair.\n"
         . "Réponds uniquement par le JSON demandé.";
     $schema = [
         'type' => 'object',
@@ -658,6 +664,15 @@ CHOIX DES OUTILS
 - Terme local inconnu → contexte.
 - Si un search(type='tout') figure déjà dans la conversation, utilise ses résultats avant de rappeler un outil.
 PROMPT;
+    if (in_array('supervision', $names, true)) {
+        // Sans cette règle, le modèle répondait aux questions de consommation ou de
+        // température avec alertes ou search (fiches de la GMAO), qui n'ont pas ces mesures.
+        $p .= "\n- Mesures des équipements raccordés (supervision Larka Connect) : consommation d'un bâtiment sur une période → "
+            . "supervision(quoi='conso', debut, fin, batiment, type) ; alarmes techniques → supervision(quoi='alarmes', etat, gravite, debut, fin) ; "
+            . "« la GTB fonctionne ? », équipements en défaut → supervision(quoi='resume') ; température, CO₂, consigne, marche ou arrêt d'un point → "
+            . "supervision(quoi='valeurs', mots, batiment, nature). Ce ne sont pas les alertes de la GMAO. Une consommation est le total renvoyé "
+            . "par l'outil, jamais une addition de ta part. Liens : [PAGE:connect:Ouvrir la supervision], [PAGE:connect_alarmes:Ouvrir les alarmes techniques].";
+    }
     if (in_array('module', $names, true)) {
         $p .= "\n- Données des modules complémentaires (voir la description de l'outil module) → module(module, jeu, recherche). "
             . "Sujet couvert ni par Larka ni par un module installé → dis-le ; module() sans argument indique aussi les modules non installés. "
@@ -751,7 +766,7 @@ PROMPT;
     $gest = [];
     foreach ($ctx['gestionnaires'] as $g) {
         $line = $g['nom'] . ($g['detail'] !== '' ? " ({$g['detail']})" : ' [profil incomplet]');
-        $coords = array_filter([$g['tel'] !== '' ? "📞 {$g['tel']}" : '', $g['email'] !== '' ? "✉️ {$g['email']}" : '']);
+        $coords = array_filter([$g['tel'] !== '' ? "{$g['tel']}" : '', $g['email'] !== '' ? "{$g['email']}" : '']);
         if ($coords) $line .= ' — ' . implode(', ', $coords);
         $gest[] = $line;
     }
@@ -829,7 +844,7 @@ function _assistantRun(array $ctx, ?callable $emit): array {
         }
         $msg = (string)($r['_error'] ?? 'Erreur inconnue');
         if ($emit) $emit('error', ['message' => $msg]);
-        return ['reply' => '❌ Erreur IA : ' . $msg, 'mode' => $mode, 'tool_calls' => $log, 'usage' => $usage, 'error' => $msg];
+        return ['reply' => 'Erreur IA : ' . $msg, 'mode' => $mode, 'tool_calls' => $log, 'usage' => $usage, 'error' => $msg];
     };
 
     // ── Demandeur : un seul appel, sans outils ──────────────────────────
@@ -986,7 +1001,7 @@ function _synthesizeFromToolCalls(array $messages): string {
         $loc = $last['localiser'];
         if (!empty($loc['sur_plan'][0])) {
             $p = $loc['sur_plan'][0];
-            $line = '📍 Localisation : ' . trim(($p['BatimentNom'] ?? '') . ', ' . ($p['EtageNom'] ?? ''), ', ');
+            $line = 'Localisation : ' . trim(($p['BatimentNom'] ?? '') . ', ' . ($p['EtageNom'] ?? ''), ', ');
             if (!empty($p['EtageId'])) {
                 $line .= !empty($p['ElementId'])
                     ? " [FICHE:plan:{$p['EtageId']}:{$p['ElementId']}:Voir sur le plan]"
@@ -994,18 +1009,18 @@ function _synthesizeFromToolCalls(array $messages): string {
             }
             $lines[] = $line;
         } elseif (!empty($loc['batiment']) || !empty($loc['etage']) || !empty($loc['bureau'])) {
-            $lines[] = '📍 Localisation : ' . implode(', ', array_filter([
+            $lines[] = 'Localisation : ' . implode(', ', array_filter([
                 !empty($loc['batiment']) ? "bâtiment {$loc['batiment']}" : '',
                 !empty($loc['etage']) ? "étage {$loc['etage']}" : '',
                 !empty($loc['bureau']) ? "bureau {$loc['bureau']}" : '']));
         } else {
-            $lines[] = '📍 Localisation non renseignée pour cet élément.';
+            $lines[] = 'Localisation non renseignée pour cet élément.';
         }
     }
-    if (isset($last['compter']['count'])) $lines[] = "🔢 **{$last['compter']['count']}** élément(s) (" . ($last['compter']['type'] ?? '?') . ').';
+    if (isset($last['compter']['count'])) $lines[] = "**{$last['compter']['count']}** élément(s) (" . ($last['compter']['type'] ?? '?') . ').';
     if (isset($last['search'])) {
         $n = $last['search']['count'] ?? $last['search']['total'] ?? null;
-        if ($n !== null) $lines[] = "🔎 $n résultat(s) trouvé(s).";
+        if ($n !== null) $lines[] = "$n résultat(s) trouvé(s).";
     }
     if (!$lines) return '';
     return "_(Synthèse automatique — le modèle n'a pas produit de texte)_\n\n" . implode("\n", $lines);

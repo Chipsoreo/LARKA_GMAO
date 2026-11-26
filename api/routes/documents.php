@@ -109,7 +109,7 @@ if ($action === 'documents') {
             json_error("Type de fichier non autorisé : $mime.", 415);
         }
 
-        // ⚠️ FIX SÉCURITÉ : vérifier que les magic bytes du fichier
+        // FIX SÉCURITÉ : vérifier que les magic bytes du fichier
         // correspondent au MIME annoncé (anti MIME-spoofing).
         // Un attaquant pourrait envoyer du SVG (XSS) ou du HTML en prétendant
         // que c'est un PDF.
@@ -196,7 +196,7 @@ if ($action === 'document_preview' && $method === 'GET') {
     $mime = $c['mime'];
     $spLectureSeule = $c['sp'] && $db->getConfig('sharepoint_lecture_seule') === '1';
 
-    // ⚠️ FIX SÉCURITÉ : on n'autorise inline QUE pour images bitmap et PDF.
+    // FIX SÉCURITÉ : on n'autorise inline QUE pour images bitmap et PDF.
     // Tout le reste (notamment SVG, HTML, XML) est forcé en attachment pour
     // éviter le XSS via prévisualisation.
     $allowedInline = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'application/pdf'];

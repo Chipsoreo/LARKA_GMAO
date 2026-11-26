@@ -113,7 +113,7 @@
 
     const mention = el('div', 'rgpd-mention' + (d.personnalisee ? ' rgpd-mention-perso' : ''));
     mention.setAttribute('role', 'note');
-    mention.textContent = (d.personnalisee ? '✎ ' : '') + (d.mention || '')
+    mention.textContent = (d.personnalisee ? '' : '') + (d.mention || '')
       + (d.personnalisee && d.personnalisee_le ? ` (${T.le} ${dateFr(d.personnalisee_le, en)})` : '');
     conteneur.appendChild(mention);
 
@@ -137,7 +137,7 @@
     const en = langue() === 'en';
     const T = TEXTES[en ? 'en' : 'fr'];
     if (typeof openModal !== 'function') return;
-    openModal('🛡️ ' + T.titre, '<div id="rgpdCorps" class="rgpd-corps" aria-live="polite"></div>', null, null, T.fermer, '760px');
+    openModal('' + T.titre, '<div id="rgpdCorps" class="rgpd-corps" aria-live="polite"></div>', null, null, T.fermer, '760px');
     const corps = document.getElementById('rgpdCorps');
     if (!corps) return;
     let d = opts.politique || null;
@@ -153,7 +153,7 @@
         return;
       }
     }
-    if (d.titre) document.getElementById('modalTitle').textContent = '🛡️ ' + d.titre;
+    if (d.titre) document.getElementById('modalTitle').textContent = '' + d.titre;
     rendre(corps, d, opts);
     if (opts.section) {
       const cible = document.getElementById('rgpd-' + opts.section);

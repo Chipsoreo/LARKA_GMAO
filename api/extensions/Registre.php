@@ -64,7 +64,7 @@ final class ExtRegistre
     {
         $this->db = $db;
         $this->utilisateur = $utilisateur;
-        // ⚠️ CHANGEMENT IMPORTANT : le code des extensions vit désormais dans
+        // CHANGEMENT IMPORTANT : le code des extensions vit désormais dans
         // data/extensions/code/, HORS de la racine web. Il n'existe donc plus
         // aucune URL menant à un .php d'extension — le risque d'appel direct
         // sans authentification disparaît par construction, au lieu de dépendre
@@ -81,6 +81,20 @@ final class ExtRegistre
     public static function instance(): self
     {
         return self::$instance ??= new self(null, []);
+    }
+
+    /**
+     * Registre d'une base précise, SANS toucher au registre de la requête.
+     *
+     * Sert aux tâches planifiées qui parcourent les organisations (réception
+     * des alarmes de Larka Connect) : remplacer le singleton par celui d'une
+     * autre organisation, au milieu d'une requête, lui ferait servir les
+     * modules d'un client à un autre. L'organisation est celle de la clé
+     * courante ($GLOBALS['_currentTenantKey']) au moment de l'appel.
+     */
+    public static function pourBase($db, array $utilisateur = []): self
+    {
+        return new self($db, $utilisateur);
     }
 
     public function definirUtilisateur(array $u): void { $this->utilisateur = $u; }
@@ -354,7 +368,7 @@ final class ExtRegistre
      * et configurent. Leur permettre de se retirer l'accès produirait un module
      * installé que plus personne ne peut ouvrir — y compris pour le désinstaller.
      *
-     * ⚠️ CE QUI EST RENDU ICI EST APPLIQUÉ CÔTÉ SERVEUR, aux trois endroits qui
+     * CE QUI EST RENDU ICI EST APPLIQUÉ CÔTÉ SERVEUR, aux trois endroits qui
      * décident : l'exécution d'une action, l'envoi du manifeste au client, et
      * l'affichage des ancrages. Masquer une entrée de menu sans refuser l'appel
      * serait un décor.
@@ -550,10 +564,10 @@ final class ExtRegistre
     /**
      * Une extension installée est-elle utilisable par ce client ?
      *
-     * ⚠️ RÉPOND TOUJOURS OUI — ET C'EST VOULU.
+     * RÉPOND TOUJOURS OUI — ET C'EST VOULU.
      *
      * Il y avait ici une liste d'autorisation par client, tenue par le super
-     * admin depuis Tenants → 🧩 : une extension installée ne s'exécutait que si
+     * admin depuis Tenants → : une extension installée ne s'exécutait que si
      * quelqu'un l'avait explicitement affectée. Deux raisons de la retirer.
      *
      * 1. ELLE N'ISOLAIT RIEN. L'état d'installation et le code étaient partagés
@@ -754,7 +768,7 @@ final class ExtRegistre
              * l'installation. Un module installé avant l'ajout de ses valeurs
              * de départ affichait un menu vide, et rien ne le rattrapait.
              *
-             * ⚠️ CE BLOC APPELAIT UNE MÉTHODE QUI N'EXISTE PLUS.
+             * CE BLOC APPELAIT UNE MÉTHODE QUI N'EXISTE PLUS.
              * `amorcerListes()` a disparu du moteur le jour où les
              * nomenclatures sont passées de la table « Listes » au fichier
              * `extensions/config/<module>/listes.json` — mais l'appel est
@@ -833,7 +847,7 @@ final class ExtRegistre
 
         // ── Actions d'ADMINISTRATION du module ───────────────────────────
         //
-        // ⚠️ « dp_definir_reglages » ÉCRIVAIT LES RÉGLAGES POUR TOUT LE MONDE.
+        // « dp_definir_reglages » ÉCRIVAIT LES RÉGLAGES POUR TOUT LE MONDE.
         //
         // La route ext_reglages exige Gestionnaire ou Admin. La même écriture,
         // atteinte par ext_appel, n'exigeait que de pouvoir ouvrir le module :
@@ -1030,7 +1044,7 @@ final class ExtRegistre
                 'pages'       => array_values(array_filter(
                     $man->donnees['pages_menu'] ?? [],
                     static function (array $pg) use ($role, $roles): bool {
-                        // ⚠️ GESTIONNAIRE ET ADMIN NE VOIENT PLUS TOUT.
+                        // GESTIONNAIRE ET ADMIN NE VOIENT PLUS TOUT.
                         //
                         // Ils passaient outre les rôles déclarés, par prudence :
                         // ne pas enfermer un administrateur hors d'un module
@@ -1114,7 +1128,8 @@ final class ExtRegistre
         foreach ($d['donnees'] ?? [] as $nom => $jeu) {
             $calcules = 0;
             foreach ($jeu['champs'] as $c) {
-                if (($c['type'] ?? '') === 'formule') $calcules++;
+                // Formules et mesures : ni l'une ni l'autre n'a de colonne.
+                if (in_array($c['type'] ?? '', ['formule', 'mesure'], true)) $calcules++;
             }
             $jeux[] = [
                 'nom'      => $nom,
@@ -1173,14 +1188,18 @@ final class ExtRegistre
                     . implode(', ', $v['recherche']) . '.';
             }
         }
+        $ecrans = ['dashboard.tuiles' => 'sur le tableau de bord',
+                   'connect.supervision' => 'en tête de la supervision des bâtiments',
+                   'connect.point' => 'sous la courbe d\'un point de Larka Connect'];
         foreach ($ancrages as $a) {
             $actions[] = match ($a['type']) {
-                'compteur'   => sprintf('Affichera une tuile « %s » sur le tableau de bord.',
-                                        $a['libelle']),
+                'compteur', 'jauge' => sprintf('Affichera une tuile « %s » %s.', $a['libelle'],
+                                        $ecrans[$a['emplacement']] ?? 'sur le tableau de bord'),
                 'marqueurs'  => 'Posera des repères sur les plans, et permettra d\'en '
                               . 'ajouter depuis la barre d\'outils.',
-                'liste_liee' => sprintf('Affichera « %s » dans la fiche concernée.',
-                                        $a['libelle']),
+                'liste_liee' => $a['emplacement'] === 'connect.point'
+                    ? sprintf('Affichera « %s » %s.', $a['libelle'], $ecrans['connect.point'])
+                    : sprintf('Affichera « %s » dans la fiche concernée.', $a['libelle']),
                 default      => sprintf('S\'insérera dans %s.', $a['emplacement']),
             };
         }
@@ -1194,13 +1213,42 @@ final class ExtRegistre
                 $ca['type'], explode('/', $ca['de'])[0]);
         }
 
+        // ── Connectivité des bâtiments ───────────────────────────────────
+        $lus = [];
+        $mesures = 0;
+        foreach ($d['donnees'] ?? [] as $jeu) {
+            foreach ($jeu['champs'] as $c) {
+                if (($c['type'] ?? '') === 'lien') $lus[$c['vers']] = true;
+                if (($c['type'] ?? '') === 'mesure') $mesures++;
+            }
+        }
+        if ($mesures) {
+            $actions[] = sprintf('Lira en direct %d mesure%s sur les points, équipements ou '
+                . 'bâtiments raccordés à Larka Connect (dernière valeur, état, statistiques).',
+                $mesures, $mesures > 1 ? 's' : '');
+        }
+        foreach (ExtSchemaDeclaratif::resume($d)['alarmes'] ?? [] as $phrase) {
+            $actions[] = 'Recevra les alarmes techniques : Larka inscrira lui-même chaque '
+                . 'alarme, puis sa fin. ' . $phrase . '.';
+        }
+
         // Ce qu'il ne fera pas : aussi utile que ce qu'il fera, parce que c'est
         // ce que l'administrateur redoute sans oser le demander.
+        //
+        // « Ne lira aucune donnée existante » était faux dès qu'un champ lien
+        // désignait un équipement ou un point : la garantie doit dire ce qui
+        // est vrai, sinon elle n'en est plus une.
         $garanties = [
-            'Ne lira ni ne modifiera aucune donnée existante de Larka.',
+            $lus === [] ? 'Ne lira ni ne modifiera aucune donnée existante de Larka.'
+                        : 'Ne modifiera aucune donnée existante de Larka ; il lit seulement '
+                          . 'celles que désignent ses liens (' . implode(', ', array_keys($lus)) . ').',
             'Ne contactera aucun serveur extérieur.',
             'N\'exécute aucun code : tout ce qui précède est dessiné par Larka.',
         ];
+        if (isset($lus['points_connect']) || isset($lus['connexions_connect']) || $mesures) {
+            $garanties[] = 'N\'écrira jamais vers un équipement : aucune consigne, aucune '
+                . 'commande, aucun acquittement d\'alarme.';
+        }
 
         return [
             'actions'   => $actions,

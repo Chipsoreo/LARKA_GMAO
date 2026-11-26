@@ -14,13 +14,14 @@
  *   maj_installer   POST  {version, confirme:true} — installation validée à la main
  *   maj_historique  GET   installations passées + sauvegardes disponibles
  *   maj_restaurer   POST  {id} — revient à la version d'avant une installation
+ *   maj_canal       POST  {betas: bool} — proposer ou non les versions bêta
  *
  * Droits : mêmes que les paramètres serveur — Super Administrateur ; en
  * mono-tenant, aussi Admin et Gestionnaire. Le code est commun à tous les
  * clients d'un serveur : en multi-tenant, seul le Super Admin décide.
  */
 
-if (in_array($action, ['maj_etat', 'maj_verifier', 'maj_installer', 'maj_historique', 'maj_restaurer'], true)) {
+if (in_array($action, ['maj_etat', 'maj_verifier', 'maj_installer', 'maj_historique', 'maj_restaurer', 'maj_canal'], true)) {
     require_once __DIR__ . '/../MiseAJour.php';
 
     $qui = null;
@@ -50,6 +51,15 @@ if (in_array($action, ['maj_etat', 'maj_verifier', 'maj_installer', 'maj_histori
     if ($action === 'maj_verifier') {
         check_rate_limit('maj_verifier', 20, 3600);
         json_ok(['droits' => true] + $maj->verifier());
+    }
+    if ($action === 'maj_canal') {
+        // Booléen strict : « "false" » (chaîne) vaudrait vrai en PHP.
+        if (!array_key_exists('betas', $b) || !is_bool($b['betas'])) json_error('Paramètre « betas » (vrai ou faux) attendu.', 400);
+        try {
+            json_ok(['droits' => true] + $maj->choisirBetas($b['betas'], $qui));
+        } catch (\Throwable $e) {
+            json_error($e->getMessage(), 409);
+        }
     }
     if ($action === 'maj_installer') {
         if (empty($b['confirme'])) json_error('Confirmation manquante.', 400);

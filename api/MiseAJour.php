@@ -31,7 +31,7 @@
  *   - Signature Ed25519 OBLIGATOIRE, vérifiée avec la clé publique de
  *     l'éditeur livrée DANS LE CODE (api/CleEditeur.php). Version non signée,
  *     mal signée, ou installation sans clé : REFUSÉE.
- *     ⚠️ La clé était lue dans config.json et la vérification sautait quand
+ *     La clé était lue dans config.json et la vérification sautait quand
  *     elle était vide (le défaut). L'empreinte venant de la même source que
  *     l'archive, rien n'en garantissait l'origine : un dépôt GitHub compromis
  *     suffisait. Et config.json se modifie depuis l'interface — qui tenait ce
@@ -92,7 +92,7 @@ class LarkaMiseAJour
     private const DERNIERE_SANS_SIGNATURE = '2.0.2';
     /** Dossiers de développement : mis à jour seulement s'ils sont déjà présents
      *  (deploy/install.sh ne les copie pas en production). */
-    private const SI_PRESENTS = ['outils', 'Documentations', 'deploy', 'tests', 'demo'];
+    private const SI_PRESENTS = ['outils', 'Documentations', 'deploy', 'tests', 'demo', 'mobile'];
     /**
      * La démonstration (demo/) fait exception : apportée aussi là où elle manque
      * — une installation de poste ou de développement faite depuis une archive
@@ -171,6 +171,51 @@ class LarkaMiseAJour
 
     public function actif(): bool { return (bool)self::cfg('actif', true); }
 
+    // ── Versions bêta : proposées ou non (choix du Super Admin) ─────────────
+    // Le choix vit dans data/maj/reglages.json, écrit depuis l'écran des mises à
+    // jour (route maj_canal). « mises_a_jour.canal » de config.json, s'il est
+    // écrit, l'emporte : c'est le réglage du serveur lui-même, que l'écran montre
+    // alors sans pouvoir le changer. Sans l'un ni l'autre : bêtas proposées,
+    // comme avant (l'installation reste toujours validée à la main).
+
+    /** Valeur imposée par config.json : 'stable' | 'beta' | null (pas imposée). */
+    public static function canalImpose(): ?string
+    {
+        $c = strtolower(trim((string)self::cfg('canal', '')));
+        if ($c === '') return null;
+        return $c === 'stable' ? 'stable' : 'beta';   // « tous », « beta »… : bêtas comprises
+    }
+
+    public function betasProposees(): bool
+    {
+        $impose = self::canalImpose();
+        if ($impose !== null) return $impose === 'beta';
+        $r = $this->lireJson('reglages.json');
+        return !array_key_exists('betas', $r) || $r['betas'] !== false;
+    }
+
+    /**
+     * Enregistre le choix. La détection en cache est oubliée : une bêta déjà
+     * détectée ne doit plus être proposée une fois les bêtas refusées, et la
+     * prochaine vérification part du nouveau réglage.
+     */
+    public function choisirBetas(bool $oui, string $qui): array
+    {
+        if (self::canalImpose() !== null) {
+            throw new RuntimeException('Réglage fixé par « mises_a_jour.canal » dans config.json : modifiez-le sur le serveur.');
+        }
+        @mkdir($this->dossier, 0750, true);
+        $this->ecrireJson('reglages.json', ['betas' => $oui, 'par' => $qui, 'le' => date('c')]);
+        $e = $this->lireJson('etat.json');
+        unset($e['distante']);
+        $e['ts'] = 0;
+        $this->ecrireJson('etat.json', $e);
+        if (class_exists('Journal')) {
+            Journal::info('maj', ($oui ? 'Versions bêta proposées' : 'Versions bêta écartées') . " (par $qui)", ['action' => 'maj_canal']);
+        }
+        return $this->etat();
+    }
+
     public function locale(): array
     {
         $v = LarkaVersion::lire($this->racine . '/version.json');
@@ -240,13 +285,18 @@ class LarkaMiseAJour
         $e = $this->lireJson('etat.json');
         $freq = max(1, (int)self::cfg('frequence_heures', 12)) * 3600;
         $locale = $this->locale();
+        $betas = $this->betasProposees();
         $dispo = !empty($e['distante']['version'])
-            && version_compare($e['distante']['version'], $locale['version'], '>');
+            && version_compare($e['distante']['version'], $locale['version'], '>')
+            // Une bêta détectée avant que les bêtas soient écartées n'est plus proposée.
+            && ($betas || strcasecmp((string)($e['distante']['canal'] ?? 'Stable'), 'Stable') === 0);
         $requis = $dispo ? ($e['distante']['php_min'] ?? null) : null;
         $prerequis = $dispo && is_array($e['distante']['prerequis'] ?? null) ? $e['distante']['prerequis'] : null;
         return [
             'php'         => $this->php($requis),
             'actif'       => $this->actif(),
+            'betas'       => $betas,
+            'canal_impose'=> self::canalImpose() !== null,
             'locale'      => $locale,
             'distante'    => $dispo ? $e['distante'] : null,
             'disponible'  => $dispo,
@@ -277,7 +327,10 @@ class LarkaMiseAJour
             $e['erreur'] = null;
         } catch (\Throwable $ex) {
             $ancien = $this->lireJson('etat.json');
-            $e['distante'] = $ancien['distante'] ?? null;   // on garde la dernière connue
+            // Panne réseau : on garde la dernière connue. Mais la source a répondu
+            // « aucune version pour ce serveur » (canal passé à « stable » après une
+            // bêta, par exemple) : l'ancienne proposition ne vaut plus.
+            $e['distante'] = str_starts_with($ex->getMessage(), 'Aucune version publiée') ? null : ($ancien['distante'] ?? null);
             $e['erreur'] = $ex->getMessage();
         }
         $this->ecrireJson('etat.json', $e);
@@ -290,7 +343,11 @@ class LarkaMiseAJour
         if (!preg_match('#^[\w.-]+/[\w.-]+$#', $depot)) throw new RuntimeException('Dépôt GitHub invalide.');
         $json = json_decode($this->telecharger("https://api.github.com/repos/$depot/releases?per_page=15", null, 5_000_000), true);
         if (!is_array($json)) throw new RuntimeException('Réponse GitHub illisible.');
-        $beta = strtolower((string)self::cfg('canal', strcasecmp($this->locale()['canal'], 'Stable') === 0 ? 'stable' : 'beta')) !== 'stable';
+        // Les bêtas sont proposées à TOUS les serveurs, stables compris (l'écran les
+        // signale comme telles et l'installation reste validée à la main). Seul
+        // « canal": "stable" écrit dans config.json les écarte. Avant, un serveur
+        // stable ne voyait jamais une bêta, sans le savoir ni pouvoir l'essayer.
+        $beta = $this->betasProposees();
         $cands = [];
         foreach ($json as $rel) {
             if (!empty($rel['draft']) || (!$beta && !empty($rel['prerelease']))) continue;
@@ -305,7 +362,8 @@ class LarkaMiseAJour
             foreach ([true, false] as $signeeSeulement) {
                 foreach ($rel['assets'] ?? [] as $a) {
                     $n = (string)($a['name'] ?? '');
-                    if (str_ends_with($n, '.zip') && (!$signeeSeulement || in_array($n . '.sig', $noms, true))) { $zip = $a; break 2; }
+                    // (l'archive de l'app Android, -android.zip, n'est pas celle du serveur)
+                    if (str_ends_with($n, '.zip') && !preg_match('/-android\.zip$/i', $n) && (!$signeeSeulement || in_array($n . '.sig', $noms, true))) { $zip = $a; break 2; }
                 }
             }
             if (!$zip) continue;
@@ -348,7 +406,7 @@ class LarkaMiseAJour
      * Version à proposer : la plus récente, plus récente que l'installée, dont
      * la signature est celle de la clé de CE serveur ; à défaut, la plus récente
      * (son installation sera refusée, avec la raison à l'écran).
-     * ⚠️ Seule la plus récente était regardée. Après une rotation de clé, un
+     * Seule la plus récente était regardée. Après une rotation de clé, un
      * serveur qui n'avait pas installé la version de transition (signée avec
      * l'ancienne clé) ne se voyait plus proposer que des versions signées avec
      * la nouvelle — refusées, sans fin : il ne pouvait plus jamais se mettre à
@@ -357,7 +415,9 @@ class LarkaMiseAJour
      */
     private function choisir(array $cands, ?callable $completer = null): array
     {
-        usort($cands, fn($a, $b) => version_compare($b['version'], $a['version']));
+        // La plus récente d'abord ; à numéro égal, la stable avant la bêta.
+        usort($cands, fn($a, $b) => version_compare($b['version'], $a['version'])
+            ?: (($a['canal'] ?? 'Stable') === 'Beta') <=> (($b['canal'] ?? 'Stable') === 'Beta'));
         $faits = [];
         // Sans clé ni sodium, rien ne peut être authentifié : inutile de lire
         // les signatures de toutes les versions à chaque vérification.
@@ -401,10 +461,15 @@ class LarkaMiseAJour
             if (is_array($a) && !empty($a['zip']) && preg_match('/^\d+\.\d+\.\d+$/', (string)($a['version'] ?? ''))) $entrees[] = $a;
         }
         $cands = [];
+        $betas = $this->betasProposees();
         foreach ($entrees as $m) {
             if (!preg_match('/^\d+\.\d+\.\d+$/', (string)$m['version'])) throw new RuntimeException('Numéro de version invalide dans le manifeste.');
-            $cands[] = $this->entreeManifeste($m);
+            $c = $this->entreeManifeste($m);
+            // Même règle que la source GitHub : bêtas écartées si le serveur n'en veut pas.
+            if (!$betas && strcasecmp($c['canal'], 'Stable') !== 0) continue;
+            $cands[] = $c;
         }
+        if (!$cands) throw new RuntimeException('Aucune version publiée (stable) dans le manifeste.');
         $d = $this->choisir($cands);
         $d['libelle'] = LarkaVersion::libelle($d);
         return $d;
@@ -901,7 +966,7 @@ class LarkaMiseAJour
         $f = $this->dossier . "/sauvegardes/$id.zip";
         $zip = new ZipArchive();
         if (!is_file($f) || $zip->open($f) !== true) throw new RuntimeException('Sauvegarde introuvable.');
-        // ⚠️ UNE SAUVEGARDE ANTÉRIEURE À LA SIGNATURE OBLIGATOIRE RAMÈNE LES FAILLES
+        // UNE SAUVEGARDE ANTÉRIEURE À LA SIGNATURE OBLIGATOIRE RAMÈNE LES FAILLES
         // CORRIGÉES AVEC ELLE (le code de cette époque, pas seulement l'outil de
         // mise à jour). Depuis l'interface, seules les sauvegardes dont les
         // fichiers viennent d'une version qui exigeait déjà la signature sont
@@ -928,7 +993,7 @@ class LarkaMiseAJour
      * l'instantané pris quelques secondes plus tôt, TEL QUEL — chaîne de
      * confiance comprise, sans le filtre de l'interface. Ce n'est pas un choix
      * de l'utilisateur mais le retour à l'état exact qui tournait.
-     * ⚠️ Il passait par restaurer() : refusé quand la version en place était
+     * Il passait par restaurer() : refusé quand la version en place était
      * sous la base notée (après un retour en ligne de commande), il laissait une
      * installation à moitié écrite ; et, MiseAJour.php / CleEditeur.php n'étant
      * jamais remis, une transition de clé interrompue laissait l'ancien code

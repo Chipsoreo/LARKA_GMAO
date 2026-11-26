@@ -58,9 +58,11 @@
     dashboard:         ['js/pages/demandes.js', 'js/pages/interventions.js', 'js/pages/dashboard.js'],
     biens:             ['js/pages/biens-import.js', 'js/pages/biens.js'],
     equipements:       ['js/pages/biens-import.js', 'js/pages/equipements.js'],
-    stock:             ['js/pages/stats.js', 'js/pages/stock.js'],
-    interventions:     ['js/pages/interventions.js'],
+    stock:             ['js/pages/stats.js', 'js/pages/biens-import.js', 'js/pages/stock-import.js', 'js/pages/stock.js'],
+    interventions:     ['js/pages/biens-import.js', 'js/pages/interventions-import.js', 'js/pages/interventions.js'],
     contrats:          ['js/pages/contrats.js'],
+    preventif:         ['js/pages/biens-import.js', 'js/pages/interventions-import.js', 'js/pages/interventions.js', 'js/pages/maintenance-plans.js'],
+    controles:         ['js/pages/biens-import.js', 'js/pages/interventions-import.js', 'js/pages/interventions.js', 'js/pages/maintenance-plans.js'],
     // ⚠️ DÉPENDANCE CROSS-PAGES : la section « Bilan Mobilité des agents » de
     // energie.render.js s'appuie sur mobilite.js (_getTransport, _getFreq,
     // _co2Annuel, MobiliteConfig, METHODES, loadFacteursCarbone…). Sans ce
@@ -101,6 +103,10 @@
     plans:             ['js/pages/pdf-fond.js', 'js/pages/plans.js'],
     annuaire:          ['js/pages/pdf-fond.js', 'js/pages/annuaire.js'],
     urgences:          ['js/pages/urgences.js'],
+    // Larka Connect : trois écrans, un seul fichier.
+    connect:           ['js/pages/connect.js', 'js/pages/connect-supervision.js'],
+    connect_alarmes:   ['js/pages/connect.js'],
+    connect_config:    ['js/pages/connect.js'],
     // Assistant IA : chargé à la demande par initApp(), uniquement si
     // l'assistant est activé pour le tenant (cf. init.js → assistant_status).
     assistant:         ['js/assistant.js'],

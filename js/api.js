@@ -50,7 +50,24 @@ const API_TIMEOUT_MS = 20000;
 // de données périmées), uniquement une coalescence des appels simultanés.
 const _inflightGets = new Map();
 
+// ── Caches de lecture de courte durée ───────────────────────────────────────
+// Un écran qui relit plusieurs fois les mêmes données pendant son rendu (les
+// relevés d'énergie, par exemple) peut les garder quelques secondes. Toute
+// écriture vers l'API vide ces caches, avant l'envoi et après la réponse :
+// rien de ce qu'on vient d'enregistrer ne peut être masqué par une lecture
+// antérieure.
+const _cachesCourts = new Set();
+function enregistrerCacheCourt(vider) { if (typeof vider === 'function') _cachesCourts.add(vider); }
+function _viderCachesCourts() { _cachesCourts.forEach(v => { try { v(); } catch (_) { /* cache suivant */ } }); }
+
 async function apiRequest(action, method = 'GET', body = null, id = null) {
+  // (Les traces du journal — log_page, log_client… — n'écrivent aucune donnée métier.)
+  if (method !== 'GET' && !String(action).startsWith('log_')) {
+    _viderCachesCourts();
+    const p = _apiRequestRaw(action, method, body, id);
+    p.then(_viderCachesCourts, _viderCachesCourts);
+    return p;
+  }
   // Coalescence uniquement pour les GET sans corps (lectures idempotentes).
   if (method === 'GET' && !body) {
     const key = `${action}::${id ?? ''}`;
@@ -99,6 +116,7 @@ async function _apiRequestRaw(action, method = 'GET', body = null, id = null) {
     if (err?.name === 'AbortError') {
       throw new Error(`Délai dépassé (${Math.round(API_TIMEOUT_MS / 1000)} s).`);
     }
+    window._larkaDerniereErreur = { code: 'NAV-002', message: 'Impossible de joindre le serveur.', reference: '', t: Date.now() };
     throw new Error('Impossible de joindre le serveur.');
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
@@ -128,6 +146,12 @@ async function _apiRequestRaw(action, method = 'GET', body = null, id = null) {
     if (json.warnings) err._warnings = json.warnings;
     err._status = res.status;
     err._body = text;
+    // Code d'erreur du serveur (api/CodesErreur.php) : le toast qui affichera ce
+    // message y ajoute « Que faire ? » (js/codes-erreur.js).
+    if (json.code) {
+      err._code = json.code;
+      window._larkaDerniereErreur = { code: json.code, message: err.message, reference: json.reference || json.ref || '', t: Date.now() };
+    }
     throw err;
   }
   return json.data;
@@ -145,13 +169,14 @@ const DashboardApi = {
   get: () => apiRequest('dashboard'),
   // Interventions agrégées par mois pour le mini-graphe.
   // `opts` : soit un nombre de mois (preset 3/6/12/24…), soit {debut, fin} en 'YYYY-MM'.
-  interventionsMensuelles: (opts) => {
-    let qs = '';
+  // `type` : un type d'intervention (Curative, Préventive…), vide pour tous.
+  interventionsMensuelles: (opts, type) => {
+    let qs = type ? '&type=' + encodeURIComponent(type) : '';
     if (opts && typeof opts === 'object') {
       if (opts.debut) qs += '&debut=' + encodeURIComponent(opts.debut);
       if (opts.fin)   qs += '&fin='   + encodeURIComponent(opts.fin);
     } else {
-      qs = '&mois=' + encodeURIComponent(opts || 6);
+      qs += '&mois=' + encodeURIComponent(opts || 6);
     }
     return apiRequest('interventions_mensuelles' + qs);
   },
@@ -227,18 +252,42 @@ const HistoriqueApi = {
 const _listesCache = {};
 const _listesCacheTTL = 60000; // 60s
 
+// UNE REQUÊTE PAR CATÉGORIE, NEUF À L'OUVERTURE.
+// Les filtres préchargent leurs listes (familles, statuts, bâtiments…) et
+// chaque écran lit les siennes : autant d'allers-retours pour quelques
+// centaines d'octets chacun. getByCategorie() lit désormais toutes les listes
+// en un appel (le même que getAll, gardé 60 s), puis filtre comme le serveur :
+// valeurs actives, dans l'ordre (Ordre, Valeur) que la requête renvoie déjà.
+let _listesToutes = null;   // { ts, promesse }
+function _listesGroupees() {
+  const now = Date.now();
+  if (_listesToutes && (now - _listesToutes.ts) < _listesCacheTTL) return _listesToutes.promesse;
+  const promesse = apiRequest('listes');
+  _listesToutes = { ts: now, promesse };
+  promesse.catch(() => { if (_listesToutes && _listesToutes.promesse === promesse) _listesToutes = null; });
+  return promesse;
+}
+
 const ListesApi = {
   getAll:         ()                           => apiRequest('listes'),
   getByCategorie: (categorie)                  => {
     const now = Date.now();
     const cached = _listesCache[categorie];
     if (cached && (now - cached.ts) < _listesCacheTTL) return Promise.resolve(cached.data);
-    return apiRequest(`listes&categorie=${encodeURIComponent(categorie)}`).then(data => {
+    return _listesGroupees().then(groupes => {
+      const lignes = (groupes && typeof groupes === 'object' && !Array.isArray(groupes)) ? (groupes[categorie] || []) : null;
+      if (lignes === null) throw new Error('format');
+      const data = lignes.filter(l => Number(l.Actif) === 1 || l.Actif === true);
       _listesCache[categorie] = { data, ts: now };
       return data;
-    });
+    }).catch(() =>
+      // Repli : l'appel par catégorie, comme avant.
+      apiRequest(`listes&categorie=${encodeURIComponent(categorie)}`).then(data => {
+        _listesCache[categorie] = { data, ts: now };
+        return data;
+      }));
   },
-  invalidateCache: ()                          => { Object.keys(_listesCache).forEach(k => delete _listesCache[k]); },
+  invalidateCache: ()                          => { _listesToutes = null; Object.keys(_listesCache).forEach(k => delete _listesCache[k]); },
   // « obligatoire » et « saisieLibre » omis ⇒ la valeur hérite des réglages de
   // sa catégorie, côté serveur. Le « ||0 » d'avant transformait « je ne me
   // prononce pas » en « non », et écrasait le réglage à chaque ajout.
@@ -269,6 +318,8 @@ const MicrosoftAuth = {
 // ── Demandes d'intervention ────────────────────────────────────────────────────
 const DemandesApi = {
   getAll:   ()         => apiRequest('demandes'),
+  // Les 6 premières demandes ouvertes de chaque onglet (tableau de bord).
+  getApercu: (n = 6)   => apiRequest(`demandes&apercu=${n}`),
   create:   (data)     => apiRequest('demandes', 'POST', data),
   update:   (id, data) => apiRequest('demandes', 'PUT',  data, id),
   relancer: (id)       => apiRequest('demandes', 'PUT',  { action: 'relancer' }, id),

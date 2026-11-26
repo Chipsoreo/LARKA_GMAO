@@ -14,7 +14,7 @@
  */
 
 // ── Boîtes d'archives ─────────────────────────────────────────────────────────
-// ⚠️ LE VISIONNEUR POUVAIT ÉCRIRE : seul DELETE revérifiait le rôle, POST et
+// LE VISIONNEUR POUVAIT ÉCRIRE : seul DELETE revérifiait le rôle, POST et
 // PUT passaient avec la garde de lecture. L'écran (canEdit) réserve pourtant la
 // saisie à la gestion : le serveur applique désormais la même règle.
 if ($action === 'archives_boites') {
@@ -37,7 +37,7 @@ if ($action === 'archives_dossiers') {
 }
 
 // ── Recherche avancée dossiers ────────────────────────────────────────────────
-// ⚠️ LA RECHERCHE ÉTAIT OUVERTE À TOUT COMPTE : la liste des dossiers était
+// LA RECHERCHE ÉTAIT OUVERTE À TOUT COMPTE : la liste des dossiers était
 // refusée à un demandeur (« données nominatives, hors consultation »), mais la
 // recherche sans filtre lui rendait les mêmes dossiers. Même garde que la liste.
 if ($action === 'archives_recherche' && $method === 'GET') {

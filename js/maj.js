@@ -68,7 +68,7 @@ const LarkaMaj = (() => {
   async function verifier() {
     if (_occupe) return _etat;
     _occupe = true;
-    rendrePanneau('⏳ Interrogation de la source des versions…');
+    rendrePanneau('Interrogation de la source des versions…');
     try {
       _etat = await appel('maj_verifier', 'POST', {});
       _occupe = false;
@@ -91,7 +91,7 @@ const LarkaMaj = (() => {
   async function panneau(el) {
     if (!el) return;
     _panneau = el;
-    rendrePanneau('⏳ Lecture de l\'état…');
+    rendrePanneau('Lecture de l\'état…');
     try {
       _etat = await appel('maj_etat');
       rendrePanneau();
@@ -110,18 +110,18 @@ const LarkaMaj = (() => {
     if (attente) {
       etat = `<div style="color:var(--gray-text,#64748b)">${esc(attente)}</div>`;
     } else if (erreurAppel) {
-      etat = `<div style="color:#b91c1c">❌ ${esc(erreurAppel)}</div>`;
+      etat = `<div style="color:#b91c1c">${lk('circle-x', 'ko')} ${esc(erreurAppel)}</div>`;
     } else if (e && e.droits === false) {
       etat = `<div style="color:var(--gray-text,#64748b)">Les mises à jour sont gérées par l'administrateur du serveur.</div>`;
     } else if (e && !e.actif) {
       etat = `<div style="color:#b45309">Détection désactivée (<code>mises_a_jour.actif = false</code> dans config.json). « Vérifier maintenant » interroge tout de même la source.</div>`;
     } else if (e && e.disponible && e.distante) {
-      etat = `<div style="color:#15803d;font-weight:600">🔔 ${esc(e.distante.libelle)} est disponible${e.distante.date ? ' (publiée le ' + esc(e.distante.date) + ')' : ''}.</div>`
-           + (e.erreur ? `<div style="color:#b45309;font-size:12.5px;margin-top:4px">⚠️ La dernière vérification a échoué (${esc(e.erreur)}) : information issue de la vérification précédente.</div>` : '');
+      etat = `<div style="color:#15803d;font-weight:600">${lk('bell')} ${esc(e.distante.libelle)} est disponible${e.distante.date ? ' (publiée le ' + esc(e.distante.date) + ')' : ''}.</div>`
+           + (e.erreur ? `<div style="color:#b45309;font-size:12.5px;margin-top:4px">${lk('triangle-exclamation-point', 'warn')} La dernière vérification a échoué (${esc(e.erreur)}) : information issue de la vérification précédente.</div>` : '');
     } else if (e && e.erreur) {
-      etat = `<div style="color:#b45309">⚠️ Dernière vérification en échec : ${esc(e.erreur)}</div>`;
+      etat = `<div style="color:#b45309">${lk('triangle-exclamation-point', 'warn')} Dernière vérification en échec : ${esc(e.erreur)}</div>`;
     } else if (e && e.verifie_le) {
-      etat = `<div style="color:#15803d">✅ Larka est à jour.</div>`;
+      etat = `<div style="color:#15803d">${lk('circle-check', 'ok')} Larka est à jour.</div>`;
     } else if (e) {
       etat = `<div style="color:var(--gray-text,#64748b)">Aucune vérification pour l'instant.</div>`;
     }
@@ -132,7 +132,7 @@ const LarkaMaj = (() => {
       if (e.cle_config_ignoree) etat += `<div style="color:var(--gray-text,#64748b);font-size:12px;margin-top:4px">« mises_a_jour.cle_publique » (config.json) n'est plus utilisée : la clé de l'éditeur est livrée avec le code.</div>`;
     }
     const peut = !!(e && e.droits !== false);
-    boutons = bouton('cfgMajVerifier', _occupe ? '⏳ Vérification…' : 'Vérifier maintenant', !(e && e.disponible), peut && !_occupe)
+    boutons = bouton('cfgMajVerifier', _occupe ? (lk('hourglass') + ' Vérification…') : 'Vérifier maintenant', !(e && e.disponible), peut && !_occupe)
             + (e && e.disponible ? bouton('cfgMajVoir', 'Voir et installer ' + esc(e.distante.libelle), true, !_occupe) : '')
             + bouton('cfgMajHist', 'Historique / restaurer', false, peut && !_occupe);
     const derniere = e && e.verifie_le ? `Dernière vérification : ${esc(dateFr(e.verifie_le))}` : '';
@@ -141,9 +141,21 @@ const LarkaMaj = (() => {
     if (e && e.php && e.droits !== false) {
       const p = e.php;
       php = p.conseil
-        ? `<div style="margin-top:8px;font-size:12.5px;color:${p.ok && !p.perime ? '#15803d' : (p.ok ? '#b45309' : '#b91c1c')}">${p.ok ? '⚠️' : '❌'} PHP ${esc(p.version)} — ${esc(p.conseil)}`
+        ? `<div style="margin-top:8px;font-size:12.5px;color:${p.ok && !p.perime ? '#15803d' : (p.ok ? '#b45309' : '#b91c1c')}">${p.ok ? lk('triangle-exclamation-point', 'warn') : lk('circle-x', 'ko')} PHP ${esc(p.version)} — ${esc(p.conseil)}`
           + (p.commande ? `<div style="margin-top:4px"><code style="user-select:all;font-size:12px">${esc(p.commande)}</code></div>` : '') + '</div>'
         : `<div style="margin-top:8px;font-size:12px;color:var(--gray-text,#64748b)">PHP ${esc(p.version)} ✓ compatible${p.fin_support ? ' (support jusqu\'au ' + esc(new Date(p.fin_support).toLocaleDateString('fr-FR')) + ')' : ''}</div>`;
+    }
+    // Versions bêta : proposées ou non. Verrouillé si config.json l'impose
+    // (« mises_a_jour.canal ») : l'écran le montre au lieu de faire semblant.
+    let betas = '';
+    if (e && e.droits !== false && typeof e.betas === 'boolean') {
+      betas = `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px;cursor:${e.canal_impose ? 'not-allowed' : 'pointer'}">
+          <input type="checkbox" id="cfgMajBetas" ${e.betas ? 'checked' : ''} ${e.canal_impose || _occupe ? 'disabled' : ''} style="margin-top:2px;accent-color:var(--blue,#2563eb)">
+          <span><strong>Proposer les versions bêta</strong>
+            <span style="display:block;font-size:12px;color:var(--gray-text,#64748b)">${e.canal_impose
+              ? 'Fixé dans config.json (<code>mises_a_jour.canal</code>) : à modifier sur le serveur.'
+              : 'Versions en cours d\'essai, à installer de préférence sur un serveur de test. Décoché : seules les versions stables sont proposées.'}</span></span>
+        </label>`;
     }
     el.innerHTML = `
       <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px">
@@ -151,10 +163,39 @@ const LarkaMaj = (() => {
         <span style="font-size:12px;color:var(--gray-text,#64748b)">${derniere}</span>
       </div>
       <div style="margin-bottom:10px;font-size:13.5px">${etat}${php}</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${boutons}</div>`;
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${boutons}</div>${betas}`;
+    el.querySelector('#cfgMajBetas')?.addEventListener('change', ev => choisirBetas(ev.target.checked));
     el.querySelector('#cfgMajVerifier')?.addEventListener('click', verifier);
     el.querySelector('#cfgMajVoir')?.addEventListener('click', ouvrir);
     el.querySelector('#cfgMajHist')?.addEventListener('click', historique);
+  }
+
+  /** Enregistre le choix « versions bêta », puis revérifie avec le nouveau réglage. */
+  async function choisirBetas(oui) {
+    if (_occupe) return;
+    _occupe = true;
+    rendrePanneau('Enregistrement…');
+    try {
+      _etat = await appel('maj_canal', 'POST', { betas: !!oui });
+      _occupe = false;
+      message(oui ? 'Les versions bêta seront proposées.' : 'Seules les versions stables seront proposées.', 'success');
+      await verifier();
+    } catch (e) {
+      _occupe = false;
+      try { _etat = await appel('maj_etat'); } catch (_) {}
+      rendrePanneau(null, e.message);
+    }
+  }
+
+  /** Fenêtre « Mises à jour » (écran Super Admin) : le même encadré que la configuration. */
+  function fenetreReglages() {
+    if (typeof openModal !== 'function') { verifier(); return; }
+    openModal('Mises à jour de Larka', '<div id="saMajPanneau">Lecture de l\'état…</div>', null);
+    setTimeout(() => {
+      const f = document.querySelector('#modalOverlay .modal-footer');
+      if (f) f.style.display = 'none';
+      panneau(document.getElementById('saMajPanneau'));
+    }, 30);
   }
 
   function banniere() {
@@ -167,7 +208,7 @@ const LarkaMaj = (() => {
     b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9500;background:#1a2e4a;color:#fff;'
       + 'padding:10px 14px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;'
       + 'font-size:13px;max-width:calc(100vw - 24px);flex-wrap:wrap';
-    b.innerHTML = `<span>🔔 <strong>Larka ${esc(_etat.distante.libelle)}</strong> est disponible (installée : ${esc(_etat.locale.libelle)}).</span>
+    b.innerHTML = `<span>${lk('bell')} <strong>Larka ${esc(_etat.distante.libelle)}</strong> est disponible (installée : ${esc(_etat.locale.libelle)}).</span>
       <button type="button" style="background:#2b7be6;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-weight:600">Voir la mise à jour</button>
       <button type="button" style="background:none;color:#cbd5e1;border:none;cursor:pointer;text-decoration:underline">Plus tard</button>`;
     const [voir, plusTard] = b.querySelectorAll('button');
@@ -205,16 +246,17 @@ const LarkaMaj = (() => {
     const d = e.distante;
     const inst = e.installable || { ok: false, raisons: [] };
     // La signature de l'éditeur est toujours exigée (api/CleEditeur.php).
-    const signe = e.cle_editeur === false ? '❌ clé de l\'éditeur absente de ce serveur — installation impossible'
-                : d.signature ? '✅ présente — vérifiée avant toute écriture'
-                : '❌ absente — l\'installation sera refusée';
+    const signe = e.cle_editeur === false ? (lk('circle-x', 'ko') + ' clé de l\'éditeur absente de ce serveur — installation impossible')
+                : d.signature ? (lk('circle-check', 'ok') + ' présente — vérifiée avant toute écriture')
+                : (lk('circle-x', 'ko') + ' absente — l\'installation sera refusée');
     const o = fenetre(`
       <h3 style="margin:0 0 4px">Mise à jour ${esc(d.libelle)}</h3>
       <div style="font-size:12px;color:var(--gray-text,#64748b);margin-bottom:12px">Installée : ${esc(e.locale.libelle)}${d.date ? ' · publiée le ' + esc(d.date) : ''}${d.page ? ` · <a href="${esc(d.page)}" target="_blank" rel="noopener noreferrer">page de la version</a>` : ''}</div>
+      ${d.canal === 'Beta' ? `<div style="font-size:13px;background:#fff7ed;border-left:3px solid #f59e0b;border-radius:6px;padding:8px 10px;margin-bottom:12px">${lk('flask-conical')} <strong>Version bêta</strong> : en cours d'essai. Installez-la de préférence sur un serveur de test ; une sauvegarde est faite avant et la version actuelle revient en cas d'échec.</div>` : ''}
       <div style="font-weight:600;margin-bottom:4px">Nouveautés</div>
       <div style="white-space:pre-wrap;font-size:13px;background:var(--gray-bg,#f1f5f9);border-radius:8px;padding:10px 12px;max-height:220px;overflow:auto">${esc(d.notes || '(pas de notes de version)')}</div>
       <ul style="font-size:12.5px;line-height:1.7;margin:12px 0;padding-left:18px">
-        <li>Empreinte SHA-256 : ${d.sha256 ? '✅ publiée, vérifiée avant installation' : '❌ absente — installation impossible'}</li>
+        <li>Empreinte SHA-256 : ${d.sha256 ? (lk('circle-check', 'ok') + ' publiée, vérifiée avant installation') : (lk('circle-x', 'ko') + ' absente — installation impossible')}</li>
         <li>Signature : ${signe}</li>
         <li><strong>Conservé tel quel :</strong> la base de données, les documents, plans et médias (<code>data/</code>), <code>config.json</code>, <code>.env</code> et les réglages des modules. Aucun fichier n'est supprimé.</li>
         <li>Une sauvegarde des fichiers remplacés (et de la base SQLite) est faite avant ; en cas d'erreur, la version actuelle est restaurée automatiquement.</li>
@@ -241,19 +283,19 @@ const LarkaMaj = (() => {
     const st = o.querySelector('#larkaMajStatut');
     o.dataset.occupe = '1';
     o.querySelectorAll('button,input').forEach(x => { x.disabled = true; });
-    st.innerHTML = '⏳ Téléchargement, vérification, sauvegarde puis installation… Ne fermez pas cette page.';
+    st.innerHTML = (lk('hourglass') + ' Téléchargement, vérification, sauvegarde puis installation… Ne fermez pas cette page.');
     try {
       const r = await appel('maj_installer', 'POST', { version, confirme: true });
       delete o.dataset.occupe;
       document.getElementById('larkaMajBanniere')?.remove();
-      st.innerHTML = `✅ <strong>${esc(r.libelle)}</strong> installée : ${r.fichiers} fichier(s) mis à jour dont ${r.nouveaux} nouveau(x).<br>
+      st.innerHTML = `${lk('circle-check', 'ok')} <strong>${esc(r.libelle)}</strong> installée : ${r.fichiers} fichier(s) mis à jour dont ${r.nouveaux} nouveau(x).<br>
         Sauvegarde : <code>${esc(r.sauvegarde)}</code> · base : ${esc(r.sauvegarde_base)}`;
       const btn = o.querySelector('#larkaMajGo');
       btn.textContent = 'Recharger Larka'; btn.disabled = false; btn.onclick = () => location.reload();
       try { _etat = await appel('maj_etat'); rendrePanneau(); } catch (_) {}
     } catch (e) {
       delete o.dataset.occupe;
-      st.innerHTML = `<span style="color:#b91c1c">❌ ${esc(e.message)}</span>`;
+      st.innerHTML = `<span style="color:#b91c1c">${lk('circle-x', 'ko')} ${esc(e.message)}</span>`;
       o.querySelector('#larkaMajFermer').disabled = false;
       o.querySelector('#larkaMajHist').disabled = false;
     }
@@ -279,14 +321,14 @@ const LarkaMaj = (() => {
     o.querySelectorAll('button[data-id]').forEach(b => b.onclick = async () => {
       if (!confirm(`Restaurer les fichiers sauvegardés « ${b.dataset.id} » ? Les données ne sont pas touchées.`)) return;
       const st = o.querySelector('#larkaMajStatut');
-      st.textContent = '⏳ Restauration…';
+      st.textContent = 'Restauration…';
       try {
         const r = await appel('maj_restaurer', 'POST', { id: b.dataset.id });
-        st.innerHTML = `✅ ${r.fichiers} fichier(s) restauré(s) — version ${esc(r.version.libelle)}. <a href="#" onclick="location.reload();return false">Recharger</a>`;
+        st.innerHTML = `${lk('circle-check', 'ok')} ${r.fichiers} fichier(s) restauré(s) — version ${esc(r.version.libelle)}. <a href="#" onclick="location.reload();return false">Recharger</a>`;
         try { _etat = await appel('maj_etat'); rendrePanneau(); } catch (_) {}
-      } catch (e) { st.innerHTML = `<span style="color:#b91c1c">❌ ${esc(e.message)}</span>`; }
+      } catch (e) { st.innerHTML = `<span style="color:#b91c1c">${lk('circle-x', 'ko')} ${esc(e.message)}</span>`; }
     });
   }
 
-  return { demarrer, ouvrir, verifier, historique, panneau, etat: () => _etat };
+  return { demarrer, ouvrir, verifier, historique, panneau, reglages: fenetreReglages, etat: () => _etat };
 })();

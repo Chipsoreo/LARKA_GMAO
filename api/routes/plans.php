@@ -59,7 +59,7 @@ if ($action === 'plans_set_personne') {
 /**
  * Dossier des images de plan, PROPRE À CHAQUE CLIENT.
  *
- * ⚠️ « data/plans » était écrit en dur à sept endroits, sans isolation.
+ * « data/plans » était écrit en dur à sept endroits, sans isolation.
  * Deux conséquences sur une installation multi-tenant :
  *   • « Voir les images de fond » listait le dossier entier — un client voyait
  *     donc les plans de tous les autres ;
@@ -105,6 +105,40 @@ function plans_fichier(string $nom): ?string
     return null;
 }
 
+/**
+ * Envoie un fichier du dossier des plans. Ne revient pas.
+ *
+ * UN SVG — ET TOUT FICHIER AU TYPE INCONNU — ÉTAIT RENDU DANS L'ORIGINE DE LARKA.
+ * Les deux routes qui servent les plans répondaient « image/svg+xml » en ligne, et
+ * plans_fond_image demandait même son type à mime_content_type() pour une
+ * extension inconnue (un « .html » partait en text/html). Le téléversement
+ * refuse le SVG, mais un fichier arrive aussi par la synchronisation de l'app ou
+ * d'une ancienne version : ouvert directement, son script s'exécutait avec la
+ * session de celui qui suivait le lien. Désormais : images matricielles et PDF
+ * tels quels ; SVG sous une politique « sandbox » (affiché, jamais exécuté) ;
+ * le reste en téléchargement, sans type deviné.
+ */
+function plans_envoyer_fichier(string $reel, string $cache = 'private, max-age=300'): void
+{
+    $types = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif',
+              'webp' => 'image/webp', 'pdf' => 'application/pdf', 'svg' => 'image/svg+xml'];
+    $ext = strtolower(pathinfo($reel, PATHINFO_EXTENSION));
+    $mime = $types[$ext] ?? 'application/octet-stream';
+    while (ob_get_level()) ob_end_clean();
+    header_remove('Content-Type');
+    header_remove('Cache-Control');
+    header_remove('Pragma');
+    header_remove('X-Content-Type-Options');
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . filesize($reel));
+    header('Content-Disposition: ' . (isset($types[$ext]) ? 'inline' : 'attachment') . '; filename="' . basename($reel) . '"');
+    header('Cache-Control: ' . $cache);
+    header('X-Content-Type-Options: nosniff');
+    if ($ext === 'svg') header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox");
+    readfile($reel);
+    exit;
+}
+
 if ($action === 'plans_upload_fond') {
     $user = require_auth(); require_role($user, ['Admin','Gestionnaire']);
     if ($method !== 'POST') json_error('Méthode non supportée', 405);
@@ -127,13 +161,13 @@ if ($action === 'plans_upload_fond') {
         ];
         json_error($errMap[$file['error']] ?? ('Erreur upload (#' . $file['error'] . ').'), 400);
     }
-    // ⚠️ FIX SÉCURITÉ : caster en int et valider — sinon on peut bricoler
+    // FIX SÉCURITÉ : caster en int et valider — sinon on peut bricoler
     // le nom du fichier de destination via etage_id="../../foo".
     $etageId = (int)($_POST['etage_id'] ?? $_GET['etage_id'] ?? 0);
     if ($etageId <= 0) json_error('etage_id invalide');
 
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    // ⚠️ FIX SÉCURITÉ : SVG retiré des formats acceptés.
+    // FIX SÉCURITÉ : SVG retiré des formats acceptés.
     // Les SVG peuvent embarquer du JavaScript (<script>, foreignObject…) et,
     // affichés inline par le navigateur, exécutent ce JS dans l'origine du
     // site → XSS stocké. Pour réintroduire les SVG, il faudrait les
@@ -221,22 +255,7 @@ if ($action === 'plans_file') {
     if ($real === null) {
         http_response_code(404); header('Content-Type: text/plain'); echo 'Fichier introuvable'; exit;
     }
-    $ext = strtolower(pathinfo($real, PATHINFO_EXTENSION));
-    $mimeMap = [
-        'png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg',
-        'gif'=>'image/gif','webp'=>'image/webp','svg'=>'image/svg+xml',
-        'pdf'=>'application/pdf',
-    ];
-    $mime = $mimeMap[$ext] ?? 'application/octet-stream';
-    while (ob_get_level()) ob_end_clean();
-    header_remove('Content-Type'); header_remove('Cache-Control');
-    header('Content-Type: ' . $mime);
-    header('Content-Length: ' . filesize($real));
-    header('Content-Disposition: inline; filename="' . basename($real) . '"');
-    header('Cache-Control: private, max-age=300');
-    header('X-Content-Type-Options: nosniff');
-    readfile($real);
-    exit;
+    plans_envoyer_fichier($real);
 }
 
 // ── Supprimer un fichier orphelin du dossier plans ────────────────────────────
@@ -281,7 +300,7 @@ if ($action === 'plans_attach_file') {
 // ── Télécharger une image de fond ─────────────────────────────────────────────
 if ($action === 'plans_fond_image') {
     $user = require_auth();
-    // ⚠️ FIX SÉCURITÉ : aucune garde — un Demandeur téléchargeait le fond de
+    // FIX SÉCURITÉ : aucune garde — un Demandeur téléchargeait le fond de
     // n'importe quel étage en énumérant etage_id. Même règle que plans_file,
     // plus l'annuaire pour les demandeurs quand il est activé.
     if (($user['Role'] ?? '') === 'Demandeur') {
@@ -298,7 +317,7 @@ if ($action === 'plans_fond_image') {
         echo 'Pas d\'image de fond';
         exit;
     }
-    // ⚠️ C'EST LA ROUTE QUI AFFICHE LE FOND SUR LA CARTE.
+    // C'EST LA ROUTE QUI AFFICHE LE FOND SUR LA CARTE.
     // Elle résolvait « data/plans/x.png » — le chemin gardé en base — contre le
     // seul dossier commun. Depuis l'isolation par client, un plan fraîchement
     // téléversé se trouve dans « data/plans/tenants/<client>/ » : la route ne
@@ -310,7 +329,7 @@ if ($action === 'plans_fond_image') {
     // emplacement ensuite, pour les étages configurés avant la mise à jour.
     $real = plans_fichier(basename((string)$etage['FondImage']));
     if ($real === null) {
-        // ⚠️ FIX SÉCURITÉ : ne PAS exposer les chemins du serveur dans la
+        // FIX SÉCURITÉ : ne PAS exposer les chemins du serveur dans la
         // réponse — leak d'info utile pour un attaquant. Réponse neutre.
         http_response_code(404);
         header('Content-Type: text/plain; charset=utf-8');
@@ -318,32 +337,8 @@ if ($action === 'plans_fond_image') {
         exit;
     }
 
-    // Détecter le MIME selon l'extension (plus fiable que mime_content_type)
-    $ext = strtolower(pathinfo($real, PATHINFO_EXTENSION));
-    $mimeMap = [
-        'png'  => 'image/png',
-        'jpg'  => 'image/jpeg',
-        'jpeg' => 'image/jpeg',
-        'gif'  => 'image/gif',
-        'webp' => 'image/webp',
-        'svg'  => 'image/svg+xml',
-        'pdf'  => 'application/pdf',
-    ];
-    $mime = $mimeMap[$ext] ?? (function_exists('mime_content_type') ? mime_content_type($real) : 'application/octet-stream');
-
-    // Nettoyer toute sortie tampon et envoyer le fichier brut
-    while (ob_get_level()) ob_end_clean();
-    header_remove('Content-Type');
-    header_remove('Cache-Control');
-    header_remove('Pragma');
-    header_remove('X-Content-Type-Options');
-    header('Content-Type: ' . $mime);
-    header('Content-Length: ' . filesize($real));
-    header('Content-Disposition: inline; filename="' . basename($real) . '"');
-    header('Cache-Control: private, max-age=300');
-    header('X-Content-Type-Options: nosniff');
-    readfile($real);
-    exit;
+    // Type d'après l'extension, jamais deviné (voir plans_envoyer_fichier).
+    plans_envoyer_fichier($real);
 }
 
 // ── Liens éléments ↔ biens/équipements ────────────────────────────────────────
@@ -412,7 +407,7 @@ if ($action === 'plans_upload_limits') {
 
         $userIniPath = __DIR__ . '/../../.user.ini';
 
-        // ⚠️ FIX SÉCURITÉ : whitelist stricte des directives qu'on accepte de
+        // FIX SÉCURITÉ : whitelist stricte des directives qu'on accepte de
         // lire/écrire. Auparavant, n'importe quelle clé déjà présente dans
         // .user.ini était préservée — si une directive dangereuse avait été
         // injectée par un autre moyen, elle survivait à chaque écriture.

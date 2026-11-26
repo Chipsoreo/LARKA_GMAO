@@ -15,13 +15,13 @@
 
 // ── Résolution du tenant d'un compte (login, mot de passe oublié, reset) ─────
 //
-// ⚠️ FIX BUG : la résolution n'existait que dans « login ». « forgot_password »
+// FIX BUG : la résolution n'existait que dans « login ». « forgot_password »
 // et « reset_password » travaillaient sur la base choisie par le nom d'hôte :
 // en multi-tenant, le code de réinitialisation d'un agent était cherché (et
 // écrit) dans la mauvaise base — l'agent ne recevait jamais rien, ou pire, un
 // homonyme d'une autre organisation recevait le code.
 //
-// ⚠️ FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
+// FIX SÉCURITÉ : les replis (tenant joker « * », registre des comptes
 // locaux) ignoraient l'état « actif » du tenant ; une organisation désactivée
 // par le super administrateur restait donc accessible par ce chemin.
 //
@@ -36,7 +36,7 @@ if (!function_exists('tenant_du_compte')) {
     function base_du_tenant(string $cle): ?Database {
         $cfg = TenantResolver::getDbConfigForTenant($cle);
         if (!$cfg) {
-            // ⚠️ Jamais de repli sur la base par défaut : le mot de passe d'un
+            // Jamais de repli sur la base par défaut : le mot de passe d'un
             // agent serait vérifié contre les comptes d'un autre tenant.
             error_log("[AUTH] Tenant '{$cle}' résolu mais config DB introuvable.");
             return null;
@@ -53,7 +53,7 @@ if ($action === 'login' && $method === 'POST') {
     $tenantKey = null;
 
     // Rate limiting par IP et par login.
-    // ⚠️ FIX BUG : chaque appel — connexions RÉUSSIES comprises — était compté.
+    // FIX BUG : chaque appel — connexions RÉUSSIES comprises — était compté.
     // Cinq connexions légitimes en cinq minutes (plusieurs onglets, un poste
     // partagé, un test) bloquaient le compte. Seuls les échecs comptent
     // désormais ; le plafond, lui, est vérifié avant toute vérification.
@@ -73,7 +73,7 @@ if ($action === 'login' && $method === 'POST') {
         $tenantKey = $res['cle'];
         $db = base_du_tenant($tenantKey);
         if (!$db) json_error('Configuration tenant indisponible. Contactez l\'administrateur.', 503);
-        // ⚠️ FIX SÉCURITÉ : tenant_key n'est plus écrit en session AVANT la
+        // FIX SÉCURITÉ : tenant_key n'est plus écrit en session AVANT la
         // vérification du mot de passe. Un utilisateur déjà connecté qui tentait
         // (et ratait) une connexion avec le login d'une autre organisation
         // basculait sa session existante sur la base de cette organisation —
@@ -93,6 +93,7 @@ if ($action === 'login' && $method === 'POST') {
         session_regenerate_id(true);
     }
     $_SESSION['user'] = $user;
+    $_SESSION['_authentifie_le'] = time();   // confirmation d'identité récente (Larka Connect)
     if ($tenantKey) {
         $_SESSION['tenant_key'] = $tenantKey;
     }
@@ -144,6 +145,7 @@ if ($action === 'oauth_check' && $method === 'GET') {
                 if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
                 unset($_SESSION['forced_tenant']);
                 $_SESSION['user'] = $data['user'];
+                $_SESSION['_authentifie_le'] = time();   // confirmation d'identité récente (Larka Connect)
                 // Restaurer le tenant depuis le token OAuth
                 if (!empty($data['tenant_key'])) {
                     $_SESSION['tenant_key'] = $data['tenant_key'];
@@ -235,7 +237,7 @@ if ($action === 'auth_config' && $method === 'GET') {
     json_ok([
         'microsoft' => MICROSOFT_ENABLED && MICROSOFT_CLIENT_ID !== '',
         'google'    => GOOGLE_ENABLED    && GOOGLE_CLIENT_ID    !== '',
-        // Affichée sous le formulaire de connexion (« V2.1.0 »).
+        // Affichée sous le formulaire de connexion (« V3.0.0 »).
         'version'   => LarkaVersion::libelle(),
         // Démonstration posée : identifiant et mot de passe à l'écran.
         'demo'      => auth_acces_demo(),
@@ -300,7 +302,7 @@ if ($action === 'forgot_password' && $method === 'POST') {
         json_ok(['email' => 'votre adresse email']);
     }
 
-    // ⚠️ FIX SÉCURITÉ : pour éviter l'énumération d'utilisateurs, on retourne
+    // FIX SÉCURITÉ : pour éviter l'énumération d'utilisateurs, on retourne
     // toujours une réponse "succès" générique, que le compte existe ou non,
     // qu'il soit local ou OAuth, que l'email corresponde ou non. Les vrais
     // erreurs sont seulement loggées côté serveur.
@@ -348,7 +350,7 @@ if ($action === 'forgot_password' && $method === 'POST') {
     // Envoyer le mail
     $subject = 'Larka — Code de réinitialisation';
     $body_html = "<div style='font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:8px'>
-        <h2 style='color:#1d4ed8;margin-top:0'>🔑 Réinitialisation de mot de passe</h2>
+        <h2 style='color:#1d4ed8;margin-top:0'>Réinitialisation de mot de passe</h2>
         <p>Votre code temporaire est :</p>
         <div style='font-size:32px;font-weight:700;letter-spacing:6px;text-align:center;padding:16px;background:#f0f9ff;border-radius:8px;color:#1d4ed8;margin:16px 0'>$code</div>
         <p style='color:#6b7280;font-size:13px'>Ce code expire dans <strong>15 minutes</strong>.<br>Si vous n'avez pas demandé cette réinitialisation, ignorez ce message.</p>
@@ -441,12 +443,14 @@ if ($action === 'change_password' && $method === 'POST') {
             'tenant' => (string)($_SESSION['tenant_key'] ?? 'default'),
         ]);
     }
-    // ⚠️ FIX BUG : la base remettait MustChangePassword à 0 mais la SESSION
+    // FIX BUG : la base remettait MustChangePassword à 0 mais la SESSION
     // gardait 1 — l'agent restait bloqué sur « Vous devez changer votre mot de
     // passe » jusqu'à se déconnecter. (utilisateur_session() relit aussi la
     // fiche à chaque requête ; on aligne la session tout de suite.)
     if (!empty($_SESSION['user']) && (int)($_SESSION['user']['Id'] ?? 0) === (int)$user['Id']) {
         $_SESSION['user']['MustChangePassword'] = 0;
+        // Cette session garde la main ; les autres sessions du compte tombent (utilisateur_session).
+        session_noter_mot_de_passe($db);
     }
     if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
     // Le mot de passe initial (data/security/admin-initial.txt) ne sert plus :
@@ -587,7 +591,7 @@ function gmao_send_mail(string $to, string $subject, string $htmlBody): bool {
         $headers .= "Reply-To: $from\r\n";
 
         // Tenter d'utiliser SMTP via socket
-        // ⚠️ FIX SÉCURITÉ (H2) : vérifier le certificat TLS du serveur SMTP par
+        // FIX SÉCURITÉ (H2) : vérifier le certificat TLS du serveur SMTP par
         // défaut (anti interception/MITM sur le canal mail). Pour un serveur
         // interne à certificat auto-signé, mettre smtp.verify_peer=false dans
         // config.json en connaissance de cause.
@@ -658,7 +662,7 @@ function gmao_send_mail(string $to, string $subject, string $htmlBody): bool {
         if (!$expect($read(), [250, 251])) { fclose($sock); return false; }
         $write("DATA");
         if (!$expect($read(), [354])) { fclose($sock); return false; }
-        // ⚠️ Message envoyé tel quel jusqu'ici : fins de ligne « \n » nues (que
+        // Message envoyé tel quel jusqu'ici : fins de ligne « \n » nues (que
         // des serveurs stricts refusent) et aucune « transparence » RFC 5321 —
         // une ligne commençant par « . » perdait son point, et une ligne réduite
         // à « . » terminait le message avant l'heure. On normalise en CRLF et on

@@ -88,17 +88,19 @@ async function renderDemandes() {
             notes.forEach(n => {
               notesHtml += `
               <div style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:white;padding:14px 20px;border-radius:8px;margin-bottom:12px;display:flex;align-items:flex-start;gap:12px">
-                <span style="font-size:18px;flex-shrink:0">📌</span>
+                <span style="font-size:18px;flex-shrink:0">${lk('pin')}</span>
                 <div style="font-size:14px;line-height:1.5">${escHtml(n.Message||'')}</div>
               </div>`;
             });
           } else {
             // Mode bandeau défilant (défaut)
-            const textes = notes.map(n => n.Message).join('&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;');
+            // Chaque message échappé (il l'était déjà en mode « fixe ») : un message
+            // contenant du HTML s'exécutait chez tous les demandeurs.
+            const textes = notes.map(n => escHtml(n.Message || '')).join('&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;');
             notesHtml += `
             <div style="background:linear-gradient(135deg,#1565c0,#1976d2);color:white;padding:10px 20px;border-radius:8px;margin-bottom:16px;overflow:hidden;position:relative">
               <div style="display:flex;align-items:center;gap:10px">
-                <span style="font-size:18px;flex-shrink:0">📢</span>
+                <span style="font-size:18px;flex-shrink:0">${lk('megaphone')}</span>
                 <div style="overflow:hidden;flex:1">
                   <div class="notes-scroll" style="white-space:nowrap;animation:scrollNotes ${_bandeauVitesse * 2}s linear infinite">
                     ${textes}
@@ -147,7 +149,7 @@ function _renderDemandes(c, data, isManager, notesHtml, intervParDemande = {}) {
   <div class="card" style="padding:0;margin-bottom:16px">
     <div class="search-bar" style="gap:8px">
       <div class="search-input-wrap" style="flex:1;max-width:480px">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon">${lk('search')}</span>
         <input class="search-input" type="text" placeholder="Rechercher dans toutes les demandes…"
           value="${App.searchTerm||''}" oninput="App.handleSearch(this.value)" onkeydown="App.handleSearchKey(event)">
       </div>
@@ -169,7 +171,7 @@ function _renderDemandes(c, data, isManager, notesHtml, intervParDemande = {}) {
 
   if (filtered.length === 0) {
     html += `<div class="card" style="padding:48px;text-align:center;color:var(--gray-text)">
-      📭 Aucune demande en cours.
+      ${lk('mailbox')} Aucune demande en cours.
       <br><br><button class="btn btn-primary" onclick="nouvelleDemande()">+ Créer une demande</button>
     </div>`;
     c.innerHTML = html;
@@ -192,27 +194,27 @@ function _renderDemandes(c, data, isManager, notesHtml, intervParDemande = {}) {
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
             ${badgeU(d.Urgence)} ${badgeS(d.Statut)}
-            ${pourAutrui ? '<span class="badge badge-purple" style="font-size:10px">👥 Pour autrui</span>' : ''}
-            ${d.Categorie ? `<span class="badge badge-gray" style="font-size:10px">🏷️ ${_escDem(d.Categorie)}</span>` : ''}
-            ${ancien && !isManager ? `<span style="font-size:11px;color:var(--orange)">⏰ ${j}j sans réponse</span>` : ''}
+            ${pourAutrui ? ('<span class="badge badge-purple" style="font-size:10px">' + lk('users') + ' Pour autrui</span>') : ''}
+            ${d.Categorie ? `<span class="badge badge-gray" style="font-size:10px">${lk('tag')} ${_escDem(d.Categorie)}</span>` : ''}
+            ${ancien && !isManager ? `<span style="font-size:11px;color:var(--orange)">${lk('alarm-clock')} ${j}j sans réponse</span>` : ''}
             <span style="font-size:11px;color:var(--gray-text)">${fmtDt(d.DateCreation)}</span>
           </div>
           <div style="font-weight:600;font-size:14px;margin-bottom:3px">${_escDem(d.Titre)}</div>
           ${d.Description ? `<div style="font-size:13px;color:var(--gray-text);margin-bottom:3px">${_escDem((d.Description||'').substring(0,120))}${(d.Description||'').length>120?'…':''}</div>` : ''}
           <div style="font-size:12px;color:var(--gray-text)">
-            ${d.Batiment ? `🏢 ${_escDem(d.Batiment)}` : ''} ${d.Bureau ? `• Bureau ${_escDem(d.Bureau)}` : ''}
-            ${isManager ? `• 👤 ${_escDem(d.NomDeclarant||'—')}` : ''}
-            ${isManager && d.EmailDemandeur ? `• 📧 ${_escDem(d.EmailDemandeur)}` : ''}
-            ${isManager && d.TelDemandeur ? `• 📱 ${_escDem(d.TelDemandeur)}` : ''}
+            ${d.Batiment ? `${lk('building-complex')} ${_escDem(d.Batiment)}` : ''} ${d.Bureau ? `• Bureau ${_escDem(d.Bureau)}` : ''}
+            ${isManager ? `• ${lk('user')} ${_escDem(d.NomDeclarant||'—')}` : ''}
+            ${isManager && d.EmailDemandeur ? `• ${lk('mail')} ${_escDem(d.EmailDemandeur)}` : ''}
+            ${isManager && d.TelDemandeur ? `• ${lk('smartphone')} ${_escDem(d.TelDemandeur)}` : ''}
           </div>
-          ${d.CommentaireAdmin ? `<div style="margin-top:8px;padding:8px 12px;background:var(--gray-bg);border-radius:6px;font-size:12px">💬 ${_escDem(d.CommentaireAdmin)}</div>` : ''}
+          ${d.CommentaireAdmin ? `<div style="margin-top:8px;padding:8px 12px;background:var(--gray-bg);border-radius:6px;font-size:12px">${lk('message-circle')} ${_escDem(d.CommentaireAdmin)}</div>` : ''}
           ${(() => {
             const interv = intervParDemande[d.Id];
             if (interv) {
               const sc = {Planifiée:'blue','En cours':'orange','Réalisée':'cyan',Validée:'teal'}[interv.Statut]||'gray';
               const sLabel = interv.Statut === 'Validée' ? 'Terminée' : interv.Statut;
               return `<div style="margin-top:8px;padding:8px 12px;background:var(--gray-bg);border-radius:6px;font-size:12px;display:flex;align-items:center;gap:8px">
-                🔧 <strong>Intervention liée :</strong>
+                ${lk('wrench')} <strong>Intervention liée :</strong>
                 <span class="badge badge-${sc}" style="font-size:10px">${sLabel}</span>
                 <span style="font-family:monospace;font-weight:600">${escHtml(interv.Numero||'')}</span>
                 ${interv.Type ? `<span style="color:var(--gray-text)">• ${escHtml(interv.Type||'')}</span>` : ''}
@@ -224,10 +226,10 @@ function _renderDemandes(c, data, isManager, notesHtml, intervParDemande = {}) {
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0;padding-top:2px;flex-direction:column;align-items:flex-end">
           <div style="display:flex;gap:8px">
-            ${isManager ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();traiterDemande(${d.Id})">✏️ Traiter</button>` : ''}
-            ${peutR ? `<button class="btn btn-ghost btn-sm" style="color:var(--orange);border-color:var(--orange)" onclick="event.stopPropagation();relancerDemande(${d.Id})">🔔 Relancer</button>` : ''}
+            ${isManager ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();traiterDemande(${d.Id})">${lk('pencil')} Traiter</button>` : ''}
+            ${peutR ? `<button class="btn btn-ghost btn-sm" style="color:var(--orange);border-color:var(--orange)" onclick="event.stopPropagation();relancerDemande(${d.Id})">${lk('bell')} Relancer</button>` : ''}
           </div>
-          ${isManager && !intervParDemande[d.Id] && d.TypeLocalisation !== 'Archive' ? `<button class="btn btn-ghost btn-sm" style="color:var(--teal);border-color:var(--teal);font-size:11px" onclick="event.stopPropagation();creerIntervDepuisDemande(${d.Id})">🔧 Créer intervention</button>` : ''}
+          ${isManager && !intervParDemande[d.Id] && d.TypeLocalisation !== 'Archive' ? `<button class="btn btn-ghost btn-sm" style="color:var(--teal);border-color:var(--teal);font-size:11px" onclick="event.stopPropagation();creerIntervDepuisDemande(${d.Id})">${lk('wrench')} Créer intervention</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -289,7 +291,7 @@ async function nouvelleDemande() {
         <button type="button" id="tab_technique"
           onclick="switchTypeDemande('Technique')"
           style="flex:1;padding:10px 16px;border:none;background:var(--blue);color:white;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
-          🔧 Technique
+          ${lk('wrench')} Technique
         </button>
         <!-- Les modules s'insèrent ICI, entre Technique et Archive.
              Un agent qui veut réserver une borne ouvre « Nouvelle demande » :
@@ -299,7 +301,7 @@ async function nouvelleDemande() {
         <button type="button" id="tab_archive"
           onclick="switchTypeDemande('Archive')"
           style="flex:1;padding:10px 16px;border:none;background:transparent;color:var(--gray-text);font-size:13px;font-weight:400;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
-          🗄️ Archive
+          ${lk('archive')} Archive
         </button>
       </div>
 
@@ -328,7 +330,7 @@ async function nouvelleDemande() {
     </div>
     <div class="form-group">
       <label class="form-label">Votre numéro de téléphone <span class="req">*</span></label>
-      <input class="form-control" id="f_tel" type="tel" placeholder="06 12 34 56 78" value="${escHtml(user.TelMobile||user.Tel||'')}">${user.TelPro ? `<div style="font-size:10px;color:var(--gray-text);margin-top:2px">📞 Pro : ${escHtml(user.TelPro||'')}</div>` : ''}
+      <input class="form-control" id="f_tel" type="tel" placeholder="06 12 34 56 78" value="${escHtml(user.TelMobile||user.Tel||'')}">${user.TelPro ? `<div style="font-size:10px;color:var(--gray-text);margin-top:2px">${lk('phone')} Pro : ${escHtml(user.TelPro||'')}</div>` : ''}
     </div>
 
     <div class="form-group">
@@ -343,14 +345,14 @@ async function nouvelleDemande() {
     <!-- Panneau spécifique Archives -->
     <div id="panelArchive" class="form-group span-2" style="display:none">
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px">
-        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:12px">🗄️ Informations d'archivage</div>
+        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:12px">${lk('archive')} Informations d'archivage</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div style="grid-column:span 2">
             <label class="form-label">Type de prestation <span class="req">*</span></label>
             <select class="form-control" id="f_prestaArchive" onchange="onPrestaArchiveChange()">
               <option value="">— Choisir —</option>
-              <option value="Archivage">📦 Archivage (traitement de dossiers)</option>
-              <option value="Desarchivage">🗂️ Désarchivage (sortir un ou plusieurs dossiers)</option>
+              <option value="Archivage">Archivage (traitement de dossiers)</option>
+              <option value="Desarchivage">Désarchivage (sortir un ou plusieurs dossiers)</option>
             </select>
           </div>
 
@@ -431,7 +433,7 @@ async function nouvelleDemande() {
 
     <!-- Photos -->
     <div class="form-group span-2">
-      <label class="form-label">📷 Photos (max ${_demMaxPhotos})</label>
+      <label class="form-label">${lk('camera')} Photos (max ${_demMaxPhotos})</label>
       <input type="file" id="f_photos" accept="image/*" multiple onchange="handlePhotosSelect(this)"
         style="font-size:13px">
       <div id="photosPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
@@ -561,7 +563,7 @@ function _tabsModulesDemande() {
     b.style.cssText = 'flex:1;padding:10px 16px;border:none;background:transparent;'
       + 'color:var(--gray-text);font-size:13px;cursor:pointer;display:flex;'
       + 'align-items:center;justify-content:center;gap:6px';
-    b.textContent = `${m.anc.icone || '🧩'} ${m.anc.libelle || m.ext.nom}`;
+    b.textContent = `${m.anc.icone || ''} ${m.anc.libelle || m.ext.nom}`;
     b.addEventListener('click', () => switchTypeDemande(m.ext.identifiant));
     hote.appendChild(b);
   });
@@ -744,9 +746,9 @@ async function verifierDoublons() {
   if (!doublons.length) { div.style.display='none'; return; }
   div.style.display = 'block';
   div.innerHTML = `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;font-size:13px">
-    ⚠️ <strong>${doublons.length} demande(s) similaire(s) déjà ouverte(s) :</strong>
+    ${lk('triangle-exclamation-point', 'warn')} <strong>${doublons.length} demande(s) similaire(s) déjà ouverte(s) :</strong>
     <ul style="margin:8px 0 0 16px;padding:0">
-      ${doublons.map(d=>`<li>${_escDem(d.Titre)} — ${badgeS(d.Statut)} ${d.Batiment?`🏢 ${_escDem(d.Batiment)}`:''}</li>`).join('')}
+      ${doublons.map(d=>`<li>${_escDem(d.Titre)} — ${badgeS(d.Statut)} ${d.Batiment?`${lk('building-complex')} ${_escDem(d.Batiment)}`:''}</li>`).join('')}
     </ul>
     <div style="margin-top:6px;color:#856404">Vous pouvez quand même soumettre si c'est différent.</div>
   </div>`;
@@ -786,12 +788,12 @@ async function traiterDemande(id) {
       const docs = await DocumentsApi.getAll('Demande', id);
       if (docs.length > 0) {
         docsHtml = `<div class="form-group span-2">
-          <label class="form-label">📷 Photos jointes (${docs.length})</label>
+          <label class="form-label">${lk('camera')} Photos jointes (${docs.length})</label>
           <div id="demandePhotos" style="display:flex;flex-wrap:wrap;gap:8px">
             ${docs.map(doc => `
               <div style="position:relative;width:100px;height:100px;border-radius:6px;overflow:hidden;border:1px solid var(--gray-border);display:flex;align-items:center;justify-content:center;background:var(--gray-bg);font-size:11px;color:var(--gray-text)">
                 <div style="cursor:pointer;text-align:center;padding:4px" onclick="DocumentsApi.download(${doc.Id},${jsArg(doc.NomFichier||'')})" title="${escHtml(doc.NomFichier||'')}">
-                  📷 ${escHtml((doc.NomFichier||'').substring(0,12))}
+                  ${lk('camera')} ${escHtml((doc.NomFichier||'').substring(0,12))}
                 </div>
                 <button onclick="supprimerPhotoDemande(${doc.Id},${id})" style="position:absolute;top:2px;right:2px;background:#e74c3c;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center" title="Supprimer">×</button>
               </div>
@@ -804,7 +806,7 @@ async function traiterDemande(id) {
     const pourAutruiInfo = d.PourAutrui == 1 ? `
       <div class="form-group span-2">
         <div style="background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:8px;padding:12px 16px;font-size:13px">
-          👥 <strong>Demande faite pour un tiers :</strong><br>
+          ${lk('users')} <strong>Demande faite pour un tiers :</strong><br>
           Nom : ${_escDem(d.NomAutrui||'—')} &nbsp;|&nbsp; Email : ${_escDem(d.EmailAutrui||'—')} &nbsp;|&nbsp; Tél : ${_escDem(d.TelAutrui||'—')}
         </div>
       </div>` : '';
@@ -812,8 +814,8 @@ async function traiterDemande(id) {
     const contactInfo = `
       <div class="form-group span-2">
         <div style="background:var(--blue-pale,#e8f2fd);border:1px solid var(--blue,#2b7be6);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--text)">
-          👤 <strong>Contact demandeur :</strong> ${_escDem(d.NomDeclarant||'—')}<br>
-          📧 ${_escDem(d.EmailDemandeur||'—')} &nbsp;|&nbsp; 📱 ${_escDem(d.TelDemandeur||'—')}
+          ${lk('user')} <strong>Contact demandeur :</strong> ${_escDem(d.NomDeclarant||'—')}<br>
+          ${lk('mail')} ${_escDem(d.EmailDemandeur||'—')} &nbsp;|&nbsp; ${lk('smartphone')} ${_escDem(d.TelDemandeur||'—')}
         </div>
       </div>`;
 
@@ -893,8 +895,8 @@ async function traiterDemandeArchive(d) {
   try { archInfo = d.ArchiveData ? JSON.parse(d.ArchiveData) : null; } catch(e) {}
 
   const prestaLabel = archInfo?.prestaArchive === 'Desarchivage'
-    ? '🗂️ Désarchivage d\'un dossier'
-    : '📦 Archivage (traitement de dossiers)';
+    ? (lk('folders') + ' Désarchivage d\'un dossier')
+    : (lk('package') + ' Archivage (traitement de dossiers)');
 
   // Affichage des numéros de dossiers (nouveau format liste)
   const numsDossiers = Array.isArray(archInfo?.numerosDossiers) ? archInfo.numerosDossiers
@@ -902,7 +904,7 @@ async function traiterDemandeArchive(d) {
 
   const detailsHtml = archInfo ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;font-size:13px">
-      <div style="font-weight:700;color:#15803d;margin-bottom:8px">🗄️ ${prestaLabel}</div>
+      <div style="font-weight:700;color:#15803d;margin-bottom:8px">${lk('archive')} ${prestaLabel}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         ${archInfo.dateSolde    ? `<div><strong>Date de solde :</strong> ${new Date(archInfo.dateSolde).toLocaleDateString('fr-FR')}</div>` : ''}
         ${archInfo.nbDossiers   ? `<div><strong>Nb dossiers :</strong> ${_escDem(archInfo.nbDossiers)}</div>` : ''}
@@ -912,12 +914,12 @@ async function traiterDemandeArchive(d) {
       </div>
     </div>` : '';
 
-  openModal('🗄️ Traiter la demande d\'archive', `
+  openModal('Traiter la demande d\'archive', `
   <div style="display:flex;flex-direction:column;gap:14px">
     <div style="background:var(--blue-pale,#e8f2fd);border:1px solid var(--blue,#2b7be6);border-radius:8px;padding:12px;font-size:13px">
-      👤 <strong>${_escDem(d.NomDeclarant||'—')}</strong><br>
-      📧 ${_escDem(d.EmailDemandeur||'—')} &nbsp;|&nbsp; 📱 ${_escDem(d.TelDemandeur||'—')}
-      ${d.Batiment ? `<br>🏢 ${_escDem(d.Batiment)}${d.Bureau ? ' • '+_escDem(d.Bureau) : ''}` : ''}
+      ${lk('user')} <strong>${_escDem(d.NomDeclarant||'—')}</strong><br>
+      ${lk('mail')} ${_escDem(d.EmailDemandeur||'—')} &nbsp;|&nbsp; ${lk('smartphone')} ${_escDem(d.TelDemandeur||'—')}
+      ${d.Batiment ? `<br>${lk('building-complex')} ${_escDem(d.Batiment)}${d.Bureau ? ' • '+_escDem(d.Bureau) : ''}` : ''}
     </div>
     ${d.Description ? `<div style="font-size:13px"><strong>Description :</strong> ${_escDem(d.Description)}</div>` : ''}
     ${detailsHtml}
@@ -927,14 +929,14 @@ async function traiterDemandeArchive(d) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" id="modeTransChoix">
         <label style="cursor:pointer;border:2px solid var(--gray-border);border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:all .15s" id="lbl_mode_envoi"
           onclick="selectModeTransmission('Envoi')">
-          <span style="font-size:24px">📤</span>
+          <span style="font-size:24px">${lk('upload')}</span>
           <span style="font-weight:700;font-size:13px">Envoyer le fichier</span>
           <span style="font-size:11px;color:var(--gray-text)">Joindre un fichier à envoyer au demandeur</span>
           <input type="radio" name="f_modeTransmission" value="Envoi" style="display:none">
         </label>
         <label style="cursor:pointer;border:2px solid var(--gray-border);border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:all .15s" id="lbl_mode_chercher"
           onclick="selectModeTransmission('VenirChercher')">
-          <span style="font-size:24px">🚶</span>
+          <span style="font-size:24px">${lk('footprints')}</span>
           <span style="font-weight:700;font-size:13px">Venir chercher</span>
           <span style="font-size:11px;color:var(--gray-text)">Le demandeur se présente au service Archives</span>
           <input type="radio" name="f_modeTransmission" value="VenirChercher" style="display:none">
@@ -944,7 +946,7 @@ async function traiterDemandeArchive(d) {
 
     <div id="panelModeEnvoi" style="display:none">
       <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:8px">📎 Fichier à envoyer</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">${lk('paperclip')} Fichier à envoyer</div>
         <input type="file" id="f_fichierEnvoi" accept=".pdf,.doc,.docx,.xls,.xlsx,.odt,.jpg,.png"
           style="font-size:13px;padding:6px 10px;border:1px solid var(--gray-border);border-radius:6px;width:100%">
         <div style="font-size:11px;color:var(--gray-text);margin-top:4px">PDF, Word, Excel, image — max 20 Mo</div>
@@ -952,7 +954,7 @@ async function traiterDemandeArchive(d) {
     </div>
     <div id="panelModeChercher" style="display:none">
       <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:13px">
-        🚶 Le demandeur sera invité à se présenter au service Archives.
+        ${lk('footprints')} Le demandeur sera invité à se présenter au service Archives.
       </div>
     </div>
 
@@ -989,9 +991,9 @@ async function traiterDemandeArchive(d) {
 
     let commentaire = gv('f_commentaire_arch');
     if (mode === 'VenirChercher') {
-      commentaire = (commentaire ? commentaire + '\n\n' : '') + '🚶 Mode : Venir chercher au service Archives';
+      commentaire = (commentaire ? commentaire + '\n\n' : '') + 'Mode : Venir chercher au service Archives';
     } else if (fichierJoint) {
-      commentaire = (commentaire ? commentaire + '\n\n' : '') + `📎 Fichier joint : ${fichierJoint.name}`;
+      commentaire = (commentaire ? commentaire + '\n\n' : '') + `Fichier joint : ${fichierJoint.name}`;
     }
 
     await DemandesApi.update(d.Id, {
@@ -1056,12 +1058,12 @@ async function voirDetailDemande(id) {
         // Le demandeur peut supprimer ses photos quand la demande est traitée/refusée
         const canDeletePhoto = !isManager && ['Traité','Refusé'].includes(d.Statut);
         photosHtml = `<div>
-          <strong>📷 Photos jointes (${docs.length}) :</strong>
+          <strong>${lk('camera')} Photos jointes (${docs.length}) :</strong>
           <div id="demandePhotosView" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
             ${docs.map(doc => `
               <div style="position:relative;width:80px;height:80px;border-radius:6px;overflow:hidden;border:1px solid var(--gray-border);display:flex;align-items:center;justify-content:center;background:var(--gray-bg);font-size:10px;color:var(--gray-text)">
                 <div style="cursor:pointer;text-align:center;padding:4px" onclick="DocumentsApi.download(${doc.Id},${jsArg(doc.NomFichier||'')})" title="${escHtml(doc.NomFichier||'')}">
-                  📷 ${escHtml((doc.NomFichier||'').substring(0,10))}
+                  ${lk('camera')} ${escHtml((doc.NomFichier||'').substring(0,10))}
                 </div>
                 ${canDeletePhoto || isManager ? `<button onclick="supprimerPhotoDemande(${doc.Id},${id})" style="position:absolute;top:1px;right:1px;background:#e74c3c;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center" title="Supprimer">×</button>` : ''}
               </div>
@@ -1074,27 +1076,27 @@ async function voirDetailDemande(id) {
 
     const pourAutruiHtml = d.PourAutrui == 1 ? `
       <div style="padding:12px;background:var(--gray-bg);border-radius:8px">
-        <strong>👥 Demande pour un tiers :</strong><br>
-        ${escHtml(d.NomAutrui||'—')} — 📧 ${escHtml(d.EmailAutrui||'—')} — 📱 ${escHtml(d.TelAutrui||'—')}
+        <strong>${lk('users')} Demande pour un tiers :</strong><br>
+        ${escHtml(d.NomAutrui||'—')} — ${lk('mail')} ${escHtml(d.EmailAutrui||'—')} — ${lk('smartphone')} ${escHtml(d.TelAutrui||'—')}
       </div>` : '';
 
-    openModal(`📝 ${escHtml(d.Titre||'')}`, `
+    openModal(`${escHtml(d.Titre||'')}`, `
     <div style="display:flex;flex-direction:column;gap:14px;font-size:13px">
       <div style="display:flex;gap:8px;flex-wrap:wrap">${badgeU(d.Urgence)} ${badgeS(d.Statut)}
-        ${d.PourAutrui == 1 ? '<span class="badge badge-purple">👥 Pour autrui</span>' : ''}
+        ${d.PourAutrui == 1 ? ('<span class="badge badge-purple">' + lk('users') + ' Pour autrui</span>') : ''}
       </div>
       <div><strong>Description :</strong><br>${escHtml(d.Description||'<em style="color:var(--gray-text)">Aucune</em>')}</div>
       <div style="display:flex;gap:24px;flex-wrap:wrap">
         <div><strong>Bâtiment :</strong> ${escHtml(d.Batiment||'—')}</div>
         <div><strong>Bureau / Emplacement :</strong> ${escHtml(d.Bureau||'—')}</div>
-        ${d.TypeLocalisation && d.TypeLocalisation !== 'Standard' ? `<div><strong>Type :</strong> <span class="badge badge-${d.TypeLocalisation==='Archive'?'teal':'purple'}">${d.TypeLocalisation==='Archive'?'🗄️ Archive':'🔧 Technique'}</span></div>` : ''}
+        ${d.TypeLocalisation && d.TypeLocalisation !== 'Standard' ? `<div><strong>Type :</strong> <span class="badge badge-${d.TypeLocalisation==='Archive'?'teal':'purple'}">${d.TypeLocalisation==='Archive'?(lk('archive') + ' Archive'):(lk('wrench') + ' Technique')}</span></div>` : ''}
       </div>
       ${(()=>{
         if (!d.ArchiveData) return '';
         try {
           const a = JSON.parse(d.ArchiveData);
           return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px">
-            <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:8px">🗄️ Détails archivage</div>
+            <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:8px">${lk('archive')} Détails archivage</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
               <div><strong>Prestation :</strong> ${_escDem(a.prestaArchive||'—')}</div>
               <div><strong>Date de solde :</strong> ${a.dateSolde ? new Date(a.dateSolde).toLocaleDateString('fr-FR') : '—'}</div>
@@ -1111,25 +1113,25 @@ async function voirDetailDemande(id) {
         } catch(e) { return ''; }
       })()}
       ${isManager ? `<div style="padding:12px;background:var(--blue-pale,#e8f2fd);border-radius:8px">
-        <strong>👤 Déclarant :</strong> ${_escDem(d.NomDeclarant||'—')}<br>
-        📧 ${_escDem(d.EmailDemandeur||'—')} &nbsp;|&nbsp; 📱 ${_escDem(d.TelDemandeur||'—')}
+        <strong>${lk('user')} Déclarant :</strong> ${_escDem(d.NomDeclarant||'—')}<br>
+        ${lk('mail')} ${_escDem(d.EmailDemandeur||'—')} &nbsp;|&nbsp; ${lk('smartphone')} ${_escDem(d.TelDemandeur||'—')}
       </div>` : ''}
       ${pourAutruiHtml}
       <div><strong>Créée le :</strong> ${fmtDt(d.DateCreation)}</div>
       ${d.DateTraitement ? `<div><strong>Traitée le :</strong> ${fmtDt(d.DateTraitement)}</div>` : ''}
       ${_detailIntervLiee ? `<div style="padding:12px;background:var(--gray-bg);border-radius:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        🔧 <strong>Intervention liée :</strong>
+        ${lk('wrench')} <strong>Intervention liée :</strong>
         <span style="font-family:monospace;font-weight:600">${escHtml(_detailIntervLiee.Numero||'')}</span>
         <span class="badge badge-${({Planifiée:'blue','En cours':'orange','Réalisée':'cyan',Validée:'teal'})[_detailIntervLiee.Statut]||'gray'}" style="font-size:10px">${escHtml(_detailIntervLiee.Statut === 'Validée' ? 'Terminée' : (_detailIntervLiee.Statut||''))}</span>
         <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px" onclick="closeModal();editInterv(${_detailIntervLiee.Id})">Ouvrir →</button>
       </div>` : ''}
       ${d.DateDerniereRelance ? `<div><strong>Dernière relance :</strong> ${fmtDt(d.DateDerniereRelance)}</div>` : ''}
-      ${d.CommentaireAdmin ? `<div style="padding:12px;background:var(--gray-bg);border-radius:8px"><strong>💬 Réponse :</strong><br>${escHtml(d.CommentaireAdmin||'')}</div>` : ''}
+      ${d.CommentaireAdmin ? `<div style="padding:12px;background:var(--gray-bg);border-radius:8px"><strong>${lk('message-circle')} Réponse :</strong><br>${escHtml(d.CommentaireAdmin||'')}</div>` : ''}
       ${photosHtml}
       <div style="display:flex;gap:8px">
-        ${isManager && !['Traité','Refusé'].includes(d.Statut) ? `<button class="btn btn-primary btn-sm" onclick="closeModal();traiterDemande(${d.Id})">✏️ Traiter</button>` : ''}
-        ${isManager && !_detailIntervLiee && d.TypeLocalisation !== 'Archive' ? `<button class="btn btn-ghost btn-sm" style="color:var(--teal);border-color:var(--teal)" onclick="closeModal();creerIntervDepuisDemande(${d.Id})">🔧 Créer intervention</button>` : ''}
-        ${!isManager && peutRelancer(d) ? `<button class="btn btn-ghost btn-sm" style="color:var(--orange)" onclick="closeModal();relancerDemande(${d.Id})">🔔 Relancer</button>` : ''}
+        ${isManager && !['Traité','Refusé'].includes(d.Statut) ? `<button class="btn btn-primary btn-sm" onclick="closeModal();traiterDemande(${d.Id})">${lk('pencil')} Traiter</button>` : ''}
+        ${isManager && !_detailIntervLiee && d.TypeLocalisation !== 'Archive' ? `<button class="btn btn-ghost btn-sm" style="color:var(--teal);border-color:var(--teal)" onclick="closeModal();creerIntervDepuisDemande(${d.Id})">${lk('wrench')} Créer intervention</button>` : ''}
+        ${!isManager && peutRelancer(d) ? `<button class="btn btn-ghost btn-sm" style="color:var(--orange)" onclick="closeModal();relancerDemande(${d.Id})">${lk('bell')} Relancer</button>` : ''}
       </div>
     </div>`,
     null, 'Enregistrer', 'Fermer');

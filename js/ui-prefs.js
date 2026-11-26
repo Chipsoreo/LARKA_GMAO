@@ -30,24 +30,32 @@ const SIDEBAR_ICON_W     = 58;
 const SIDEBAR_SNAP       = 120;
 
 const UI_NAV_ITEMS = [
-  { page:'dashboard',     label:'Tableau de bord', icon:'📊', section:'Principal'    },
-  { page:'biens',         label:'Biens',           icon:'🏢', section:'Inventaire'   },
-  { page:'equipements',   label:'Equipements',     icon:'⚙️', section:'Inventaire'   },
-  { page:'stock',         label:'Stock',           icon:'📦', section:'Inventaire'   },
-  { page:'plans',         label:'Plans',           icon:'🗺️', section:'Plans'        },
-  { page:'interventions', label:'Interventions',   icon:'🔧', section:'Maintenance'  },
-  { page:'contrats',      label:'Contrats',        icon:'📋', section:'Maintenance'  },
-  { page:'gestion_materiel', label:'Gestion matériel', icon:'💰', section:'Gestion'      },
-  { page:'historique',    label:'Historique',      icon:'🗃️', section:'Gestion'      },
-  { page:'demandes',      label:'Demandes',        icon:'📝', section:'Gestion'      },
-  { page:'energie',          label:'Energie',          icon:'⚡', section:'Fluides'      },
-  { page:'carbone',          label:'Bilan Carbone',    icon:'🌿', section:'Fluides'      },
-  { page:'mobilite_carbone', label:'Ma mobilité',      icon:'🚗', section:'Fluides'      },
-  { page:'urgences',         label:'Procédures d\'urgence', icon:'🚨', section:'Sécurité'    },
-  { page:'archives',         label:'Archives',         icon:'🗄️', section:'Archives'     },
-  { page:'statsAvancees',    label:'Stats avancees',   icon:'📈', section:'Analyse'      },
-  { page:'legifrance',       label:'Légifrance',       icon:'📜', section:'République'   },
-  { page:'chorus',           label:'Chorus Pro',       icon:'🏛️', section:'République'   },
+  { page:'dashboard',     label:'Tableau de bord', icon:lk('chart-column'), section:'Principal'    },
+  { page:'biens',         label:'Biens',           icon:lk('building-complex'), section:'Inventaire'   },
+  { page:'equipements',   label:'Equipements',     icon:lk('settings'), section:'Inventaire'   },
+  { page:'stock',         label:'Stock',           icon:lk('package'), section:'Inventaire'   },
+  // « Bâtiments » : section dépliable (js/nav.js). Les trois dernières entrées
+  // sont celles de Larka Connect, affichées seulement quand le module est ouvert.
+  { page:'plans',         label:'Plans',           icon:lk('map'), section:'Bâtiments'    },
+  { page:'connect',       label:'Supervision',     icon:lk('satellite-dish'), section:'Bâtiments'    },
+  { page:'connect_alarmes', label:'Alarmes techniques', icon:lk('bell'), section:'Bâtiments' },
+  { page:'connect_config',  label:'Connexions',      icon:lk('plug'), section:'Bâtiments'    },
+  { page:'interventions', label:'Interventions',   icon:lk('wrench'), section:'Maintenance'  },
+  { page:'contrats',      label:'Contrats',        icon:lk('clipboard-list'), section:'Maintenance'  },
+  // « Maintenance » : section dépliable elle aussi (js/nav.js).
+  { page:'preventif',     label:'Préventif',       icon:lk('calendar-days'), section:'Maintenance'  },
+  { page:'controles',     label:'Contrôle réglementaire', icon:lk('circle-check', 'ok'), section:'Maintenance' },
+  { page:'gestion_materiel', label:'Gestion matériel', icon:lk('wallet'), section:'Gestion'      },
+  { page:'historique',    label:'Historique',      icon:lk('archive'), section:'Gestion'      },
+  { page:'demandes',      label:'Demandes',        icon:lk('file-pen-line'), section:'Gestion'      },
+  { page:'energie',          label:'Energie',          icon:lk('zap'), section:'Fluides'      },
+  { page:'carbone',          label:'Bilan Carbone',    icon:lk('leaf'), section:'Fluides'      },
+  { page:'mobilite_carbone', label:'Ma mobilité',      icon:lk('car'), section:'Fluides'      },
+  { page:'urgences',         label:'Procédures d\'urgence', icon:lk('siren'), section:'Sécurité'    },
+  { page:'archives',         label:'Archives',         icon:lk('archive'), section:'Archives'     },
+  { page:'statsAvancees',    label:'Stats avancees',   icon:lk('trending-up'), section:'Analyse'      },
+  { page:'legifrance',       label:'Légifrance',       icon:lk('scroll-text'), section:'République'   },
+  { page:'chorus',           label:'Chorus Pro',       icon:lk('landmark'), section:'République'   },
 ];
 
 /**
@@ -66,7 +74,7 @@ const UI_NAV_ITEMS = [
  * affichage des notes — reste commun : on ne veut pas que régler sa couleur
  * deux fois soit le prix de la correction.
  */
-var UI_PREFS_PAR_ROLE = ['navOrder', 'navVisibility', 'itemSections', 'sectionRenames'];
+var UI_PREFS_PAR_ROLE = ['navOrder', 'navVisibility', 'itemSections', 'sectionRenames', 'sectionsDeroulantes'];
 
 /** Rôle courant, ou 'anonyme' avant connexion. */
 function _uiPrefsRole() {
@@ -203,7 +211,8 @@ function _navItemsDeLaBarre(selecteur) {
   document.querySelectorAll(selecteur).forEach(function (n) {
     var page = n.dataset.page;
     if (!page || UI_PAGES_FIXES.indexOf(page) !== -1) return;
-    var icone = (n.querySelector('.icon') || {}).textContent || '';
+    // L'icône est une balise (lk(), css/lucide.css) : on garde son HTML.
+    var icone = ((n.querySelector('.icon') || {}).innerHTML || '').trim();
     var label = (n.querySelector('.nav-label') || {}).textContent || page;
     // La section est celle du titre qui précède l'entrée dans la barre : c'est
     // le regroupement que l'utilisateur a sous les yeux.
@@ -215,7 +224,9 @@ function _navItemsDeLaBarre(selecteur) {
       page: page,
       icon: (icone || '•').trim(),
       label: label.trim(),
-      section: titre ? titre.textContent.trim() : 'Principal',
+      // data-libelle : nom d'une section déroulante, dont le texte porte aussi icône et chevron.
+      // data-section : la CLÉ de la section (celle des préférences), même renommée.
+      section: titre ? (titre.dataset.section || titre.dataset.libelle || titre.textContent).trim() : 'Principal',
     });
   });
   return out;
@@ -226,7 +237,7 @@ function _navItemsExtensions() {
   document.querySelectorAll('#sidebarNav [data-ext-nav][data-page]').forEach(function (n) {
     var page = n.dataset.page;
     if (!page) return;
-    var icone = (n.querySelector('.icon') || {}).textContent || '🧩';
+    var icone = ((n.querySelector('.icon') || {}).innerHTML || '').trim() || lk('puzzle');
     var label = (n.querySelector('.nav-label') || {}).textContent || page;
     out.push({
       page: page,
@@ -323,6 +334,24 @@ function getOrderedNavItems() {
       TOUS.splice(pos + 1, 0, item);
     });
   }
+  // ⚠️ ET LES AUTRES ENTRÉES MASQUÉES, ELLES, DISPARAISSAIENT TOUJOURS.
+  // Le complément ci-dessus ne vaut que pour la barre décrite par UI_NAV_ITEMS.
+  // Une entrée de module, ou une entrée de la barre d'un demandeur, décochée
+  // puis la page rechargée, n'était plus nulle part : ni dans la barre, ni dans
+  // le panneau. La barre note maintenant ce qu'elle a laissé de côté à la
+  // demande de l'utilisateur (App._navMasquees, js/nav.js et js/extensions.js) ;
+  // on le remet ici, à la fin de sa section.
+  var masquees = (typeof App !== 'undefined' && Array.isArray(App._navMasquees)) ? App._navMasquees : [];
+  masquees.forEach(function (n) {
+    if (!n || !n.page || dejaVu[n.page] || UI_PAGES_FIXES.indexOf(n.page) !== -1) return;
+    dejaVu[n.page] = true;
+    var connu = parPage[n.page];
+    var item = { page: n.page, label: n.label || (connu && connu.label) || n.page,
+                 icon: n.icon || (connu && connu.icon) || '•', section: n.section || (connu && connu.section) || 'Principal' };
+    var pos = -1;
+    for (var i = TOUS.length - 1; i >= 0; i--) { if (TOUS[i].section === item.section) { pos = i; break; } }
+    if (pos === -1) TOUS.push(item); else TOUS.splice(pos + 1, 0, item);
+  });
   if (!Array.isArray(stored) || !stored.length) return TOUS.map(withSection);
   var byPage = {};
   TOUS.forEach(function(n) { byPage[n.page] = n; });
@@ -533,6 +562,7 @@ function setSidebarPosition(pos) {
 
 function _quickResize(size) {
   var pos = uiPrefsGet().sidebarPos || 'left';
+  if (_isHoriz(pos)) return;          // barre horizontale : hauteur fixe
   uiPrefsSet({ sidebarSize: size });
   var sb = document.querySelector('.sidebar');
   if (sb) {
@@ -540,6 +570,17 @@ function _quickResize(size) {
     _setSize(size, pos);
     setTimeout(function() { if(sb) sb.style.transition = ''; }, 250);
   }
+  // Le bouton de la barre (◀ / ▶) et les deux boutons du panneau suivent.
+  var reduite = size <= SIDEBAR_ICON_W + 4;
+  var btn = document.getElementById('sidebarCollapseBtn');
+  if (btn) btn.textContent = reduite ? '▶' : '◀';
+  [['etendu', !reduite], ['icones', reduite]].forEach(function (b) {
+    var el = document.getElementById('taille_btn_' + b[0]);
+    if (!el) return;
+    el.style.border = b[1] ? '2px solid var(--blue)' : '1.5px solid var(--gray-border)';
+    el.style.background = b[1] ? 'var(--blue-pale)' : 'var(--white)';
+    el.style.color = b[1] ? 'var(--blue)' : 'var(--text)';
+  });
 }
 
 function getUserNavVisibility() { return uiPrefsGet().navVisibility || {}; }
@@ -574,12 +615,12 @@ function openUiPrefsPanel() {
 
   var h = '';
   h += '<div style="padding:16px 18px 12px;border-bottom:1px solid var(--gray-border);display:flex;align-items:center;justify-content:space-between">';
-  h += '<span style="font-size:14px;font-weight:700;color:var(--navy)">🎨 Préférences interface</span>';
+  h += ('<span style="font-size:14px;font-weight:700;color:var(--navy)">' + lk('palette') + ' Préférences interface</span>');
   h += '<button onclick="closeUiPrefsPanel()" style="background:var(--gray-bg);border:none;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:15px;color:var(--gray-text)">✕</button>';
   h += '</div>';
 
   // Position
-  var positions = [{id:'left',icon:'⬅️',label:'Gauche'},{id:'top',icon:'⬆️',label:'Haut'},{id:'right',icon:'➡️',label:'Droite'},{id:'bottom',icon:'⬇️',label:'Bas'}];
+  var positions = [{id:'left',icon:lk('arrow-left'),label:'Gauche'},{id:'top',icon:lk('arrow-up'),label:'Haut'},{id:'right',icon:lk('arrow-right'),label:'Droite'},{id:'bottom',icon:lk('arrow-down'),label:'Bas'}];
 
   h += '<div style="padding:14px 18px;border-bottom:1px solid var(--gray-border)">';
   h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">Position de la navigation</div>';
@@ -597,11 +638,39 @@ function openUiPrefsPanel() {
   h += '<div style="margin-top:12px">';
   h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text);margin-bottom:8px">Taille</div>';
   h += '<div style="display:flex;gap:8px">';
-  h += '<button onclick="_quickResize(240)" style="flex:1;padding:8px 0;border-radius:8px;border:1.5px solid var(--gray-border);background:var(--white);cursor:pointer;font-size:12px;font-weight:600;color:var(--text)">▐█ Étendu</button>';
-  h += '<button onclick="_quickResize(58)"  style="flex:1;padding:8px 0;border-radius:8px;border:1.5px solid var(--gray-border);background:var(--white);cursor:pointer;font-size:12px;font-weight:600;color:var(--text)">▐ Icônes</button>';
+  // ⚠️ AUCUN DES DEUX BOUTONS NE DISAIT LEQUEL ÉTAIT CHOISI, et en barre
+  // horizontale (haut, bas) ils ne faisaient rien sans le dire. Le choix en
+  // cours est marqué comme pour la position, et les boutons sont grisés là où
+  // la taille ne s'applique pas.
+  var reduite = (prefs.sidebarSize || SIDEBAR_FULL_DEF) <= SIDEBAR_ICON_W + 4;
+  var horiz = _isHoriz(pos);
+  [['etendu', SIDEBAR_FULL_DEF, '▐█ Étendu', !reduite], ['icones', SIDEBAR_ICON_W, '▐ Icônes', reduite]].forEach(function (b) {
+    var a = b[3] && !horiz;
+    h += '<button id="taille_btn_' + b[0] + '" onclick="_quickResize(' + b[1] + ')"' + (horiz ? ' disabled title="La barre en haut ou en bas a toujours la même hauteur"' : '')
+      + ' style="flex:1;padding:8px 0;border-radius:8px;border:' + (a ? '2px solid var(--blue)' : '1.5px solid var(--gray-border)') + ';background:' + (a ? 'var(--blue-pale)' : 'var(--white)')
+      + ';cursor:' + (horiz ? 'not-allowed;opacity:.5' : 'pointer') + ';font-size:12px;font-weight:600;color:' + (a ? 'var(--blue)' : 'var(--text)') + '">' + b[2] + '</button>';
+  });
   h += '</div>';
-  h += '<div style="font-size:11px;color:var(--gray-text);margin-top:6px;text-align:center">💡 Glissez le bord de la sidebar · Double-clic pour basculer</div>';
+  h += ('<div style="font-size:11px;color:var(--gray-text);margin-top:6px;text-align:center">' + lk('lightbulb') + ' Glissez le bord de la sidebar · Double-clic pour basculer</div>');
   h += '</div></div>'; // fin position
+
+  // Style des icônes (Lucide, js/icones.js) : commun à tous les rôles.
+  if (typeof LarkaIcones !== 'undefined' && LarkaIcones.styles) {
+    var styleIc = LarkaIcones.styleChoisi();
+    var apercu = ['zap', 'droplet', 'wrench', 'leaf', 'building', 'calendar'].map(function (n) { return lk(n); }).join('');
+    var stylesIc = [{ id: 'simple', label: 'Simples' }, { id: 'couleur', label: 'Colorées' }, { id: 'duotone', label: 'Duotone' }];
+    h += '<div style="padding:14px 18px;border-bottom:1px solid var(--gray-border)">';
+    h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">Icônes</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
+    stylesIc.forEach(function (s) {
+      var a = styleIc === s.id;
+      h += '<button id="icStyle_' + s.id + '" onclick="_setIconesStyle(\'' + s.id + '\')" data-icones="' + s.id + '" style="padding:10px 4px;border-radius:10px;border:2px solid ' + (a ? 'var(--blue)' : 'var(--gray-border)') + ';background:' + (a ? 'var(--blue-pale)' : 'var(--white)') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all .15s">';
+      h += '<span style="font-size:15px;color:var(--navy);display:grid;grid-template-columns:repeat(3,auto);gap:4px 6px">' + apercu + '</span>';
+      h += '<span style="font-size:11px;font-weight:700;color:' + (a ? 'var(--blue)' : 'var(--gray-text)') + '">' + s.label + '</span>';
+      h += '</button>';
+    });
+    h += '</div></div>';
+  }
 
   // Onglets visibles + ORDRE + SECTIONS PERSO — masqué pour les demandeurs
   /**
@@ -632,6 +701,10 @@ function openUiPrefsPanel() {
     document.querySelectorAll('#sidebarNav [data-page]').forEach(function (n) {
       presentes[n.dataset.page] = true;
     });
+    // Les entrées que l'utilisateur a masquées ne sont pas dans la barre : sans
+    // elles, leur case disparaissait du panneau dès le rechargement suivant, et
+    // plus rien ne permettait de les réafficher.
+    ((typeof App !== 'undefined' && App._navMasquees) || []).forEach(function (n) { presentes[n.page] = true; });
     if (Object.keys(presentes).length) {
       ordered = ordered.filter(function (n) { return presentes[n.page]; });
     }
@@ -642,13 +715,14 @@ function openUiPrefsPanel() {
         renderedSections[n.section] = true;
         var label = (typeof getSectionLabel === 'function') ? getSectionLabel(n.section) : n.section;
         // Bandeau de section éditable et droppable (déposer ici = changer la section de l'item)
-        h += '<div data-section-header="'+_attr(n.section)+'"'
+        h += '<div data-section-header="'+_attr(n.section)+'" data-deroulante="'+((typeof _navEstDeroulante === 'function' && _navEstDeroulante(n.section)) ? '1' : '0')+'"'
           +  ' ondragover="_navSectionDragOver(event,'+jsArg(n.section)+')"'
           +  ' ondragleave="_navSectionDragLeave(event)"'
           +  ' ondrop="_navSectionDrop(event,'+jsArg(n.section)+')"'
           +  ' style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--gray-text);padding:10px 6px 4px;display:flex;align-items:center;justify-content:space-between;border-radius:6px;transition:background .1s">';
         h += '<span ondblclick="_navRenameSection('+jsArg(n.section)+',this)" title="Double-cliquez pour renommer" style="cursor:text;flex:1">'+_escPrefs(label)+'</span>';
         h += '<span style="display:flex;gap:4px;align-items:center">';
+        h += _navDeroulanteBoutonHtml(n.section);
         h += '<button onclick="_toggleNavSection('+jsArg(n.section)+',this)" style="background:transparent;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0 4px">tout</button>';
         h += '</span></div>';
       }
@@ -663,7 +737,10 @@ function openUiPrefsPanel() {
       h += '<span title="Glisser pour réordonner ou changer de section" style="color:var(--gray-text);font-size:14px;cursor:grab;user-select:none;line-height:1">⠿</span>';
       // « data-page » : l'enregistrement lit les cases AFFICHÉES plutôt qu'une
       // liste écrite à la main, sans quoi les entrées des modules sont ignorées.
-      h += '<input type="checkbox" data-page="'+n.page+'" id="uipref_'+n.page+'" '+(v?'checked':'')+' onchange="_onNavChipChange(this,\''+n.page+'\')" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer;flex-shrink:0">';
+      // « Nouvelle demande » d'un demandeur ne se masque pas : sa case est
+      // cochée et grisée plutôt qu'offerte sans effet.
+      var fixe = isDemandeur && n.page === 'demandes';
+      h += '<input type="checkbox" data-page="'+n.page+'" id="uipref_'+n.page+'" '+(v||fixe?'checked':'')+(fixe?' disabled title="Toujours affiché"':'')+' onchange="_onNavChipChange(this,\''+n.page+'\')" style="width:16px;height:16px;accent-color:var(--blue);cursor:'+(fixe?'not-allowed':'pointer')+';flex-shrink:0">';
       h += '<span style="font-size:14px;width:20px;text-align:center">'+n.icon+'</span>';
       h += '<span style="font-size:13px;color:var(--text);flex:1">'+n.label+'</span>';
       h += '</div>';
@@ -675,7 +752,7 @@ function openUiPrefsPanel() {
 
     h += '<div style="display:flex;gap:8px;margin-top:12px">';
     h += '<button onclick="_resetNavVis()" title="Tout afficher et restaurer l\'ordre par défaut" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--gray-border);background:var(--white);font-size:12px;font-weight:600;cursor:pointer;color:var(--gray-text)">↺ Réinitialiser</button>';
-    h += '<button onclick="_saveNavVis()" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--blue);color:white;font-size:12px;font-weight:600;cursor:pointer">💾 Enregistrer</button>';
+    h += ('<button onclick="_saveNavVis()" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--blue);color:white;font-size:12px;font-weight:600;cursor:pointer">' + lk('save') + ' Enregistrer</button>');
     h += '</div></div>';
   }
 
@@ -688,11 +765,11 @@ function openUiPrefsPanel() {
     h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">Affichage des notes</div>';
     h += '<div style="display:flex;gap:8px">';
     h += '<button onclick="_setNotesMode(\'defilant\')" id="notesMode_defilant" style="flex:1;padding:10px 8px;border-radius:10px;border:2px solid '+(isDef?'var(--blue)':'var(--gray-border)')+';background:'+(isDef?'var(--blue-pale)':'var(--white)')+';cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .15s">';
-    h += '<span style="font-size:18px">📢</span>';
+    h += ('<span style="font-size:18px">' + lk('megaphone') + '</span>');
     h += '<span style="font-size:11px;font-weight:700;color:'+(isDef?'var(--blue)':'var(--gray-text)')+'">Bandeau défilant</span>';
     h += '</button>';
     h += '<button onclick="_setNotesMode(\'fixe\')" id="notesMode_fixe" style="flex:1;padding:10px 8px;border-radius:10px;border:2px solid '+(isFix?'var(--blue)':'var(--gray-border)')+';background:'+(isFix?'var(--blue-pale)':'var(--white)')+';cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .15s">';
-    h += '<span style="font-size:18px">📌</span>';
+    h += ('<span style="font-size:18px">' + lk('pin') + '</span>');
     h += '<span style="font-size:11px;font-weight:700;color:'+(isFix?'var(--blue)':'var(--gray-text)')+'">Note fixe</span>';
     h += '</button>';
     h += '</div>';
@@ -704,11 +781,11 @@ function openUiPrefsPanel() {
   if (!isDemandeur) {
     var hlOn = localStorage.getItem('assistant_highlight_enabled') !== 'false';
     h += '<div style="padding:14px 18px;border-top:1px solid var(--gray-border)">';
-    h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">🤖 Assistant IA</div>';
+    h += ('<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">' + lk('bot') + ' Assistant IA</div>');
     h += '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0">';
     h += '<input type="checkbox" id="assistantHlCheckbox" '+(hlOn?'checked':'')+' onchange="_toggleAssistantHighlight(this)" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">';
     h += '<span style="flex:1">';
-    h += '<span style="font-size:13px;color:var(--text);font-weight:600">🎯 Surbrillance des éléments sur le plan</span>';
+    h += ('<span style="font-size:13px;color:var(--text);font-weight:600">' + lk('target') + ' Surbrillance des éléments sur le plan</span>');
     h += '<div style="font-size:11px;color:var(--gray-text);margin-top:2px;line-height:1.4">Quand l\'IA vous montre des éléments sur un plan, ils sont mis en surbrillance avec une pulsation et un halo doré.</div>';
     h += '</span>';
     h += '</label>';
@@ -729,7 +806,7 @@ function openUiPrefsPanel() {
       h += '<div style="padding:14px 18px;border-bottom:1px solid var(--gray-border)">';
       h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
          + 'letter-spacing:.6px;color:var(--gray-text);margin-bottom:10px">'
-         + '🧩 Modules d\'habillage</div>';
+         + (lk('puzzle') + ' Modules d\'habillage</div>');
 
       if (themes.length) {
         h += '<div style="display:flex;align-items:center;justify-content:space-between;'
@@ -838,6 +915,21 @@ function _setNotesMode(mode) {
   if (typeof toast === 'function') toast('Affichage des notes mis à jour.', 'success');
 }
 
+/** Style des icônes : simple (couleur du texte), couleur (par famille), duotone. */
+function _setIconesStyle(style) {
+  uiPrefsSet({ icones: style });
+  if (typeof LarkaIcones !== 'undefined') LarkaIcones.appliquerStyle(style);
+  ['simple', 'couleur', 'duotone'].forEach(function (m) {
+    var btn = document.getElementById('icStyle_' + m);
+    if (!btn) return;
+    var a = m === style;
+    btn.style.borderColor = a ? 'var(--blue)' : 'var(--gray-border)';
+    btn.style.background  = a ? 'var(--blue-pale)' : 'var(--white)';
+    var lbl = btn.querySelector('span:last-child');
+    if (lbl) lbl.style.color = a ? 'var(--blue)' : 'var(--gray-text)';
+  });
+}
+
 function getNotesMode() {
   return uiPrefsGet().notesMode || 'defilant';
 }
@@ -864,17 +956,37 @@ function _updateNavVisCounter() {
 }
 
 function _toggleNavSection(sec, btn) {
-  // Si tous cochés -> tout décocher, sinon tout cocher
-  var items = UI_NAV_ITEMS.filter(function(n) { return n.section===sec; });
-  var allChecked = items.every(function(n) {
-    var el = document.getElementById('uipref_'+n.page);
-    return el && el.checked;
+  // Si tous cochés -> tout décocher, sinon tout cocher.
+  // Les lignes AFFICHÉES de la section (data-section), et non UI_NAV_ITEMS :
+  // les entrées des modules et celles d'un demandeur n'y figurent pas, et
+  // « tout » les laissait de côté.
+  var boites = [];
+  document.querySelectorAll('#navOrderList [data-section]').forEach(function (row) {
+    if (row.getAttribute('data-section') !== sec) return;
+    var cb = row.querySelector('input[type="checkbox"][data-page]');
+    if (cb) boites.push(cb);
   });
-  items.forEach(function(n) {
-    var el = document.getElementById('uipref_'+n.page);
-    if (el) el.checked = !allChecked;
-  });
+  var allChecked = boites.length && boites.every(function (el) { return el.checked; });
+  boites.forEach(function (el) { el.checked = !allChecked; });
   _updateNavVisCounter();
+}
+
+/** Bascule « liste déroulante » d'une section, dans le panneau (enregistrée avec le reste). */
+function _toggleNavDeroulante(sec, btn) {
+  var entete = btn && btn.closest('[data-section-header]');
+  if (!entete) return;
+  var on = entete.getAttribute('data-deroulante') !== '1';
+  entete.setAttribute('data-deroulante', on ? '1' : '0');
+  btn.classList.toggle('actif', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.title = on ? 'Liste déroulante : cliquez pour revenir à une section simple' : 'Regrouper ces onglets dans une liste déroulante';
+}
+function _navDeroulanteBoutonHtml(sec) {
+  var on = (typeof _navEstDeroulante === 'function') ? _navEstDeroulante(sec) : false;
+  return '<button type="button" class="nav-pref-deroulante' + (on ? ' actif' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
+    + ' onclick="_toggleNavDeroulante(' + jsArg(sec) + ',this)"'
+    + ' title="' + (on ? 'Liste déroulante : cliquez pour revenir à une section simple' : 'Regrouper ces onglets dans une liste déroulante') + '">'
+    + lk('list-tree') + ' Groupe</button>';
 }
 
 function _saveNavVis() {
@@ -909,10 +1021,17 @@ function _saveNavVis() {
     .find(function(n) { return n.page === page; });
     if (orig && sec && sec !== orig.section) itemSections[page] = sec;
   });
+  // Sections en liste déroulante : l'état de chaque bandeau du panneau.
+  var deroulantes = Object.assign({}, uiPrefsGet().sectionsDeroulantes || {});
+  document.querySelectorAll('#navOrderList [data-section-header]').forEach(function (h) {
+    var sec = h.getAttribute('data-section-header');
+    if (sec && h.hasAttribute('data-deroulante')) deroulantes[sec] = h.getAttribute('data-deroulante') === '1';
+  });
   uiPrefsSet({
     navVisibility: v,
     navOrder: order.length ? order : undefined,
-    itemSections: itemSections
+    itemSections: itemSections,
+    sectionsDeroulantes: deroulantes
   });
   if (window._currentUser) buildSidebarWithVisibility(window._currentUser);
   closeUiPrefsPanel();
@@ -934,7 +1053,7 @@ function _resetNavVis() {
   // de nouveau. On rétablit les quatre clés ensemble.
   uiPrefsSet({
     navOrder: undefined, navVisibility: {},
-    itemSections: {}, sectionRenames: {},
+    itemSections: {}, sectionRenames: {}, sectionsDeroulantes: undefined,
   });
   // Recharger le panneau pour refléter visuellement la réinitialisation
   closeUiPrefsPanel();
@@ -1046,9 +1165,11 @@ function _navCreateSection() {
   div.setAttribute('ondragleave', '_navSectionDragLeave(event)');
   div.setAttribute('ondrop', '_navSectionDrop(event,'+ JSON.stringify(String(name)) +')');
   div.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;color:var(--gray-text);padding:10px 6px 4px;display:flex;align-items:center;justify-content:space-between;border-radius:6px;transition:background .1s';
+  div.setAttribute('data-deroulante', '0');
   div.innerHTML =
       '<span ondblclick="_navRenameSection('+ jsArg(name) +',this)" title="Double-cliquez pour renommer" style="cursor:text;flex:1">'+ _escPrefs(name) +'</span>'
-    + '<span style="font-size:10px;color:var(--gray-text);font-weight:600;opacity:.7">déposer ici</span>';
+    + '<span style="display:flex;gap:6px;align-items:center">' + _navDeroulanteBoutonHtml(name)
+    + '<span style="font-size:10px;color:var(--gray-text);font-weight:600;opacity:.7">déposer ici</span></span>';
   list.appendChild(div);
   if (typeof toast === 'function') toast('Section créée. Glissez-y des items.', 'success');
 }

@@ -31,7 +31,8 @@ if ($action === 'interventions_mensuelles' && $method === 'GET') {
     $mois  = isset($_GET['mois']) ? (int)$_GET['mois'] : 6;
     $debut = isset($_GET['debut']) && $_GET['debut'] !== '' ? (string)$_GET['debut'] : null;
     $fin   = isset($_GET['fin'])   && $_GET['fin']   !== '' ? (string)$_GET['fin']   : null;
-    json_ok($db->getInterventionsParMois($mois, $debut, $fin));
+    $type  = isset($_GET['type']) ? trim((string)$_GET['type']) : null;
+    json_ok($db->getInterventionsParMois($mois, $debut, $fin, $type));
 }
 
 // ── Stats avancées (Admin) ────────────────────────────────────────────────────

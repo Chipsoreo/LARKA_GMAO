@@ -95,7 +95,111 @@ final class ExtSchemaDeclaratif
         'documents'     => ['libelle' => 'Document',     'affichage' => ['NomFichier', 'Categorie']],
         'notesinfo'     => ['libelle' => 'Note',         'affichage' => ['Message']],
         'listes'        => ['libelle' => 'Valeur de liste', 'affichage' => ['Categorie', 'Valeur']],
+
+        // ── Connectivité des bâtiments (Larka Connect) ───────────────────
+        //
+        // « connect » : la cible n'est PAS une table lue par requête
+        // structurée. Le cœur la sert lui-même (ExtConnectivite) par des
+        // projections fixes — les tables de Larka Connect portent des secrets
+        // chiffrés et des adresses d'équipements, et leur politique les classe
+        // « système protégé ». Le libellé affiché est composé par le cœur :
+        // « Température salle 12 — Automate CVC (Groupe scolaire) ».
+        'points_connect'     => ['libelle' => 'Point Larka Connect', 'affichage' => [],
+                                 'servi_par' => 'connect'],
+        'connexions_connect' => ['libelle' => 'Équipement raccordé', 'affichage' => [],
+                                 'servi_par' => 'connect'],
+        'batiments'          => ['libelle' => 'Bâtiment',            'affichage' => [],
+                                 'servi_par' => 'connect'],
     ];
+
+    /**
+     * Ce qu'un champ « mesure » sait lire, selon ce que désigne son lien.
+     *
+     * Un champ « mesure » ne stocke rien : comme une formule, il est calculé à
+     * chaque lecture, à partir du point (ou de la connexion, ou du bâtiment)
+     * qu'un champ « lien » de la même fiche désigne. L'auteur nomme une
+     * GRANDEUR de ce catalogue ; il ne choisit ni la table, ni la colonne, ni
+     * la période. Le cœur compose la lecture.
+     *
+     * « nature » dit comment la valeur se présente : un nombre (avec l'unité
+     * du point), un entier, un horodatage, ou un ÉTAT tiré de self::ETATS_MESURE
+     * — vocabulaire fermé, utilisable tel quel dans un surlignage.
+     */
+    public const GRANDEURS_MESURE = [
+        'points_connect' => [
+            'valeur'      => ['libelle' => 'Dernière valeur',              'nature' => 'nombre'],
+            'horodatage'  => ['libelle' => 'Heure de la dernière lecture', 'nature' => 'horodatage'],
+            'etat'        => ['libelle' => 'État du point',                'nature' => 'etat'],
+            'alarmes'     => ['libelle' => 'Alarmes actives sur le point', 'nature' => 'entier'],
+            'moyenne_24h' => ['libelle' => 'Moyenne sur 24 h',             'nature' => 'nombre'],
+            'minimum_24h' => ['libelle' => 'Minimum sur 24 h',             'nature' => 'nombre'],
+            'maximum_24h' => ['libelle' => 'Maximum sur 24 h',             'nature' => 'nombre'],
+            'conso_jour'  => ['libelle' => 'Consommation du jour (compteur)', 'nature' => 'nombre'],
+            'conso_mois'  => ['libelle' => 'Consommation du mois (compteur)', 'nature' => 'nombre'],
+        ],
+        'connexions_connect' => [
+            'etat'        => ['libelle' => 'État de la connexion',         'nature' => 'etat'],
+            'horodatage'  => ['libelle' => 'Dernière collecte',            'nature' => 'horodatage'],
+            'alarmes'     => ['libelle' => 'Alarmes actives',              'nature' => 'entier'],
+        ],
+        'batiments' => [
+            'etat'        => ['libelle' => 'État du bâtiment',             'nature' => 'etat'],
+            'alarmes'     => ['libelle' => 'Alarmes actives',              'nature' => 'entier'],
+            'connexions_en_defaut' => ['libelle' => 'Connexions en défaut', 'nature' => 'entier'],
+        ],
+    ];
+
+    /**
+     * États que rend une grandeur « etat ». Liste FERMÉE : un surlignage
+     * `{"champ": "etat_sonde", "operateur": "egal", "valeur": "alarme"}` se
+     * valide contre elle, et le client sait l'afficher.
+     */
+    public const ETATS_MESURE = [
+        'normal'       => 'Normal',
+        'alarme'       => 'En alarme',
+        'defaut'       => 'En défaut',
+        'partiel'      => 'Partiel',
+        'ancienne'     => 'Valeur ancienne',
+        'sans_valeur'  => 'Sans valeur',
+        'inactif'      => 'Inactif',
+        'indisponible' => 'Larka Connect fermé',
+    ];
+
+    /**
+     * Attributs d'une alarme technique qu'un module peut recevoir (§ « alarmes »).
+     *
+     * Catalogue FERMÉ, et sans nom de personne : qui a acquitté ou validé
+     * n'en fait pas partie. « types » dit dans quels champs du jeu l'attribut
+     * peut atterrir — « lien:<cible> » désigne un champ lien vers cette cible.
+     * « valeurs » : vocabulaire fixe, qu'un champ « choix » verrouillé doit
+     * contenir en entier pour pouvoir le recevoir.
+     */
+    public const ATTRIBUTS_ALARME = [
+        'alarme'       => ['libelle' => 'Numéro de l\'alarme (clé)', 'types' => ['entier']],
+        'point'        => ['libelle' => 'Point concerné',       'types' => ['lien:points_connect', 'entier']],
+        'connexion'    => ['libelle' => 'Équipement raccordé',  'types' => ['lien:connexions_connect', 'entier']],
+        'batiment'     => ['libelle' => 'Bâtiment',             'types' => ['lien:batiments', 'entier']],
+        'equipement'   => ['libelle' => 'Équipement de l\'inventaire', 'types' => ['lien:equipements', 'entier']],
+        'point_nom'    => ['libelle' => 'Nom du point',         'types' => ['texte']],
+        'batiment_nom' => ['libelle' => 'Nom du bâtiment',      'types' => ['texte']],
+        'gravite'      => ['libelle' => 'Gravité',              'types' => ['texte', 'choix'],
+                           'valeurs' => ['critique', 'majeure', 'mineure', 'info']],
+        'origine'      => ['libelle' => 'Origine',              'types' => ['texte', 'choix'],
+                           'valeurs' => ['regle', 'connexion', 'equipement', 'liaison']],
+        'etat'         => ['libelle' => 'État de l\'alarme',    'types' => ['texte', 'choix'],
+                           'valeurs' => ['active', 'terminee']],
+        'message'      => ['libelle' => 'Message',              'types' => ['texte', 'texte_long']],
+        'valeur'       => ['libelle' => 'Valeur au déclenchement', 'types' => ['decimal', 'texte']],
+        'unite'        => ['libelle' => 'Unité du point',       'types' => ['texte']],
+        'debut'        => ['libelle' => 'Début',                'types' => ['horodatage', 'date', 'texte']],
+        'fin'          => ['libelle' => 'Fin',                  'types' => ['horodatage', 'date', 'texte']],
+        'duree'        => ['libelle' => 'Durée (minutes)',      'types' => ['duree', 'entier']],
+        'acquittee'    => ['libelle' => 'Acquittée',            'types' => ['booleen']],
+        'demande'      => ['libelle' => 'N° de la demande d\'intervention', 'types' => ['entier']],
+    ];
+
+    /** Bornes de la réception des alarmes. */
+    private const MAX_RECEPTIONS_ALARMES = 4;
 
     /**
      * Formats de saisie vérifiés, désignés par un NOM.
@@ -297,7 +401,7 @@ final class ExtSchemaDeclaratif
                 }
                 $v['libelle'] = $lib;
                 if (!empty($r['icone'])) {
-                    $v['icone'] = mb_substr((string)$r['icone'], 0, 4);
+                    $v['icone'] = self::icone($r['icone']);
                 }
             }
 
@@ -639,7 +743,7 @@ final class ExtSchemaDeclaratif
     /**
      * Propriétés acceptées, par nature de composant.
      *
-     * ⚠️ TOUT CE QUI N'EST PAS DANS CES LISTES EST REFUSÉ.
+     * TOUT CE QUI N'EST PAS DANS CES LISTES EST REFUSÉ.
      * C'est la règle qui fait tenir la promesse « aucun code » : une propriété
      * inconnue ne peut pas être ignorée en silence, car on ne saurait pas dire
      * ce qu'elle voulait faire. Un « style », un « onclick » ou un « html »
@@ -775,6 +879,9 @@ final class ExtSchemaDeclaratif
         // ── Partages et calculs externes ─────────────────────────────────
         $d['partage'] = self::validerPartages($d['partage'] ?? [], $d['donnees']);
         $d['calculs'] = self::validerCalculs($d['calculs'] ?? [], $d['donnees']);
+
+        // ── Réception des alarmes techniques (Larka Connect) ─────────────
+        $d['alarmes'] = self::validerAlarmes($d['alarmes'] ?? [], $d['donnees']);
 
         // ── Présentation ─────────────────────────────────────────────────
         // Le logo est un CHEMIN vers un fichier du paquet, jamais une image
@@ -921,6 +1028,42 @@ final class ExtSchemaDeclaratif
                 if (!empty($champ['groupe'])) {
                     $out[$cle]['groupe'] = mb_substr((string)$champ['groupe'], 0, 40);
                 }
+                continue;
+            }
+
+            // ── Mesure lue sur le bâtiment connecté ──────────────────────
+            //
+            // Comme une formule, une mesure n'a PAS de colonne : elle est lue
+            // à chaque affichage sur le point, la connexion ou le bâtiment que
+            // désigne un lien de la même fiche. La stocker figerait une
+            // température de 8 h dans une liste consultée à 16 h.
+            //
+            // Le lien visé peut être déclaré plus bas dans le JSON : la
+            // vérification se fait en deuxième passe, une fois tous les champs
+            // connus. Ici, on ne retient que ce qui a été écrit.
+            if ($type === 'mesure') {
+                $inconnues = array_diff(array_keys($champ), ['type', 'de', 'grandeur', 'libelle',
+                    'aide', 'groupe', 'masque_liste']);
+                if ($inconnues !== []) {
+                    throw new RuntimeException("Champ « $cle » de type « mesure » : propriété « "
+                        . implode(' », « ', $inconnues) . ' » inconnue. Propriétés : de, grandeur, '
+                        . 'libelle, aide, groupe, masque_liste. Une mesure se lit, elle ne se '
+                        . 'saisit pas : ni défaut, ni obligation, ni bornes.');
+                }
+                $out[$cle] = [
+                    'type'        => 'mesure',
+                    'de'          => (string)($champ['de'] ?? ''),
+                    'grandeur'    => (string)($champ['grandeur'] ?? ''),
+                    'libelle'     => mb_substr((string)($champ['libelle'] ?? ucfirst($cle)), 0, 60),
+                    'calcule'     => true,
+                    'obligatoire' => false,
+                    'unique'      => false,
+                    'aide'        => mb_substr((string)($champ['aide'] ?? ''), 0, 160),
+                ];
+                if (!empty($champ['groupe'])) {
+                    $out[$cle]['groupe'] = mb_substr((string)$champ['groupe'], 0, 40);
+                }
+                if (!empty($champ['masque_liste'])) $out[$cle]['masque_liste'] = true;
                 continue;
             }
 
@@ -1088,7 +1231,7 @@ final class ExtSchemaDeclaratif
                 $valeurs = $champ['valeurs'] ?? $champ['valeurs_initiales'] ?? [];
 
                 /**
-                 * ⚠️ UNE LISTE TENUE PAR CONFIGURATION N'A PAS DE VALEURS ICI.
+                 * UNE LISTE TENUE PAR CONFIGURATION N'A PAS DE VALEURS ICI.
                  *
                  * Exiger « valeurs » de TOUS les champs « choix » refusait le cas
                  * que le modèle prévoit pourtant explicitement : un champ dont la
@@ -1156,7 +1299,7 @@ final class ExtSchemaDeclaratif
                 /**
                  * ── Droit d'ajout et saisie libre ────────────────────────
                  *
-                 * ⚠️ CES DEUX DRAPEAUX ÉTAIENT RANGÉS SOUS « amorce » ET NULLE
+                 * CES DEUX DRAPEAUX ÉTAIENT RANGÉS SOUS « amorce » ET NULLE
                  * PART AILLEURS — or TROIS endroits les lisent sur le CHAMP :
                  * le moteur (ajouterValeurListe), le client (bouton « + » et
                  * saisie hors liste) et l'épreuve fonctionnelle. Aucun ne les
@@ -1260,6 +1403,12 @@ final class ExtSchemaDeclaratif
             $out[$cle] = $propre;
         }
 
+        // ── Mesures : le lien visé, et la grandeur qu'il sait fournir ────
+        foreach ($out as $cle => $champ) {
+            if (($champ['type'] ?? '') !== 'mesure') continue;
+            $out[$cle] = self::resoudreMesure($cle, $champ, $out);
+        }
+
         // ── Valeurs par défaut dynamiques ────────────────────────────────
         // « {{today}} » plutôt qu'une date figée dans le JSON : le moteur
         // d'expressions est déjà là, autant s'en servir. Compilée maintenant
@@ -1344,7 +1493,7 @@ final class ExtSchemaDeclaratif
         /**
          * ── Type de vue ──────────────────────────────────────────────────
          *
-         * ⚠️ IL Y AVAIT TROIS CONTRÔLES POUR UNE SEULE QUESTION, ET UNE
+         * IL Y AVAIT TROIS CONTRÔLES POUR UNE SEULE QUESTION, ET UNE
          * BRANCHE MORTE ENTRE LES DEUX.
          *
          * Le premier refusait tout type hors catalogue. Le deuxième traduisait
@@ -1400,6 +1549,12 @@ final class ExtSchemaDeclaratif
             if (!isset($champs[$c])) {
                 throw new RuntimeException("Page, tri : champ « $c » inconnu.");
             }
+            // Une mesure est lue sur le bâtiment après la requête : la base ne
+            // peut pas trier sur une valeur qu'elle n'a pas.
+            if (($champs[$c]['type'] ?? '') === 'mesure') {
+                throw new RuntimeException("Page « $cle », tri : « $c » est une mesure lue en "
+                    . 'direct, elle n\'existe pas en base. Triez sur un champ saisi.');
+            }
             $tri[$c] = strtoupper((string)$sens) === 'DESC' ? 'DESC' : 'ASC';
         }
 
@@ -1409,9 +1564,12 @@ final class ExtSchemaDeclaratif
         $totaux = [];
         foreach (array_column($verifierChamps($vue['totaux'] ?? [], 'totaux'), 'champ') as $c) {
             $t = $champs[$c]['type'] ?? '';
-            if (!in_array($t, ['entier', 'decimal', 'formule'], true)) {
+            $mesureChiffree = $t === 'mesure'
+                && in_array($champs[$c]['nature'] ?? '', ['nombre', 'entier'], true);
+            if (!in_array($t, ['entier', 'decimal', 'formule'], true) && !$mesureChiffree) {
                 throw new RuntimeException("Page « $cle » : « $c » ne peut pas être totalisé "
-                    . "(type « $t »). Seuls les nombres et les formules le peuvent.");
+                    . "(type « $t »). Seuls les nombres, les formules et les mesures "
+                    . 'chiffrées le peuvent.');
             }
             $totaux[] = $c;
         }
@@ -1419,7 +1577,7 @@ final class ExtSchemaDeclaratif
         /**
          * ── Filtres ──────────────────────────────────────────────────────
          *
-         * ⚠️ UN FILTRE N'EST DESSINÉ QUE POUR « choix » ET « booleen ».
+         * UN FILTRE N'EST DESSINÉ QUE POUR « choix » ET « booleen ».
          * L'écran construit un menu déroulant à partir des valeurs possibles ;
          * un texte, une date ou un champ calculé n'en ont pas. Le filtre était
          * accepté à la validation, puis le client ne dessinait rien : l'auteur
@@ -1447,7 +1605,8 @@ final class ExtSchemaDeclaratif
         if (!empty($vue['grouper_par'])) {
             $g = array_column($verifierChamps([$vue['grouper_par']], 'grouper_par'), 'champ');
             $grouper = $g[0] ?? null;
-            if ($grouper !== null && ($champs[$grouper]['type'] ?? '') === 'formule') {
+            if ($grouper !== null
+                && in_array($champs[$grouper]['type'] ?? '', ['formule', 'mesure'], true)) {
                 throw new RuntimeException("Page « $cle » : on ne regroupe pas sur un champ "
                     . 'calculé — il n\'existe pas en base, le regroupement ne porterait '
                     . 'que sur la page affichée.');
@@ -1475,7 +1634,7 @@ final class ExtSchemaDeclaratif
         $layout = self::validerLayout($vue['layout'] ?? null, $champs, $cle);
 
         /**
-         * ⚠️ DEUX LISTES QUI DÉSIGNENT LES MÊMES CHAMPS FINISSENT PAR DIVERGER.
+         * DEUX LISTES QUI DÉSIGNENT LES MÊMES CHAMPS FINISSENT PAR DIVERGER.
          *
          * « champs_formulaire » choisit et ordonne les champs saisissables ; un
          * layout les choisit AUSSI, en les plaçant. Les accepter ensemble
@@ -1517,7 +1676,7 @@ final class ExtSchemaDeclaratif
             $places = $layout['_champs_places'];
             $orphelins = [];
             foreach ($champs as $nom => $c) {
-                if (($c['type'] ?? '') === 'formule') continue;
+                if (!empty($c['calcule'])) continue;
                 if (empty($c['obligatoire'])) continue;
                 if (in_array($nom, $places, true)) continue;
                 if (array_key_exists('defaut', $c)) continue;
@@ -1547,7 +1706,20 @@ final class ExtSchemaDeclaratif
                 'type'      => $vue['type'] ?? 'liste',
                 'source'    => $source,
                 'colonnes'  => $verifierChamps($colonnes, 'colonnes'),
-                'recherche' => array_column($verifierChamps($vue['recherche'] ?? [], 'recherche'), 'champ'),
+                'recherche' => array_column(array_filter(
+                    $verifierChamps($vue['recherche'] ?? [], 'recherche'),
+                    static function (array $r) use ($champs, $cle): bool {
+                        // La recherche porte sur les lignes lues en base, avant
+                        // toute lecture du bâtiment : une mesure n'y serait
+                        // jamais trouvée. On le dit plutôt que de laisser une
+                        // case de recherche qui ne trouve rien.
+                        if (($champs[$r['champ']]['type'] ?? '') === 'mesure') {
+                            throw new RuntimeException("Page « $cle », recherche : « {$r['champ']} » "
+                                . 'est une mesure lue en direct ; la recherche porte sur les '
+                                . 'champs saisis.');
+                        }
+                        return true;
+                    }), 'champ'),
                 'filtres'   => $verifierFiltres($vue['filtres'] ?? []),
                 'tri'       => $tri,
                 'actions'   => $actions,
@@ -1563,7 +1735,7 @@ final class ExtSchemaDeclaratif
                 /**
                  * Champs du FORMULAIRE, et dans cet ordre.
                  *
-                 * ⚠️ IL N'Y AVAIT AUCUN MOYEN DE RESTREINDRE UN FORMULAIRE.
+                 * IL N'Y AVAIT AUCUN MOYEN DE RESTREINDRE UN FORMULAIRE.
                  * « colonnes » choisit ce que la LISTE affiche ;
                  * « colonnes_formulaire » est le nombre de colonnes de la mise
                  * en page (1 à 6). Rien ne disait quels CHAMPS proposer à la
@@ -1612,8 +1784,16 @@ final class ExtSchemaDeclaratif
                  * soixante, selon ce que la première ligne contenait.
                  */
                 'largeurs' => self::validerLargeurs($vue['largeurs'] ?? [], $champs, $cle),
-                'champs_formulaire' => array_column(
+                'champs_formulaire' => array_column(array_filter(
                     $verifierChamps($vue['champs_formulaire'] ?? [], 'champs_formulaire'),
+                    static function (array $r) use ($champs, $cle): bool {
+                        if (($champs[$r['champ']]['type'] ?? '') === 'mesure') {
+                            throw new RuntimeException("Page « $cle », champs_formulaire : "
+                                . "« {$r['champ']} » est une mesure — elle se lit, elle ne se "
+                                . 'saisit pas.');
+                        }
+                        return true;
+                    }),
                     'champ'),
                 // « par_page » était accepté par la documentation, écrit par
                 // les auteurs… et jeté ici. Le moteur retombait donc toujours
@@ -1703,7 +1883,7 @@ final class ExtSchemaDeclaratif
     }
 
     /**
-     * ⚠️ TOUT CE QUI N'EST PAS AU CATALOGUE EST REFUSÉ.
+     * TOUT CE QUI N'EST PAS AU CATALOGUE EST REFUSÉ.
      *
      * C'est cette règle — et non une liste d'interdits — qui tient la promesse
      * « aucun code ». Interdire « onclick », « style » et « html » nommément
@@ -1940,7 +2120,7 @@ final class ExtSchemaDeclaratif
                     . "n'existe pas dans ce jeu. Champs : "
                     . implode(', ', array_keys($champs)) . '.');
             }
-            if (($champs[$nom]['type'] ?? '') === 'formule') {
+            if (in_array($champs[$nom]['type'] ?? '', ['formule', 'mesure'], true)) {
                 throw new RuntimeException("Page « $page », layout : « $nom » est un champ "
                     . 'calculé. Il se lit dans la liste, il ne se saisit pas — le placer '
                     . 'dans un formulaire offrirait une case dont la valeur serait écartée '
@@ -2028,7 +2208,7 @@ final class ExtSchemaDeclaratif
             }
 
             /**
-             * ⚠️ LA DESCRIPTION EST OBLIGATOIRE, ET C'EST VOULU.
+             * LA DESCRIPTION EST OBLIGATOIRE, ET C'EST VOULU.
              *
              * Une image sans description n'existe pas pour qui ne la voit pas :
              * lecteur d'écran, connexion lente, fichier manquant. L'auteur est
@@ -2233,11 +2413,13 @@ final class ExtSchemaDeclaratif
      */
     private const ANCRAGES = [
         'compteur' => [                                  // tuile chiffrée
-            'emplacements' => ['dashboard.tuiles'],
+            // connect.supervision (API 1.4) : la même tuile, en tête de la
+            // supervision des bâtiments — « 3 dépassements de CO₂ à analyser ».
+            'emplacements' => ['dashboard.tuiles', 'connect.supervision'],
             'requis' => [],
         ],
         'jauge' => [                                     // tuile avec agrégat
-            'emplacements' => ['dashboard.tuiles'],
+            'emplacements' => ['dashboard.tuiles', 'connect.supervision'],
             'requis' => ['champ'],
         ],
         'liste_liee' => [                                // enregistrements liés
@@ -2245,7 +2427,9 @@ final class ExtSchemaDeclaratif
             // listes finissent par diverger, et c'est arrivé — la fiche
             // équipement a été retirée du catalogue sans que celle-ci suive,
             // rendant le module d'exemple ininstallable.
-            'emplacements' => ['equipement.fiche', 'bien.fiche'],
+            // connect.point (API 1.4) : sous la courbe d'un point de Larka
+            // Connect, les fiches du module liées à ce point.
+            'emplacements' => ['equipement.fiche', 'bien.fiche', 'connect.point'],
             'requis' => ['champ_lien'],
         ],
         /**
@@ -2769,8 +2953,8 @@ final class ExtSchemaDeclaratif
             if (count($trad) > 20000) {
                 throw new RuntimeException("Langue « $code » : 20000 libellés au maximum.");
             }
-            // ⚠️ LES CLÉS ÉTAIENT COUPÉES À 80 CARACTÈRES, les valeurs à 200.
-            // Le catalogue (lang/fr.json) récolte des libellés plus longs :
+            // LES CLÉS ÉTAIENT COUPÉES À 80 CARACTÈRES, les valeurs à 200.
+            // Le catalogue (lang/traductions.json) récolte des libellés plus longs :
             // une clé tronquée ne correspond plus à aucun texte de l'écran, et
             // sa traduction ne s'appliquait jamais — sans erreur nulle part.
             // Les bornes suivent désormais celles du catalogue.
@@ -2928,6 +3112,212 @@ final class ExtSchemaDeclaratif
         return $out;
     }
 
+    /**
+     * Deuxième passe d'un champ « mesure » : le lien qu'il lit existe-t-il,
+     * vise-t-il le bâtiment connecté, et sait-il fournir la grandeur demandée ?
+     */
+    private static function resoudreMesure(string $cle, array $champ, array $champs): array
+    {
+        $de = $champ['de'];
+        $liensConnect = array_keys(array_filter($champs, static fn($c) =>
+            ($c['type'] ?? '') === 'lien'
+            && (self::CIBLES_LIEN[$c['vers']]['servi_par'] ?? '') === 'connect'));
+
+        if ($de === '' || !isset($champs[$de])) {
+            throw new RuntimeException("Champ « $cle » de type « mesure » : « de » doit nommer "
+                . 'le champ « lien » de cette fiche qui désigne le point, la connexion ou le '
+                . 'bâtiment à lire. '
+                . ($liensConnect ? 'Liens possibles : ' . implode(', ', $liensConnect) . '.'
+                                 : 'Ce jeu n\'en déclare aucun : ajoutez par exemple '
+                                   . '{"type": "lien", "vers": "points_connect"}.'));
+        }
+        $lien = $champs[$de];
+        $vers = (string)($lien['vers'] ?? '');
+        if (($lien['type'] ?? '') !== 'lien' || !isset(self::GRANDEURS_MESURE[$vers])) {
+            throw new RuntimeException("Champ « $cle » de type « mesure » : « $de » n'est pas un "
+                . 'lien vers le bâtiment connecté. Cibles lisibles : '
+                . implode(', ', array_keys(self::GRANDEURS_MESURE)) . '.');
+        }
+
+        $catalogue = self::GRANDEURS_MESURE[$vers];
+        $grandeur  = $champ['grandeur'] !== ''
+            ? $champ['grandeur']
+            : ($vers === 'points_connect' ? 'valeur' : 'etat');
+        if (!isset($catalogue[$grandeur])) {
+            throw new RuntimeException("Champ « $cle » : grandeur « $grandeur » inconnue pour un "
+                . "lien vers « $vers ». Grandeurs : " . implode(', ', array_keys($catalogue)) . '.');
+        }
+
+        $champ['de']       = $de;
+        $champ['vers']     = $vers;
+        $champ['grandeur'] = $grandeur;
+        $champ['nature']   = $catalogue[$grandeur]['nature'];
+        if ($champ['nature'] === 'etat') {
+            // Le client affiche l'état comme un badge, et un surlignage se
+            // valide contre ces valeurs : on les porte sur le champ.
+            $champ['valeurs'] = array_keys(self::ETATS_MESURE);
+        }
+        return $champ;
+    }
+
+    /**
+     * Le module reçoit les alarmes techniques de Larka Connect.
+     *
+     *   "alarmes": [ {
+     *       "jeu": "depassements",
+     *       "si": { "gravites": ["critique", "majeure"], "points_de": "salles.sonde" },
+     *       "champs": { "alarme": "@alarme", "point": "@point", "debut": "@debut",
+     *                   "fin": "@fin", "gravite": "@gravite", "valeur": "@valeur" },
+     *       "historique_jours": 30
+     *   } ]
+     *
+     * CE N'EST PAS UN HOOK. Aucun code du module ne s'exécute à l'ouverture
+     * d'une alarme : le module DÉCRIT où il veut la voir inscrite, et c'est
+     * Larka, à chaque passage de la collecte, qui écrit la ligne — avec ses
+     * propres contrôles de type, dans la table du module et nulle part
+     * ailleurs. « @alarme » est obligatoire : c'est la clé qui rend l'écriture
+     * idempotente (une alarme, une ligne, mise à jour à sa fin).
+     */
+    private static function validerAlarmes(mixed $liste, array $jeux): array
+    {
+        if (empty($liste)) return [];
+        if (!is_array($liste)) throw new RuntimeException('Champ « alarmes » : tableau attendu.');
+        if (!array_is_list($liste)) $liste = [$liste];   // un objet seul est accepté
+        if (count($liste) > self::MAX_RECEPTIONS_ALARMES) {
+            throw new RuntimeException('Champ « alarmes » : ' . self::MAX_RECEPTIONS_ALARMES
+                . ' réceptions au maximum.');
+        }
+
+        $out = [];
+        $jeuxVus = [];
+        foreach ($liste as $i => $r) {
+            $quoi = 'Alarmes (réception ' . ($i + 1) . ')';
+            if (!is_array($r)) throw new RuntimeException("$quoi : objet attendu.");
+            $inconnues = array_diff(array_keys($r), ['jeu', 'si', 'champs', 'historique_jours']);
+            if ($inconnues !== []) {
+                throw new RuntimeException("$quoi : propriété « " . implode(' », « ', $inconnues)
+                    . ' » inconnue. Propriétés : jeu, si, champs, historique_jours.');
+            }
+
+            $jeu = (string)($r['jeu'] ?? '');
+            if (!isset($jeux[$jeu])) {
+                throw new RuntimeException("$quoi : jeu « $jeu » inconnu. Jeux : "
+                    . implode(', ', array_keys($jeux)) . '.');
+            }
+            // Deux réceptions vers le même jeu écriraient deux fois la même
+            // alarme, chacune croyant être la seule à tenir la clé.
+            if (isset($jeuxVus[$jeu])) {
+                throw new RuntimeException("$quoi : le jeu « $jeu » reçoit déjà les alarmes. "
+                    . 'Réunissez les filtres dans une seule réception.');
+            }
+            $jeuxVus[$jeu] = true;
+            $champs = $jeux[$jeu]['champs'];
+
+            // ── Correspondance champ ← @attribut ─────────────────────────
+            $corr = $r['champs'] ?? null;
+            if (!is_array($corr) || $corr === []) {
+                throw new RuntimeException("$quoi : « champs » est obligatoire — la "
+                    . 'correspondance entre les champs du jeu et les attributs de l\'alarme, '
+                    . 'par exemple {"alarme": "@alarme", "debut": "@debut"}.');
+            }
+            $propre = [];
+            $cible = [];
+            foreach ($corr as $nomChamp => $source) {
+                $nomChamp = (string)$nomChamp;
+                if (!isset($champs[$nomChamp])) {
+                    throw new RuntimeException("$quoi : le champ « $nomChamp » n'existe pas dans "
+                        . "« $jeu ».");
+                }
+                $c = $champs[$nomChamp];
+                if (!empty($c['calcule'])) {
+                    throw new RuntimeException("$quoi : « $nomChamp » est calculé, il ne peut "
+                        . 'rien recevoir.');
+                }
+                if (!is_string($source) || !preg_match('/^@([a-z_]+)$/', $source, $m)
+                    || !isset(self::ATTRIBUTS_ALARME[$m[1]])) {
+                    throw new RuntimeException("$quoi : « $nomChamp » ← « "
+                        . (is_scalar($source) ? (string)$source : '?') . ' » : attribut inconnu. '
+                        . 'Attributs : @' . implode(', @', array_keys(self::ATTRIBUTS_ALARME)) . '.');
+                }
+                $attr = $m[1];
+                if (isset($cible[$attr])) {
+                    throw new RuntimeException("$quoi : @$attr est envoyé deux fois (« "
+                        . $cible[$attr] . " » et « $nomChamp »).");
+                }
+                $def = self::ATTRIBUTS_ALARME[$attr];
+                $typeChamp = ($c['type'] ?? '') === 'lien'
+                    ? 'lien:' . ($c['vers'] ?? '') : (string)($c['type'] ?? '');
+                if (!in_array($typeChamp, $def['types'], true)) {
+                    throw new RuntimeException("$quoi : @$attr ne peut pas aller dans "
+                        . "« $nomChamp » (type « $typeChamp »). Types acceptés : "
+                        . implode(', ', $def['types']) . '.');
+                }
+                // Un choix VERROUILLÉ refuserait à la relecture une valeur
+                // qu'il ne connaît pas : il doit contenir tout le vocabulaire.
+                if (($c['type'] ?? '') === 'choix' && isset($def['valeurs'])
+                    && empty($c['modifiable'])) {
+                    $manque = array_diff($def['valeurs'], $c['valeurs'] ?? []);
+                    if ($manque !== []) {
+                        throw new RuntimeException("$quoi : le choix « $nomChamp » doit proposer "
+                            . 'toutes les valeurs de @' . $attr . ' (' . implode(', ', $def['valeurs'])
+                            . ') ; il manque : ' . implode(', ', $manque) . '.');
+                    }
+                }
+                $propre[$nomChamp] = $attr;
+                $cible[$attr] = $nomChamp;
+            }
+            if (!isset($cible['alarme'])) {
+                throw new RuntimeException("$quoi : « @alarme » doit être reçu dans un champ "
+                    . 'entier. C\'est la clé : sans elle, Larka ne saurait pas quelle ligne '
+                    . 'mettre à jour à la fin de l\'alarme, ni éviter de l\'inscrire deux fois.');
+            }
+
+            // ── Filtre ───────────────────────────────────────────────────
+            $si = $r['si'] ?? [];
+            if (!is_array($si)) throw new RuntimeException("$quoi : « si » doit être un objet.");
+            $inconnues = array_diff(array_keys($si), ['gravites', 'origines', 'points_de']);
+            if ($inconnues !== []) {
+                throw new RuntimeException("$quoi : filtre « " . implode(' », « ', $inconnues)
+                    . ' » inconnu. Filtres : gravites, origines, points_de.');
+            }
+            $filtre = [];
+            foreach (['gravites' => 'gravite', 'origines' => 'origine'] as $cleF => $attr) {
+                if (!isset($si[$cleF])) continue;
+                $vals = array_values(array_unique(array_map('strval', (array)$si[$cleF])));
+                $connues = self::ATTRIBUTS_ALARME[$attr]['valeurs'];
+                $fausses = array_diff($vals, $connues);
+                if ($vals === [] || $fausses !== []) {
+                    throw new RuntimeException("$quoi : « si.$cleF » — valeurs possibles : "
+                        . implode(', ', $connues) . '.');
+                }
+                $filtre[$cleF] = $vals;
+            }
+            // « points_de » : seulement les alarmes des points que le module
+            // suit déjà — « jeu.champ », un lien vers points_connect.
+            if (isset($si['points_de'])) {
+                $pd = (string)$si['points_de'];
+                [$pj, $pc] = array_pad(explode('.', $pd, 2), 2, '');
+                $lc = $jeux[$pj]['champs'][$pc] ?? null;
+                if (!$lc || ($lc['type'] ?? '') !== 'lien' || ($lc['vers'] ?? '') !== 'points_connect') {
+                    throw new RuntimeException("$quoi : « si.points_de » doit désigner un champ "
+                        . '« lien » vers points_connect, sous la forme « jeu.champ » '
+                        . "(reçu : « $pd »).");
+                }
+                $filtre['points_de'] = ['jeu' => $pj, 'champ' => $pc];
+            }
+
+            $out[] = [
+                'jeu'    => $jeu,
+                'champs' => $propre,
+                'si'     => $filtre,
+                // Lors de la première réception, l'historique récent est repris
+                // pour que le registre ne démarre pas vide. Borné : 90 jours.
+                'historique_jours' => max(0, min((int)($r['historique_jours'] ?? 30), 90)),
+            ];
+        }
+        return $out;
+    }
+
     private static function validerAncrages(mixed $liste, array $jeux): array
     {
         if (empty($liste)) return [];
@@ -2991,6 +3381,17 @@ final class ExtSchemaDeclaratif
             }
 
             if ($type === 'liste_liee') {
+                // Le contexte injecté (l'identifiant du point affiché) atterrit
+                // dans champ_lien : il doit désigner la MÊME nature de chose.
+                // Sinon l'Id d'un point serait comparé à des Id d'équipements,
+                // et la liste montrerait les fiches d'un autre objet portant
+                // par hasard le même numéro.
+                $cl = $champs[$v['champ_lien']] ?? [];
+                if ($emplacement === 'connect.point'
+                    && (($cl['type'] ?? '') !== 'lien' || ($cl['vers'] ?? '') !== 'points_connect')) {
+                    throw new RuntimeException("Ancrage « liste_liee » dans « connect.point » : "
+                        . "« {$v['champ_lien']} » doit être un lien vers points_connect.");
+                }
                 $cols = [];
                 foreach ((array)($a['colonnes'] ?? array_slice(array_keys($champs), 0, 4)) as $c) {
                     $cols[] = $verifier((string)$c);
@@ -3007,10 +3408,10 @@ final class ExtSchemaDeclaratif
                 }
                 $v['page']    = $pg;
                 $v['libelle'] = mb_substr((string)($a['libelle'] ?? 'Module'), 0, 40);
-                $v['icone']   = mb_substr((string)($a['icone'] ?? '🧩'), 0, 4);
+                $v['icone']   = self::icone($a['icone'] ?? '');
             }
             if ($type === 'marqueurs') {
-                $v['icone']     = mb_substr((string)($a['icone'] ?? '📍'), 0, 4);
+                $v['icone']     = self::icone($a['icone'] ?? '');
                 $v['etiquette'] = $verifier((string)($a['etiquette'] ?? array_key_first($champs)));
             }
             if ($type === 'jauge') {
@@ -3029,6 +3430,8 @@ final class ExtSchemaDeclaratif
                 $v['unite']   = mb_substr((string)($a['unite'] ?? ''), 0, 12);
             }
             if ($type === 'compteur' || $type === 'jauge') {
+                // Icône de la tuile (nom Lucide ou symbole) ; absente : celle du module.
+                if (!empty($a['icone'])) $v['icone'] = self::icone($a['icone']);
                 // Nom OU hexadécimal, comme partout ailleurs. La forme
                 // silencieuse d'avant — retomber sur le bleu Larka sans rien
                 // dire — masquait les fautes de frappe : l'auteur écrivait
@@ -3052,6 +3455,12 @@ final class ExtSchemaDeclaratif
         foreach ($d['donnees'] ?? [] as $jeu) {
             foreach ($jeu['champs'] ?? [] as $c) {
                 if (($c['type'] ?? '') === 'lien') {
+                    $parLien[] = 'donnees.lire:' . $c['vers'];
+                }
+                // Une mesure lit ce que désigne son lien : la capacité est la
+                // même que celle du lien, déjà déduite ci-dessus. On la répète
+                // pour qu'elle ne dépende pas de l'ordre de lecture.
+                if (($c['type'] ?? '') === 'mesure' && !empty($c['vers'])) {
                     $parLien[] = 'donnees.lire:' . $c['vers'];
                 }
                 // Une source de suggestions lit une table du cœur : la capacité
@@ -3094,6 +3503,9 @@ final class ExtSchemaDeclaratif
             }
         }
         if (!empty($d['interface'])) $base[] = 'ui.retouche';
+        // Recevoir les alarmes techniques : une capacité à part, pour que
+        // l'administrateur voie que Larka écrira dans les tables du module.
+        if (!empty($d['alarmes'])) $base[] = 'connect.alarmes';
 
         return array_values(array_unique(array_merge($base, $parLien)));
     }
@@ -3101,7 +3513,7 @@ final class ExtSchemaDeclaratif
     /**
      * Libellé lisible d'un type de champ.
      *
-     * ⚠️ « formule » N'EST PAS DANS self::TYPES, et c'est voulu : un champ
+     * « formule » N'EST PAS DANS self::TYPES, et c'est voulu : un champ
      * calculé n'a pas de colonne en base, donc pas de traduction SQL à y ranger.
      * Le résumé d'installation l'ignorait, et lisait TYPES['formule'] : deux
      * avertissements PHP par champ calculé, puis un type affiché vide —
@@ -3115,6 +3527,7 @@ final class ExtSchemaDeclaratif
         return self::TYPES[$type]['libelle']
             ?? match ($type) {
                 'formule' => 'Champ calculé',
+                'mesure'  => 'Mesure lue sur le bâtiment',
                 default   => $type,
             };
     }
@@ -3146,6 +3559,31 @@ final class ExtSchemaDeclaratif
             $titre   = (string)($p['titre'] ?? '');
             return $actions === [] ? $titre : $titre . ' — ' . implode(', ', $actions);
         }, $d['pages'] ?? []);
-        return ['jeux' => $jeux, 'pages' => array_values($pages)];
+        // Ce que Larka écrira de lui-même : l'administrateur doit le lire
+        // avant d'installer, en clair, jeu par jeu.
+        $alarmes = array_map(function ($r) use ($d) {
+            $jeu = $d['donnees'][$r['jeu']]['libelle_pluriel'] ?? $r['jeu'];
+            $si = [];
+            if (!empty($r['si']['gravites'])) $si[] = 'gravité ' . implode(' ou ', $r['si']['gravites']);
+            if (!empty($r['si']['origines'])) $si[] = 'origine ' . implode(' ou ', $r['si']['origines']);
+            if (!empty($r['si']['points_de'])) {
+                $si[] = 'points suivis par « ' . $r['si']['points_de']['jeu'] . '.'
+                      . $r['si']['points_de']['champ'] . ' »';
+            }
+            return 'Alarmes techniques → ' . $jeu . ($si ? ' (' . implode(', ', $si) . ')' : '')
+                 . ' : ' . implode(', ', array_map(fn($a) => '@' . $a, array_values($r['champs'])));
+        }, $d['alarmes'] ?? []);
+        return ['jeux' => $jeux, 'pages' => array_values($pages), 'alarmes' => $alarmes];
+    }
+
+    /**
+     * Icône déclarée par un module : un nom Lucide (« map-pin », rendu par lk()),
+     * ou, pour un module écrit avant, un symbole court (jusqu'à 4 caractères).
+     */
+    private static function icone($v): string
+    {
+        $t = trim((string)$v);
+        if (preg_match('/^[a-z0-9][a-z0-9-]{0,39}$/', $t)) return $t;
+        return mb_substr($t, 0, 4);
     }
 }

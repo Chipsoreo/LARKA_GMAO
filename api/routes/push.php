@@ -83,7 +83,7 @@ if ($action === 'push_unsubscribe' && $method === 'POST') {
     $body = get_body();
     $endpoint = $body['endpoint'] ?? '';
 
-    // ⚠️ FIX SÉCURITÉ : on filtre par UserId pour empêcher qu'un utilisateur
+    // FIX SÉCURITÉ : on filtre par UserId pour empêcher qu'un utilisateur
     // authentifié désabonne les notifications d'un autre utilisateur en
     // devinant ou en interceptant un endpoint push.
     if ($endpoint) {
@@ -140,7 +140,7 @@ if ($action === 'push_test' && $method === 'POST') {
     $wp = new WebPush(VAPID_PRIVATE_PEM, VAPID_PUBLIC_KEY, VAPID_SUBJECT);
 
     $payload = json_encode([
-        'title'   => '🔔 Test Larka',
+        'title'   => 'Test Larka',
         'body'    => 'Les notifications fonctionnent ! — ' . date('H:i'),
         'tag'     => 'gmao-test-' . time(),
         'icon'    => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/icon.png',
@@ -153,7 +153,7 @@ if ($action === 'push_test' && $method === 'POST') {
     $cleaned = 0;
     $details = []; // Détails par appareil pour le diagnostic
 
-    // ⚠️ FIX PERFS : envoi en parallèle via curl_multi.
+    // FIX PERFS : envoi en parallèle via curl_multi.
     // Sur un test à 50 abonnés, on passe d'un cumul de N×timeout à un seul
     // timeout. Voir WebPush::sendBatch().
     $batchSubs = array_map(fn($s) => [
@@ -254,7 +254,7 @@ if ($action === 'push_send' && $method === 'POST') {
     $sent = 0;
     $failed = 0;
 
-    // ⚠️ FIX PERFS : envoi parallèle via curl_multi (cf. WebPush::sendBatch)
+    // FIX PERFS : envoi parallèle via curl_multi (cf. WebPush::sendBatch)
     $batchSubs = array_map(fn($s) => [
         'endpoint' => $s['Endpoint'],
         'keys'     => ['p256dh' => $s['P256dh'], 'auth' => $s['Auth']],
@@ -323,7 +323,7 @@ if ($action === 'push_config' && $method === 'GET') {
     require_role($user, ['Admin','Gestionnaire']);
     json_ok([
         'actif'                         => defined('PUSH_ACTIF') ? PUSH_ACTIF : true,
-        'notif_demande_titre'           => defined('PUSH_NOTIF_DEMANDE_TITRE') ? PUSH_NOTIF_DEMANDE_TITRE : '📝 Nouvelle demande d\'intervention',
+        'notif_demande_titre'           => defined('PUSH_NOTIF_DEMANDE_TITRE') ? PUSH_NOTIF_DEMANDE_TITRE : 'Nouvelle demande d\'intervention',
         'notif_demande_corps'           => defined('PUSH_NOTIF_DEMANDE_CORPS') ? PUSH_NOTIF_DEMANDE_CORPS : '{demandeur} a soumis une demande d\'intervention.',
         'notif_demande_icon'            => defined('PUSH_NOTIF_DEMANDE_ICON') ? PUSH_NOTIF_DEMANDE_ICON : '/icon.png',
         'notif_demande_image'           => defined('PUSH_NOTIF_DEMANDE_IMAGE') ? PUSH_NOTIF_DEMANDE_IMAGE : '',

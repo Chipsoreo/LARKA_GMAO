@@ -30,7 +30,7 @@
  *  de mettre à jour les champs) ou par clic droit → « Mettre à jour les champs ».
  */
 
-const REFERENCE_VERSION = '2.0';
+const REFERENCE_VERSION = '3.0';
 
 $racine  = dirname(__DIR__, 2);
 $fichier = $argv[1] ?? $racine . '/Documentations/FORMAT-DECLARATIF-REFERENCE.docx';
@@ -84,7 +84,7 @@ $garde = ($image ? $par($image, 1000) : '')
     . '<w:tr><w:trPr><w:jc w:val="center"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="6600" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="14233B"/>'
     . '<w:tcMar><w:top w:w="200" w:type="dxa"/><w:left w:w="200" w:type="dxa"/><w:bottom w:w="200" w:type="dxa"/><w:right w:w="200" w:type="dxa"/></w:tcMar></w:tcPr>'
     . $encadre . '</w:tc></w:tr></w:tbl>'
-    . $par($run('Référence version ' . REFERENCE_VERSION . ' — format declaratif/1 · API d\'extensions version 1', ['c' => '5A6B82', 'sz' => 20]), 1100)
+    . $par($run('Référence version ' . REFERENCE_VERSION . ' — format declaratif/1 · API d\'extensions version 1 (révision 1.4)', ['c' => '5A6B82', 'sz' => 20]), 1100)
     . $par($run('Larka ' . LarkaVersion::libelle($v) . ($date ? ' — ' . $date : ''), ['c' => '5A6B82', 'sz' => 20]), 40)
     . $par($run('Document destiné aux auteurs de modules et aux administrateurs qui les installent.', ['i' => 1, 'c' => '5A6B82', 'sz' => 18]), 40)
     . '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';

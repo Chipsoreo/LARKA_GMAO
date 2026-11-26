@@ -40,7 +40,7 @@ async function renderGestionMateriel() {
     data.forEach(cp => {
       // Texte BRUT : l'échappement est fait une seule fois, à l'affichage
       // (_escC). Échappé ici aussi, « 14" » s'affichait « 14&quot; ».
-      cp._assetDisplay = `${cp.AssetType === 'Bien' ? '🏢' : '⚙️'} ${cp.AssetNumero || ''} ${cp.AssetLabel || ''}`.trim();
+      cp._assetDisplay = `${cp.AssetType === 'Bien' ? '' : ''} ${cp.AssetNumero || ''} ${cp.AssetLabel || ''}`.trim();
       cp._isSorti = ETATS_SORTIE.includes(cp.AssetEtat);
       cp._isCloture = cp.EstCloture == 1;
     });
@@ -74,7 +74,7 @@ async function renderGestionMateriel() {
           </div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <div class="search-input-wrap" style="min-width:220px">
-              <span class="search-icon">🔍</span>
+              <span class="search-icon">${lk('search')}</span>
               <input class="search-input" type="text" placeholder="Rechercher…"
                 value="${App.searchTerm||''}" oninput="App.handleSearch(this.value)" onkeydown="App.handleSearchKey(event)">
             </div>
@@ -112,10 +112,10 @@ async function renderGestionMateriel() {
               const isSorti = d._isSorti;
               const rowStyle = isSorti ? 'opacity:0.6;background:rgba(220,53,69,0.04)' : '';
               const etatBadge = isSorti
-                ? `<span class="badge badge-red" style="font-size:10px">\u{1F6AB} ${_escC(d.AssetEtat)}</span>`
-                : (d.AssetEtat ? `<span class="badge badge-teal" style="font-size:10px">\u2705 ${_escC(d.AssetEtat)}</span>` : '<span style="color:var(--gray-text)">\u2014</span>');
+                ? `<span class="badge badge-red" style="font-size:10px">${lk('ban', 'ko')} ${_escC(d.AssetEtat)}</span>`
+                : (d.AssetEtat ? `<span class="badge badge-teal" style="font-size:10px">${lk('circle-check', 'ok')} ${_escC(d.AssetEtat)}</span>` : '<span style="color:var(--gray-text)">\u2014</span>');
               const commentaire = isSorti && d.AssetCommentaireSortie
-                ? `<div style="font-size:10px;color:var(--red);margin-top:2px" title="${_escC(d.AssetCommentaireSortie)}">\u{1F4AC} ${_escC(d.AssetCommentaireSortie.substring(0,40))}${d.AssetCommentaireSortie.length>40?'\u2026':''}</div>`
+                ? `<div style="font-size:10px;color:var(--red);margin-top:2px" title="${_escC(d.AssetCommentaireSortie)}">${lk('message-circle')} ${_escC(d.AssetCommentaireSortie.substring(0,40))}${d.AssetCommentaireSortie.length>40?'\u2026':''}</div>`
                 : '';
               const dateAchat = d.DateAchat ? new Date(d.DateAchat).toLocaleDateString('fr-FR') : '\u2014';
               const valeur = d.ValeurAchat ? parseFloat(d.ValeurAchat).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}) : '\u2014';
@@ -132,12 +132,12 @@ async function renderGestionMateriel() {
                 <td style="padding:10px 12px;text-align:right">${valeur}</td>
                 <td style="padding:10px 12px;text-align:right">${d.DureeAmortissement ? d.DureeAmortissement + ' ans' : '\u2014'}</td>
                 <td style="padding:10px 12px;text-align:center" onclick="event.stopPropagation()">
-                  ${isEdit ? `<button class="btn btn-sm" onclick="editGM(${d.Id})" title="Modifier">\u270F\uFE0F</button>` : ''}
+                  ${isEdit ? `<button class="btn btn-sm" onclick="editGM(${d.Id})" title="Modifier">${lk('pencil')}</button>` : ''}
                   ${isEdit ? (d._isSorti
-                    ? `<button class="btn btn-sm" onclick="cloturerGMFromGM(${d.Id})" title="Clôturer définitivement" style="color:var(--orange)">🔒</button>`
-                    : `<button class="btn btn-sm" disabled title="Clôture impossible : le bien doit être Jeté/Recyclé ou Don/Vendu" style="opacity:.35;cursor:not-allowed">🔒</button>`)
+                    ? `<button class="btn btn-sm" onclick="cloturerGMFromGM(${d.Id})" title="Clôturer définitivement" style="color:var(--orange)">${lk('lock')}</button>`
+                    : `<button class="btn btn-sm" disabled title="Clôture impossible : le bien doit être Jeté/Recyclé ou Don/Vendu" style="opacity:.35;cursor:not-allowed">${lk('lock')}</button>`)
                     : ''}
-                  ${isDel && isSorti ? `<button class="btn btn-sm" onclick="deleteGM(${d.Id})" title="Retirer de la liste">\u{1F5D1}\uFE0F</button>` : ''}
+                  ${isDel && isSorti ? `<button class="btn btn-sm" onclick="deleteGM(${d.Id})" title="Retirer de la liste">${lk('trash')}</button>` : ''}
                 </td>
               </tr>`;
             }).join('')}
@@ -166,20 +166,20 @@ function editGM(id) {
 
     const bienOpts  = biensDispos.map(b => {
       const sorti = ETATS_SORTIE.includes(b.Etat);
-      return `<option value="Bien:${b.Id}" ${cp.AssetType === 'Bien' && cp.AssetId === b.Id ? 'selected' : ''}>${escHtml(b.Numero||'')}${b.InfoProduit ? ' — '+b.InfoProduit : (b.Famille ? ' — '+b.Famille : '')}${sorti ? ' \u{1F6AB}' : ''}</option>`;
+      return `<option value="Bien:${b.Id}" ${cp.AssetType === 'Bien' && cp.AssetId === b.Id ? 'selected' : ''}>${escHtml(b.Numero||'')}${escHtml(b.InfoProduit ? ' — '+b.InfoProduit : (b.Famille ? ' — '+b.Famille : ''))}${sorti ? ' (sorti)' : ''}</option>`;
     }).join('');
     const equipOpts = equipsDispos.map(e => {
       const sorti = ETATS_SORTIE.includes(e.Etat);
-      return `<option value="Equipement:${e.Id}" ${cp.AssetType === 'Equipement' && cp.AssetId === e.Id ? 'selected' : ''}>${escHtml(e.Numero||'')}${e.Marque ? ' — '+e.Marque : ''}${e.Modele ? ' '+e.Modele : ''}${sorti ? ' \u{1F6AB}' : ''}</option>`;
+      return `<option value="Equipement:${e.Id}" ${cp.AssetType === 'Equipement' && cp.AssetId === e.Id ? 'selected' : ''}>${escHtml(e.Numero||'')}${escHtml((e.Marque ? ' — '+e.Marque : '') + (e.Modele ? ' '+e.Modele : ''))}${sorti ? ' (sorti)' : ''}</option>`;
     }).join('');
 
     const isSorti = ETATS_SORTIE.includes(cp.AssetEtat);
     const alerteSortie = isSorti ? `
       <div style="background:var(--red-light,rgba(220,53,69,0.08));border:1px solid rgba(220,53,69,0.3);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:10px">
-        <span style="font-size:18px">\u{1F6AB}</span>
+        <span style="font-size:18px">${lk('ban', 'ko')}</span>
         <div>
           <div style="font-weight:700;color:var(--red);font-size:13px">Actif sorti \u2014 ${_escC(cp.AssetEtat)}</div>
-          ${cp.AssetCommentaireSortie ? `<div style="font-size:12px;color:var(--gray-text);margin-top:4px">\u{1F4AC} ${_escC(cp.AssetCommentaireSortie)}</div>` : ''}
+          ${cp.AssetCommentaireSortie ? `<div style="font-size:12px;color:var(--gray-text);margin-top:4px">${lk('message-circle')} ${_escC(cp.AssetCommentaireSortie)}</div>` : ''}
           <div style="font-size:11px;color:var(--gray-text);margin-top:4px">Vous pouvez supprimer cette fiche de la gestion mat\u00e9riel si l\u2019actif est d\u00e9finitivement sorti.</div>
         </div>
       </div>
@@ -198,8 +198,8 @@ function editGM(id) {
             <label class="form-label">Bien / \u00c9quipement li\u00e9 <span class="req">*</span></label>
             <select class="form-control" id="f_asset">
               <option value=""></option>
-              <optgroup label="🏢 Biens">${bienOpts}</optgroup>
-              <optgroup label="⚙️ Équipements">${equipOpts}</optgroup>
+              <optgroup label="Biens">${bienOpts}</optgroup>
+              <optgroup label="Équipements">${equipOpts}</optgroup>
             </select>
           </div>
           <div class="form-group">
@@ -430,7 +430,7 @@ async function cloturerGMFromGM(id) {
     }
   } catch(e) { /* continue si erreur de vérification */ }
 
-  openModal('🔒 Clôturer définitivement', `
+  openModal('Clôturer définitivement', `
   <div class="form-grid cols-1">
     <div class="form-group">
       <label class="form-label">Motif de clôture (optionnel)</label>
@@ -438,7 +438,7 @@ async function cloturerGMFromGM(id) {
         placeholder="Ex: Bien entièrement amorti, sorti d'inventaire…"></textarea>
     </div>
     <div style="background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:8px;padding:12px;font-size:12px;color:var(--text-mid)">
-      ⚠️ Cette action est <strong>définitive</strong>. La fiche sera archivée dans l'historique
+      ${lk('triangle-exclamation-point', 'warn')} Cette action est <strong>définitive</strong>. La fiche sera archivée dans l'historique
       et disparaîtra de la vue gestion matériel.
     </div>
   </div>`, async () => {

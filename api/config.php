@@ -31,7 +31,7 @@
 // l'outil de publication et les mises à jour tiennent à jour. Ne pas confondre
 // avec le « ?v= » d'index.html, simple horodatage de cache navigateur.
 //   LARKA_VERSION        numéro sémantique (« 2.1.0 ») — contrôle larka_min des modules
-//   LARKA_VERSION_LABEL  libellé affiché (« V2.1.0 » ; « V.Beta 2.2.0 » pour une préversion)
+//   LARKA_VERSION_LABEL  libellé affiché (« V3.0.0 » ; « V.Beta 3.1.0 » pour une préversion)
 require_once __DIR__ . '/Chemins.php';   // chemins absolus Linux ET Windows
 require_once __DIR__ . '/Version.php';
 $_lv = LarkaVersion::lire();
@@ -140,7 +140,7 @@ define('APP_PORT', (int)(cfg('serveur', 'port') ?? 8000));
 define('APP_ENV',  cfg('serveur', 'env')  ?? 'dev');
 
 // ── Fuseau horaire ─────────────────────────────────────────────────────────
-// ⚠️ SOUS LINUX, LES HEURES ÉTAIENT EN UTC. Le php.ini des distributions ne
+// SOUS LINUX, LES HEURES ÉTAIENT EN UTC. Le php.ini des distributions ne
 // fixe pas date.timezone : PHP retombe alors en silence sur UTC, et Larka
 // datait journal, sauvegardes et enregistrements avec une à deux heures
 // d'écart (le lanceur Windows, lui, fixe Europe/Paris dans son php.ini).
@@ -185,7 +185,7 @@ require_once __DIR__ . '/TenantResolver.php';
 // (Sans ça, PHP utilise gc_maxlifetime=1440s par défaut → sessions détruites au bout de 24 min)
 define('SESSION_LIFETIME', (int)(cfg('securite', 'session_duree_heures') ?? 24) * 3600);
 
-// ⚠️ FIX SÉCURITÉ (F5) : le cookie de session doit être « Secure » par défaut
+// FIX SÉCURITÉ (F5) : le cookie de session doit être « Secure » par défaut
 // dès que l'application est servie en HTTPS (directement, via le port 443, via
 // X-Forwarded-Proto, ou d'après le schéma de APP_URL). On ne retombe sur false
 // que pour un accès réellement en clair (HTTP local / dev). Une valeur explicite
@@ -198,7 +198,7 @@ $_httpsContext = (
 );
 define('SESSION_COOKIE_SECURE',   (bool)(cfg('session', 'cookie_secure')   ?? $_httpsContext));
 define('SESSION_COOKIE_HTTPONLY', (bool)(cfg('session', 'cookie_httponly') ?? true));
-// ⚠️ FIX SÉCURITÉ : défaut passé de 'Lax' à 'Strict'.
+// FIX SÉCURITÉ : défaut passé de 'Lax' à 'Strict'.
 // 'Strict' = le cookie n'est jamais envoyé sur une navigation cross-site
 // (même un clic sur un lien externe vers l'app n'enverra PAS le cookie).
 // C'est le réglage le plus sûr pour une app interne ; protège totalement
@@ -207,7 +207,7 @@ define('SESSION_COOKIE_HTTPONLY', (bool)(cfg('session', 'cookie_httponly') ?? tr
 // Side-effect connu : si un email contient un lien vers l'app, le clic
 // arrive sans cookie → l'utilisateur doit se reconnecter. Pour réautoriser
 // ce flow, mettre cookie_samesite='Lax' dans config.json.
-// ⚠️ VALEUR BORNÉE À Strict OU Lax.
+// VALEUR BORNÉE À Strict OU Lax.
 // La protection CSRF de ce projet ne repose pas sur un jeton : elle tient à
 // deux choses — le Content-Type JSON imposé sur les requêtes mutantes, et ce
 // réglage. Or sept actions de téléversement sont dispensées du contrôle de
@@ -244,7 +244,7 @@ if (is_dir($_sessionDir) && is_writable($_sessionDir)) {
 // Si cookie_secure=true mais PHP croit être en HTTP, le cookie n'est jamais
 // renvoyé correctement dans certains cas.
 //
-// ⚠️ FIX SÉCURITÉ : ne faire confiance à X-Forwarded-Proto que si la requête
+// FIX SÉCURITÉ : ne faire confiance à X-Forwarded-Proto que si la requête
 // provient d'une IP de proxy de confiance. Sinon n'importe quel client peut
 // envoyer ce header et faire croire à PHP qu'il est en HTTPS.
 // La liste de proxies de confiance est configurable via cfg('securite', 'trusted_proxies').
@@ -261,7 +261,7 @@ if (!function_exists('client_ip')) {
     /**
      * IP réelle du client.
      *
-     * ⚠️ FIX SÉCURITÉ : derrière un reverse proxy local (Caddy, tunnel
+     * FIX SÉCURITÉ : derrière un reverse proxy local (Caddy, tunnel
      * Cloudflare, nginx en frontal de « php -S »), REMOTE_ADDR vaut 127.0.0.1
      * pour TOUT LE MONDE. Conséquences : les limites de débit (connexion,
      * mot de passe oublié, global) étaient partagées par tous les clients —
@@ -330,7 +330,7 @@ if ($_behindHttpsProxy) {
 
 // ── Liaison du flux OAuth au navigateur initiateur (anti login-CSRF) ─────────
 //
-// ⚠️ LE PARAMÈTRE « state » N'ÉTAIT LIÉ À AUCUN NAVIGATEUR.
+// LE PARAMÈTRE « state » N'ÉTAIT LIÉ À AUCUN NAVIGATEUR.
 // Il était accepté dès qu'un fichier d'état correspondant existait, quelle que
 // soit la session. Un attaquant pouvait donc démarrer un flux avec SON compte,
 // obtenir un couple (state, code) valide, puis faire visiter l'URL de callback
@@ -372,7 +372,7 @@ if (!function_exists('oauth_nonce_emettre')) {
     }
 
     /**
-     * ⚠️ /oauth/google (sans « code ») écrivait un fichier d'état à CHAQUE appel,
+     * /oauth/google (sans « code ») écrivait un fichier d'état à CHAQUE appel,
      * sans authentification, sans limite ni ménage (celui-ci n'existait que
      * dans le callback Microsoft) : n'importe qui pouvait remplir le disque.
      * Avant toute écriture : ménage des états expirés, plafond global, et
@@ -420,7 +420,7 @@ ini_set('session.cookie_path',     SESSION_COOKIE_PATH);
 ini_set('session.use_strict_mode',  '1'); // Refuse les ID de session invalides
 ini_set('session.use_only_cookies', '1'); // Pas de session ID dans l'URL
 ini_set('session.use_trans_sid',    '0'); // Pas de réécriture d'URL transparente
-// ⚠️ FIX : « session.cookie_name » n'existe pas — la directive est
+// FIX : « session.cookie_name » n'existe pas — la directive est
 // « session.name ». Le cookie s'appelait donc toujours PHPSESSID. (Au premier
 // déploiement de ce correctif, les sessions ouvertes sous l'ancien nom sont
 // simplement redemandées.)
@@ -449,7 +449,7 @@ if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent() && !defined('LARK
 $_tenantDb = null;
 $_currentTenantKey = null;
 try {
-    // ⚠️ FIX SÉCURITÉ : une session rattachée à un tenant qui n'existe plus
+    // FIX SÉCURITÉ : une session rattachée à un tenant qui n'existe plus
     // (supprimé — y compris le DERNIER, qui repasse l'installation en
     // mono-tenant), qui n'a plus de base, ou qui a été désactivé, retombait
     // silencieusement sur la base de config.json — où l'Id utilisateur gardé
@@ -530,13 +530,13 @@ if ($_tenantDb !== null) {
 
 // ── Sécurité ───────────────────────────────────────────────────────────────
 define('SECRET_KEY',     cfg('securite', 'secret_key')    ?? 'GMAO_SECRET_KEY_CHANGE_ME');
-// ⚠️ FIX SÉCURITÉ (F1) : par défaut, les messages d'erreur renvoyés au client
+// FIX SÉCURITÉ (F1) : par défaut, les messages d'erreur renvoyés au client
 // sont génériques (pas de détail SQL / chemins / structure interne). Passer
 // securite.debug_errors=true dans config.json UNIQUEMENT en développement pour
 // réafficher le détail des exceptions.
 define('DEBUG_ERRORS',   (bool)(cfg('securite', 'debug_errors') ?? false));
 // SESSION_LIFETIME est déjà défini plus haut (avant session_start) — ne pas redéfinir.
-// ⚠️ FIX SÉCURITÉ : défaut « * » retiré. Sans origine listée, seules les
+// FIX SÉCURITÉ : défaut « * » retiré. Sans origine listée, seules les
 // requêtes de même origine (l'application elle-même) fonctionnent.
 define('ALLOWED_ORIGIN', cfg('securite', 'allowed_origin') ?? '');
 
@@ -554,7 +554,7 @@ define('CORS_CREDENTIALS',  (bool)(cfg('cors', 'allow_credentials') ?? false));
 // l'encadrement en même origine soit autorisé. On FORCE donc frame-ancestors
 // 'self' et X-Frame-Options SAMEORIGIN, même si un ancien config.json contient
 // encore 'none'/'DENY' (sinon l'aperçu PDF reste bloqué par le navigateur).
-// ⚠️ FIX SÉCURITÉ (F2) : retrait de https://unpkg.com (non utilisé au runtime)
+// FIX SÉCURITÉ (F2) : retrait de https://unpkg.com (non utilisé au runtime)
 // pour réduire la surface d'attaque de type supply-chain. cdnjs.cloudflare.com
 // est retiré à son tour : ses deux seuls usages, pdf.js et SheetJS, sont
 // désormais servis par Larka (js/vendor/), et pdf.js mis à jour (CVE-2024-4367).
@@ -594,7 +594,7 @@ define('OAUTH_RELAY_URL', cfg('oauth_relay', 'url') ?? '');
 function build_oauth_redirect(string $provider): string {
     $relay = OAUTH_RELAY_URL;
     if ($relay) {
-        // ⚠️ FIX SÉCURITÉ (F4) : le relais OAuth signe l'URL serveur (HMAC-SHA256)
+        // FIX SÉCURITÉ (F4) : le relais OAuth signe l'URL serveur (HMAC-SHA256)
         // avec SECRET_KEY. Si la clé est restée à sa valeur par défaut, vide, ou
         // trop courte, la signature serait forgeable (n'importe qui connaissant le
         // défaut pourrait détourner le flux vers un serveur arbitraire). On refuse
@@ -638,7 +638,7 @@ unset($_spActif);
 
 // ── Présence + agenda sur les plans (Microsoft Graph) ─────────
 // Ajoute les scopes Presence.Read.All + Calendars.Read.Shared au login Microsoft.
-// ⚠️ Ces scopes exigent le CONSENTEMENT ADMINISTRATEUR du tenant Azure. Tant qu'il
+// Ces scopes exigent le CONSENTEMENT ADMINISTRATEUR du tenant Azure. Tant qu'il
 // n'est pas accordé, laissez ceci à false (sinon le login Microsoft échouera).
 // Étapes : 1) Azure > App registrations > API permissions : ajouter Presence.Read.All
 // et Calendars.Read.Shared (delegated) puis « Grant admin consent ». 2) Passez ce
@@ -690,7 +690,7 @@ define('PUSH_ACTIF',                    (bool)(cfg('push', 'actif') ?? true));
 // Services push supplémentaires acceptés (suffixes d'hôte) — voir WebPush::endpointAutorise.
 $_pushEndpoints = cfg('push', 'endpoints_autorises');
 define('PUSH_ENDPOINTS_AUTORISES', is_array($_pushEndpoints) ? array_values(array_filter($_pushEndpoints, 'is_string')) : []);
-define('PUSH_NOTIF_DEMANDE_TITRE',      cfg('push', 'notif_demande_titre')  ?? '📝 Nouvelle demande d\'intervention');
+define('PUSH_NOTIF_DEMANDE_TITRE',      cfg('push', 'notif_demande_titre')  ?? 'Nouvelle demande d\'intervention');
 define('PUSH_NOTIF_DEMANDE_CORPS',      cfg('push', 'notif_demande_corps')  ?? '{demandeur} a soumis une demande d\'intervention.');
 // Icône : « /icon.png » (logo Larka). L'ancien nom « /apple-touch-icon.png »,
 // encore présent dans des config.json existants, est ramené au nouveau.

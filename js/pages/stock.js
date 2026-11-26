@@ -61,16 +61,15 @@ async function renderStock() {
     let filtered = data;
     filtered = filtered.filter(s => FiltresEngine.matchRow('stock', s));
     if (search) filtered = filtered.filter(s =>
-      [s.Reference, s.Designation, s.Marque, s.Modele, s.TypeArticle, s.Categorie, s.Fournisseur, s.Emplacement]
+      [s.Reference, s.Designation, s.Marque, s.Modele, s.TypeArticle, s.Categorie, s.Fournisseur, s.Emplacement,
+       s.ChampsPerso ? Object.values(ChampsPerso.valeurs(s)).join(' ') : '']
         .some(v => (v||'').toLowerCase().includes(search))
     );
     // Tri
     if (App._sortKey) {
       const k = App._sortKey, d = App._sortDir === 'asc' ? 1 : -1;
       filtered.sort((a,b) => {
-        let va = a[k]??'', vb = b[k]??'';
-        if (!isNaN(parseFloat(va)) && !isNaN(parseFloat(vb))) return (parseFloat(va)-parseFloat(vb))*d;
-        return String(va).localeCompare(String(vb),'fr',{sensitivity:'base'})*d;
+        return comparerValeurs(a[k], b[k]) * d;
       });
     }
 
@@ -85,14 +84,14 @@ async function renderStock() {
     const from = total === 0 ? 0 : (startIdx + 1);
     const to   = total === 0 ? 0 : (startIdx + pageData.length);
 
-    const chips = ['Tous', '⚠ Alerte', ...categories.map(x=>x.Valeur)];
+    const chips = ['Tous', 'Alerte', ...categories.map(x=>x.Valeur)];
     const fmtM = v => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v||0);
 
     let html = `
     <div class="card" style="padding:0;margin-bottom:16px">
       <div class="search-bar" style="gap:8px">
         <div class="search-input-wrap" style="flex:1;max-width:480px">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon">${lk('search')}</span>
           <input class="search-input" type="text" placeholder="Rechercher dans le stock…"
             value="${App.searchTerm||''}" oninput="App.handleSearch(this.value)" onkeydown="App.handleSearchKey(event)">
         </div>
@@ -118,7 +117,9 @@ async function renderStock() {
           <option value="all" ${perPage==='all'?'selected':''}>Tout</option>
         </select>
         <div style="flex:1"></div>
-        ${canEdit() ? `<button class="btn btn-primary" onclick="editStock(0)">+ Nouvel article</button>` : ''}
+        ${canEdit() ? `<button class="btn btn-ghost" onclick="ChampsPerso.ouvrirGestion('stock', renderStock)" title="Cases ajoutées aux fiches (section « Informations complémentaires »)">${lk('folders')} Cases des fiches</button>
+        <button class="btn btn-ghost" onclick="openImportStock()" title="Importer des articles depuis un fichier Excel ou CSV">${lk('download')} Importer</button>
+        <button class="btn btn-primary" onclick="editStock(0)">+ Nouvel article</button>` : ''}
       </div>
       ${FiltresEngine.renderPanel('stock')}
     </div>`;
@@ -129,7 +130,7 @@ async function renderStock() {
       html += `
       <div class="card" style="margin-bottom:16px">
         <div class="card-header" style="cursor:pointer" onclick="document.getElementById('parcDetail').style.display=document.getElementById('parcDetail').style.display==='none'?'block':'none';this.querySelector('.parc-arrow').textContent=document.getElementById('parcDetail').style.display==='none'?'▶':'▼'">
-          <div class="card-title">📦 Biens en stock — Vue consolidée</div>
+          <div class="card-title">${lk('package')} Biens en stock — Vue consolidée</div>
           <span style="display:flex;align-items:center;gap:8px">
             <span style="font-size:12px;color:var(--gray-text)">${biensEnStock.length} biens en stock</span>
             <span class="parc-arrow" style="font-size:11px">▶</span>
@@ -146,7 +147,7 @@ async function renderStock() {
               <td style="font-size:12px;color:var(--gray-text)">${escHtml(g.famille)}</td>
               <td style="text-align:center;font-weight:700;color:var(--blue)">${g.count}</td>
               <td style="text-align:right;font-size:12px">${fmtM(g.totalPrix)}</td>
-              <td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="voirBiensEnStock(${jsArg(sf)})">👁️ Voir</button></td>
+              <td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="voirBiensEnStock(${jsArg(sf)})">${lk('eye')} Voir</button></td>
             </tr>
           `).join('')}
           </tbody></table></div>
@@ -172,7 +173,7 @@ async function renderStock() {
       html += `
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
-          <div class="card-title">📦 ${cat}</div>
+          <div class="card-title">${lk('package')} ${cat}</div>
           <span style="font-size:12px;color:var(--gray-text)">${items.length} article${items.length>1?'s':''}</span>
         </div>
         <div class="table-wrap"><table><thead><tr>
@@ -186,16 +187,16 @@ async function renderStock() {
         html += `<tr ${s._alerte?'style="background:#fff5f5"':''}>
           <td style="font-family:monospace;font-size:12px">${escHtml(s.Reference||'')}</td>
           <td style="font-weight:500">${escHtml(s.Designation||'')}</td>
-          <td style="font-size:12px;color:var(--gray-text)">${s._label}</td>
-          <td style="${alertStyle}">${escHtml(s.Quantite)} ${s._alerte?'⚠':''}</td>
+          <td style="font-size:12px;color:var(--gray-text)">${escHtml(s._label)}</td>
+          <td style="${alertStyle}">${escHtml(s.Quantite)} ${s._alerte?lk('triangle-exclamation-point', 'warn'):''}</td>
           <td style="color:var(--gray-text)">${escHtml(s.SeuilAlerte)}</td>
           <td>${fmtM(s.PrixUnitaire)}</td>
           <td style="color:var(--blue)">${fmtM(s._valeur)}</td>
           <td style="font-size:12px;color:var(--gray-text)">${escHtml(s.Emplacement||'—')}</td>
           <td><span class="badge badge-${s.Source==='Contrat'?'teal':'blue'}">${escHtml(s.Source||'Achat')}</span></td>
           <td><div class="actions-col">
-            ${canEdit()?`<button class="icon-btn" onclick="editStock(${s.Id})" title="Modifier">✏️</button>`:''}
-            ${canDelete()?`<button class="icon-btn delete" onclick="deleteStock(${s.Id})" title="Supprimer">🗑️</button>`:''}
+            ${canEdit()?`<button class="icon-btn" onclick="editStock(${s.Id})" title="Modifier">${lk('pencil')}</button>`:''}
+            ${canDelete()?`<button class="icon-btn delete" onclick="deleteStock(${s.Id})" title="Supprimer">${lk('trash')}</button>`:''}
           </div></td>
         </tr>`;
       });
@@ -233,6 +234,8 @@ async function editStock(id) {
     getRequiredFields('stock'),
   ]);
   const rf = _rf || [];
+  // Cases complémentaires des fiches du stock (créées à la main ou par l'import).
+  const cpDefs = await ChampsPerso.charger('stock', true);
 
   // Valeurs de liste échappées (alimentées aussi par imports et modules).
   const opts = (liste, val, extra='') => extra + liste.map(x=>`<option ${val===x.Valeur?'selected':''}>${escHtml(x.Valeur)}</option>`).join('');
@@ -315,6 +318,7 @@ async function editStock(id) {
         </div>
       </div>
     </div>
+    ${ChampsPerso.sectionHtml(cpDefs, ChampsPerso.valeurs(s), !canEdit())}
     <div>
       <div class="section-label">Documents joints</div>
       ${isNew ? docsPanelHtml('Stock', 0, 'Stock') : docsPanelHtml('Stock', id)}
@@ -336,6 +340,7 @@ async function editStock(id) {
       fournisseur: gv('f_fournisseur'),
       source:      gv('f_source'),
       contratId:   gv('f_contratId') || null,
+      champsPerso: ChampsPerso.lireFormulaire(cpDefs),
     };
     try {
       if (isNew) {
@@ -399,7 +404,7 @@ async function voirBiensEnStock(sousFamille) {
           <td style="font-weight:500">${escHtml(b.InfoProduit||'—')}</td>
           <td style="font-size:12px;color:var(--gray-text)">${escHtml(b.NumeroSerie||'—')}</td>
           <td style="font-size:12px">${escHtml(b.Batiment||'—')}</td>
-          <td style="font-size:12px">${[b.Etage?'Ét.'+b.Etage:'', b.NumeroBureau?'Bur.'+b.NumeroBureau:''].filter(Boolean).join(' • ')||'—'}</td>
+          <td style="font-size:12px">${escHtml([b.Etage?'Ét.'+b.Etage:'', b.NumeroBureau?'Bur.'+b.NumeroBureau:''].filter(Boolean).join(' • ')||'—')}</td>
           <td style="font-size:12px">${fmtM(b.Prix)}</td>
           <td style="font-size:12px;color:var(--gray-text)">${escHtml(b.DateLivraison||'—')}</td>
         </tr>`;
@@ -408,6 +413,6 @@ async function voirBiensEnStock(sousFamille) {
 
     body += `</tbody></table></div>`;
 
-    openModal(`📦 En stock — ${sousFamille}`, body, null, null, 'Fermer', '850px');
+    openModal(`En stock — ${sousFamille}`, body, null, null, 'Fermer', '850px');
   } catch(e) { toast(e.message, 'error'); }
 }

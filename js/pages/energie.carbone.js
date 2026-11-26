@@ -165,7 +165,7 @@ async function calcCarboneDynamique(type, consoValue, annee, methode) {
 // ═══════════════════════════════════════════════════════════════════════════════
 async function syncCarboneADEME(annee) {
   var btn = document.getElementById('btnSyncCarbone');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronisation...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Synchronisation...'; }
 
   try {
     var result = await EnergieApi.syncCarboneADEME({ annee: annee, methode: 'officielle' });
@@ -198,7 +198,7 @@ async function syncCarboneADEME(annee) {
     console.error('Sync ADEME error:', e);
   }
 
-  if (btn) { btn.disabled = false; btn.textContent = '🌐 Sync ADEME ' + annee; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Sync ADEME ' + annee; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -208,7 +208,7 @@ async function syncCarboneADEME(annee) {
 // ═══════════════════════════════════════════════════════════════════════════════
 async function syncCarboneSimplifiee(annee) {
   var btn = document.getElementById('btnSyncSimplifie');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enregistrement...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Enregistrement...'; }
 
   try {
     var result = await EnergieApi.syncCarboneSimplifiee({ annee: annee });
@@ -231,7 +231,7 @@ async function syncCarboneSimplifiee(annee) {
     console.error('Sync Simplifiée error:', e);
   }
 
-  if (btn) { btn.disabled = false; btn.textContent = '📦 Enregistrer simplifiés ' + annee; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Enregistrer simplifiés ' + annee; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -240,7 +240,7 @@ async function syncCarboneSimplifiee(annee) {
 async function recalculerCarboneTout(methode) {
   methode = methode || _methodeCarbone;
   var btns = document.querySelectorAll('[onclick*="recalculerCarboneTout"]');
-  btns.forEach(function(b) { b.disabled = true; b.textContent = '⏳ Recalcul...'; });
+  btns.forEach(function(b) { b.disabled = true; b.textContent = 'Recalcul...'; });
 
   try {
     var result = await EnergieApi.recalculCarbone(methode);
@@ -254,7 +254,7 @@ async function recalculerCarboneTout(methode) {
     toast('Erreur recalcul : ' + e.message, 'error');
   }
 
-  btns.forEach(function(b) { b.disabled = false; b.textContent = '🔄 Recalculer CO₂'; });
+  btns.forEach(function(b) { b.disabled = false; b.textContent = 'Recalculer CO₂'; });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -263,7 +263,7 @@ async function recalculerCarboneTout(methode) {
 async function openFacteursCarbone() {
   var facteurs = await EnergieApi.getFacteursCarbone(methodeActive);
   var anneeActuelle = new Date().getFullYear();
-  var typeIcons = { Electricite: '⚡', Gaz: '🔵', Chauffage: '🔥', Eau: '💧' };
+  var typeIcons = { Electricite: lk('zap'), Gaz: lk('circle', 'p bleu'), Chauffage: lk('flame'), Eau: lk('droplet') };
   var methodeActive = _methodeCarbone;
 
   // Les facteurs sont déjà filtrés par la bonne table (API passe methode)
@@ -301,11 +301,11 @@ async function openFacteursCarbone() {
       var an = annees[ai];
       html += '<div style="margin-bottom:14px">';
       html += '<div style="font-size:12px;font-weight:700;color:' + (methode==='simplifiee'?'#7c3aed':'#16a34a') + ';margin-bottom:6px;display:flex;align-items:center;gap:8px">';
-      html += '📅 ' + an;
+      html += (lk('calendar') + ' ') + an;
       if (methode === 'officielle') {
-        html += ' <button class="btn btn-ghost btn-sm" onclick="syncCarboneADEME(' + an + ')" style="font-size:10px;border:1px solid #16a34a;color:#16a34a;padding:2px 8px">🔄 Resync</button>';
+        html += ' <button class="btn btn-ghost btn-sm" onclick="syncCarboneADEME(' + an + (')" style="font-size:10px;border:1px solid #16a34a;color:#16a34a;padding:2px 8px">' + lk('refresh-cw') + ' Resync</button>');
       } else {
-        html += ' <button class="btn btn-ghost btn-sm" onclick="syncCarboneSimplifiee(' + an + ')" style="font-size:10px;border:1px solid #7c3aed;color:#7c3aed;padding:2px 8px">🔄 Resync</button>';
+        html += ' <button class="btn btn-ghost btn-sm" onclick="syncCarboneSimplifiee(' + an + (')" style="font-size:10px;border:1px solid #7c3aed;color:#7c3aed;padding:2px 8px">' + lk('refresh-cw') + ' Resync</button>');
       }
       html += '</div>';
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
@@ -314,7 +314,7 @@ async function openFacteursCarbone() {
       html += '<th style="padding:5px 8px;text-align:right">Facteur CO₂</th>';
       html += '<th style="padding:5px 8px;text-align:left">Unité</th>';
       html += '<th style="padding:5px 8px;text-align:left">Source</th>';
-      html += '<th style="padding:5px 8px;text-align:center"><span title="Incertitude ADEME : marge d\'erreur sur le facteur d\'émission.&#10;Ex : ±10% sur 0.0569 = le vrai facteur est entre 0.0512 et 0.0626 kgCO₂e/kWh.&#10;Plus le % est bas, plus la valeur est fiable.&#10;&#10;Calcul CO₂ : Consommation (kWh) × Facteur (kgCO₂e/kWh) = Émission (kgCO₂e).&#10;Chauffage réseau : Conso (MWh) × Facteur × 1000." style="cursor:help;border-bottom:1px dotted var(--gray-text)">±% <span style="font-size:10px">ℹ️</span></span></th>';
+      html += ('<th style="padding:5px 8px;text-align:center"><span title="Incertitude ADEME : marge d\'erreur sur le facteur d\'émission.&#10;Ex : ±10% sur 0.0569 = le vrai facteur est entre 0.0512 et 0.0626 kgCO₂e/kWh.&#10;Plus le % est bas, plus la valeur est fiable.&#10;&#10;Calcul CO₂ : Consommation (kWh) × Facteur (kgCO₂e/kWh) = Émission (kgCO₂e).&#10;Chauffage réseau : Conso (MWh) × Facteur × 1000." style="cursor:help;border-bottom:1px dotted var(--gray-text)">±% <span style="font-size:10px">' + lk('info') + '</span></span></th>');
       html += '<th style="padding:5px 8px"></th>';
       html += '</tr></thead><tbody>';
       for (var fi = 0; fi < parAnnee[an].length; fi++) {
@@ -333,7 +333,7 @@ async function openFacteursCarbone() {
           incertHtml = '<span title="Incertitude ±' + pct + '% → le facteur réel est entre ' + lo + ' et ' + hi + ' ' + (fc.Unite||'') + '" style="cursor:help">' + pct + '%</span>';
         }
         html += '<td style="padding:5px 8px;text-align:center;color:var(--gray-text)">' + incertHtml + '</td>';
-        html += '<td style="padding:5px 8px;text-align:center"><button class="icon-btn delete" onclick="deleteFacteurCarbone(' + fc.Id + ')" title="Supprimer" style="font-size:12px">🗑️</button></td>';
+        html += '<td style="padding:5px 8px;text-align:center"><button class="icon-btn delete" onclick="deleteFacteurCarbone(' + fc.Id + (')" title="Supprimer" style="font-size:12px">' + lk('trash') + '</button></td>');
         html += '</tr>';
       }
       html += '</tbody></table></div>';
@@ -347,23 +347,23 @@ async function openFacteursCarbone() {
   // Bandeau méthode active
   html += '<div style="display:flex;gap:8px;align-items:stretch">';
   html += '<div onclick="setMethodeCarbone(\'officielle\');closeModal();setTimeout(openFacteursCarbone,200)" style="flex:1;cursor:pointer;padding:12px 16px;border-radius:8px;border:2px solid ' + (methodeActive==='officielle'?'#16a34a':'#e2e8f0') + ';background:' + (methodeActive==='officielle'?'#f0fdf4':'#fafafa') + ';transition:all .2s">';
-  html += '<div style="font-weight:700;font-size:13px;color:' + (methodeActive==='officielle'?'#16a34a':'var(--gray-text)') + '">' + (methodeActive==='officielle'?'✅ ':'') + '1. Officielle — ADEME</div>';
+  html += '<div style="font-weight:700;font-size:13px;color:' + (methodeActive==='officielle'?'#16a34a':'var(--gray-text)') + '">' + (methodeActive==='officielle'?(lk('circle-check', 'ok') + ' '):'') + '1. Officielle — ADEME</div>';
   html += '<div style="font-size:11px;color:var(--gray-text);margin-top:4px">API Base Carbone. Facteurs ACV précis par identifiant. Conforme bilan GES réglementaire.</div>';
   html += '</div>';
   html += '<div onclick="setMethodeCarbone(\'simplifiee\');closeModal();setTimeout(openFacteursCarbone,200)" style="flex:1;cursor:pointer;padding:12px 16px;border-radius:8px;border:2px solid ' + (methodeActive==='simplifiee'?'#7c3aed':'#e2e8f0') + ';background:' + (methodeActive==='simplifiee'?'#f5f3ff':'#fafafa') + ';transition:all .2s">';
-  html += '<div style="font-weight:700;font-size:13px;color:' + (methodeActive==='simplifiee'?'#7c3aed':'var(--gray-text)') + '">' + (methodeActive==='simplifiee'?'✅ ':'') + '2. Simplifiée — Impact CO2</div>';
+  html += '<div style="font-weight:700;font-size:13px;color:' + (methodeActive==='simplifiee'?'#7c3aed':'var(--gray-text)') + '">' + (methodeActive==='simplifiee'?(lk('circle-check', 'ok') + ' '):'') + '2. Simplifiée — Impact CO2</div>';
   html += '<div style="font-size:11px;color:var(--gray-text);margin-top:4px">Moyennes nationales (Datagir/ADEME). Estimation rapide, pas d\'API externe requise.</div>';
   html += '</div>';
   html += '</div>';
 
   // Info
   html += '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;font-size:11px;color:#0369a1">';
-  html += '<strong>📋 Règle clé :</strong> les facteurs sont figés par année. Une facture 2028 utilise toujours le facteur 2028, même si les valeurs 2029 changent. Pas de recalcul rétroactif.';
+  html += ('<strong>' + lk('clipboard-list') + ' Règle clé :</strong> les facteurs sont figés par année. Une facture 2028 utilise toujours le facteur 2028, même si les valeurs 2029 changent. Pas de recalcul rétroactif.');
   html += '</div>';
 
   // Bandeau explication calcul
   html += '<div style="background:#faf5ff;border:1px solid #d8b4fe;border-radius:8px;padding:10px 14px;font-size:11px;color:#6b21a8">';
-  html += '<strong>🧮 Calcul :</strong> Émission CO₂ = Consommation × Facteur d\'émission. ';
+  html += ('<strong>' + lk('calculator') + ' Calcul :</strong> Émission CO₂ = Consommation × Facteur d\'émission. ');
   html += 'Ex : 10 000 kWh élec × 0.0569 = 569 kgCO₂e. ';
   html += 'Chauffage réseau : conso en MWh × facteur × 1000. ';
   html += '<br><strong>±% (incertitude) :</strong> marge d\'erreur ADEME sur le facteur. ±10% sur 0.0569 signifie que la vraie valeur est entre 0.0512 et 0.0626. Plus le % est bas, plus c\'est fiable.';
@@ -372,22 +372,22 @@ async function openFacteursCarbone() {
   // Bandeau purge si invalides
   if (invalides.length > 0) {
     html += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;font-size:12px;color:#991b1b">';
-    html += '⚠️ ' + invalides.length + ' facteur(s) invalide(s). ';
-    html += '<button class="btn btn-sm" onclick="purgeFacteursInvalides()" style="background:#dc2626;color:white;border:none;font-size:11px;margin-left:8px">🗑️ Purger</button></div>';
+    html += (lk('triangle-exclamation-point', 'warn') + ' ') + invalides.length + ' facteur(s) invalide(s). ';
+    html += ('<button class="btn btn-sm" onclick="purgeFacteursInvalides()" style="background:#dc2626;color:white;border:none;font-size:11px;margin-left:8px">' + lk('trash') + ' Purger</button></div>');
   }
 
   // Boutons d'action
   html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
   if (methodeActive === 'officielle') {
-    html += '<button class="btn btn-primary btn-sm" onclick="syncCarboneADEME(' + anneeActuelle + ')" id="btnSyncCarbone" style="background:#16a34a;border-color:#16a34a">🌐 Sync ADEME ' + anneeActuelle + '</button>';
+    html += '<button class="btn btn-primary btn-sm" onclick="syncCarboneADEME(' + anneeActuelle + (')" id="btnSyncCarbone" style="background:#16a34a;border-color:#16a34a">' + lk('globe') + ' Sync ADEME ') + anneeActuelle + '</button>';
   } else {
-    html += '<button class="btn btn-primary btn-sm" onclick="syncCarboneSimplifiee(' + anneeActuelle + ')" id="btnSyncSimplifie" style="background:#7c3aed;border-color:#7c3aed">📦 Enregistrer simplifiés ' + anneeActuelle + '</button>';
+    html += '<button class="btn btn-primary btn-sm" onclick="syncCarboneSimplifiee(' + anneeActuelle + (')" id="btnSyncSimplifie" style="background:#7c3aed;border-color:#7c3aed">' + lk('package') + ' Enregistrer simplifiés ') + anneeActuelle + '</button>';
   }
-  html += '<button class="btn btn-sm" onclick="recalculerCarboneTout(\'' + methodeActive + '\')" style="background:#0e7490;color:white;border:none">🔄 Recalculer CO₂ (' + methodeActive + ')</button>';
+  html += '<button class="btn btn-sm" onclick="recalculerCarboneTout(\'' + methodeActive + ('\')" style="background:#0e7490;color:white;border:none">' + lk('refresh-cw') + ' Recalculer CO₂ (') + methodeActive + ')</button>';
   html += '<button class="btn btn-ghost btn-sm" onclick="addFacteurCarboneManuel()" style="border:1px solid var(--blue);color:var(--blue)">+ Manuellement</button>';
-  html += '<label class="btn btn-ghost btn-sm" style="border:1px solid var(--blue);color:var(--blue);cursor:pointer;margin:0" title="Reprendre un exercice passé depuis une Base Carbone archivée">📄 Importer un CSV'
+  html += ('<label class="btn btn-ghost btn-sm" style="border:1px solid var(--blue);color:var(--blue);cursor:pointer;margin:0" title="Reprendre un exercice passé depuis une Base Carbone archivée">' + lk('file-text') + ' Importer un CSV')
        + '<input type="file" accept=".csv,text/csv" style="display:none" onchange="importerCsvFacteursCarbone(this, \'' + methodeActive + '\')"></label>';
-  html += '<button class="btn btn-sm" onclick="purgerTousFacteurs(\'' + methodeActive + '\')" style="background:#dc2626;color:white;border:none" title="Supprimer TOUS les facteurs de cette méthode avant de resynchroniser">🗑️ Purger tout</button>';
+  html += '<button class="btn btn-sm" onclick="purgerTousFacteurs(\'' + methodeActive + ('\')" style="background:#dc2626;color:white;border:none" title="Supprimer TOUS les facteurs de cette méthode avant de resynchroniser">' + lk('trash') + ' Purger tout</button>');
   html += '<div style="flex:1"></div>';
   html += '<span style="font-size:11px;color:var(--gray-text)">' + valides.length + ' facteur(s)</span>';
   html += '</div>';
@@ -400,8 +400,8 @@ async function openFacteursCarbone() {
   html += '</div>';
 
   var titre = methodeActive === 'simplifiee'
-    ? '📦 Facteurs d\'émission CO₂ — Simplifiée (Impact CO2)'
-    : '🏛️ Facteurs d\'émission CO₂ — Officielle (ADEME)';
+    ? 'Facteurs d\'émission CO₂ — Simplifiée (Impact CO2)'
+    : 'Facteurs d\'émission CO₂ — Officielle (ADEME)';
   openModal(titre, html, null, 'Fermer', null, '950px');
 }
 
@@ -443,8 +443,8 @@ function addFacteurCarboneManuel() {
   openModal('Ajouter un facteur',
     '<div class="form-grid">' +
     '<div class="form-group"><label class="form-label">Année *</label><input class="form-control" type="number" id="fc_annee" value="' + annee + '" min="2015" max="2050"></div>' +
-    '<div class="form-group"><label class="form-label">Méthode *</label><select class="form-control" id="fc_methode"><option value="officielle">🏛️ Officielle (ADEME)</option><option value="simplifiee">📦 Simplifiée (Impact CO2)</option></select></div>' +
-    '<div class="form-group"><label class="form-label">Type *</label><select class="form-control" id="fc_type"><option value="Electricite">⚡ Électricité</option><option value="Gaz">🔵 Gaz</option><option value="Chauffage">🔥 Chauffage</option><option value="Eau">💧 Eau</option></select></div>' +
+    ('<div class="form-group"><label class="form-label">Méthode *</label><select class="form-control" id="fc_methode"><option value="officielle">Officielle (ADEME)</option><option value="simplifiee">Simplifiée (Impact CO2)</option></select></div>') +
+    ('<div class="form-group"><label class="form-label">Type *</label><select class="form-control" id="fc_type"><option value="Electricite">Électricité</option><option value="Gaz">Gaz</option><option value="Chauffage">Chauffage</option><option value="Eau">Eau</option></select></div>') +
     '<div class="form-group"><label class="form-label">Facteur CO₂ *</label><input class="form-control" type="number" step="0.0001" id="fc_facteur" placeholder="0.0521"></div>' +
     '<div class="form-group"><label class="form-label">Unité</label><input class="form-control" id="fc_unite" value="kgCO2e/kWh"></div>' +
     '<div class="form-group"><label class="form-label">Source</label><input class="form-control" id="fc_source" placeholder="ADEME, Impact CO2, DPE..."></div></div>'

@@ -46,6 +46,8 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/Chemins.php';
 
+require_once __DIR__ . '/Synchro.php';   // connexion qui note les écritures (synchronisation de l'app mobile)
+
 class Database {
 
     private PDO $pdo;
@@ -87,7 +89,7 @@ class Database {
         $driver = $dbConfig['driver'] ?? DB_DRIVER;
         $this->driver = $driver;
 
-        // ⚠️ FIX BUG MAJEUR (purge + multi-tenant) : identifiant UNIQUE par base
+        // FIX BUG MAJEUR (purge + multi-tenant) : identifiant UNIQUE par base
         // PHYSIQUE, utilisé pour nommer le fichier sentinelle de schéma. Avant, la
         // sentinelle était keyée sur driver + tenant_key DE SESSION. Or quand le
         // super admin opère sur plusieurs bases tenant via new Database($cfg), le
@@ -114,11 +116,11 @@ class Database {
             $dir = dirname($path);
             if (!is_dir($dir)) mkdir($dir, 0755, true);
             $this->_sqlitePath = $path;
-            $this->pdo = new PDO('sqlite:' . $path);
+            $this->pdo = new SynchroPdo('sqlite:' . $path);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
             $this->pdo->exec("PRAGMA foreign_keys = ON;");
-            $this->pdo->exec("PRAGMA journal_mode = WAL;");
+            larka_sqlite_reglages($this->pdo);
 
         } elseif ($driver === 'pgsql') {
             // connect_timeout borne la connexion : PostgreSQL ignore PDO::ATTR_TIMEOUT
@@ -129,9 +131,9 @@ class Database {
                 $dbConfig['host'] ?? DB_HOST,
                 $dbConfig['port'] ?? DB_PORT,
                 $dbConfig['dbname'] ?? DB_NAME,
-                $dbConfig['sslmode'] ?? DB_SSLMODE
+                larka_pg_sslmode($dbConfig['host'] ?? DB_HOST, $dbConfig['sslmode'] ?? DB_SSLMODE)
             );
-            $this->pdo = new PDO($dsn, $dbConfig['user'] ?? DB_USER, $dbConfig['password'] ?? DB_PASS, [
+            $this->pdo = new SynchroPdo($dsn, $dbConfig['user'] ?? DB_USER, $dbConfig['password'] ?? DB_PASS, [
                 PDO::ATTR_TIMEOUT => 5,
             ]);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -145,7 +147,7 @@ class Database {
                 $dbConfig['port'] ?? DB_PORT,
                 $dbConfig['dbname'] ?? DB_NAME
             );
-            $this->pdo = new PDO($dsn, $dbConfig['user'] ?? DB_USER, $dbConfig['password'] ?? DB_PASS, [
+            $this->pdo = new SynchroPdo($dsn, $dbConfig['user'] ?? DB_USER, $dbConfig['password'] ?? DB_PASS, [
                 PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
             ]);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -155,7 +157,7 @@ class Database {
             throw new \RuntimeException("Driver DB inconnu : $driver. Valeurs : sqlite, pgsql, mariadb.");
         }
 
-        // ⚠️ FIX PERFS : ne rejouer les migrations + DDL d'index QUE si le schéma
+        // FIX PERFS : ne rejouer les migrations + DDL d'index QUE si le schéma
         // n'était pas déjà à jour. Avant, migrateRoles(), l'ALTER TABLE et les 11
         // CREATE INDEX se rejouaient à CHAQUE requête (l'ALTER échouait
         // systématiquement et était rattrapé → round-trip + exception inutiles),
@@ -168,7 +170,7 @@ class Database {
             $this->migrateRoles();
             try { $this->pdo->exec("ALTER TABLE Utilisateurs ADD COLUMN Provider TEXT DEFAULT 'local'"); } catch(\Exception $e) {}
             // Note: Provider auto-detection only runs if not already set by OAuth login
-            // ⚠️ FIX PERFS : indexes critiques manquants — ajoutés après les tables.
+            // FIX PERFS : indexes critiques manquants — ajoutés après les tables.
             $this->ensureCriticalIndexes();
         }
 
@@ -182,6 +184,25 @@ class Database {
      * Build a mapping of lowercase column names → original CamelCase names.
      * PostgreSQL stores everything as lowercase but our JS frontend expects CamelCase.
      */
+    /** Noms tels que Larka les écrit : ['tables' => minuscules → nom, 'colonnes' => minuscules → nom]. */
+    public function nomsColonnes(): array {
+        $tables = [];
+        foreach ($this->_getKnownTables() as $t) $tables[strtolower($t)] = $t;
+        // Les autres tables (Larka Connect, modules…) : leur nom tel que Larka les crée,
+        // relevé une fois dans ce fichier (PostgreSQL les rend en minuscules).
+        static $crees = null;
+        if ($crees === null) {
+            $crees = [];
+            if (preg_match_all('/CREATE TABLE IF NOT EXISTS\s+["`]?([A-Za-z_][A-Za-z0-9_]*)/', (string)@file_get_contents(__FILE__), $m)) {
+                foreach ($m[1] as $t) if ($t !== strtolower($t)) $crees[strtolower($t)] = $t;
+            }
+        }
+        $tables += $crees;
+        $cols = $this->colMap;
+        if (!$cols) foreach (self::colonnesCamelCase() as $c) $cols[strtolower($c)] = $c;
+        return ['tables' => $tables, 'colonnes' => $cols];
+    }
+
     private function buildColumnMap(): void {
         foreach (self::colonnesCamelCase() as $col) {
             $this->colMap[strtolower($col)] = $col;
@@ -263,13 +284,13 @@ class Database {
             'EtageId','TypeElement','SousType','Calque','Couleur','Opacite','Coords','Icone',
             'RefUtilisateurId','PersonneData','EstPersonne','PartagePresencePlan','MasquerPresence', // remappage PG
             'ElementId',
-            // ⚠️ FIX : alias d'agrégats des requêtes de stats. Sous PostgreSQL,
+            // FIX : alias d'agrégats des requêtes de stats. Sous PostgreSQL,
             // « COUNT(*) as Total » revient en « total » (minuscule). Sans ces
             // entrées, remapRow() ne les repassait pas en CamelCase et le front
             // lisait r.Total = undefined → toutes les valeurs de stats à 0.
             'Total','Cout','Nb','CoutPieces','MontantTotal','QteTotal','Articles',
             'ValeurTotale','IntervNumero','CompteurNom','Methode','Mois',
-            // ⚠️ FIX : facturation des interventions (tables Factures +
+            // FIX : facturation des interventions (tables Factures +
             // FactureInterventions). Sans ces entrées, sous PostgreSQL les
             // colonnes/alias reviennent en minuscules (numeroej, dateej,
             // montantligne, liaisonid…) et le front lisait undefined → le
@@ -277,12 +298,12 @@ class Database {
             'NumeroEJ','DateEJ','DateFacture','FactureId','MontantLigne','Libelle',
             'LiaisonId','NbInterventions','TotalVentile','TotalFacture','NbFactures',
             'CbdcFactures','NbInterventionsLiees','AutresInterventions','NbInterv','DateReception',
-            // ⚠️ FIX : onglets consultables par un demandeur. Sans cette entrée,
+            // FIX : onglets consultables par un demandeur. Sans cette entrée,
             // sous PostgreSQL la colonne revenait en « acceslecture » et la fiche
             // lisait u.AccesLecture = undefined : les cases se réaffichaient
             // décochées après un enregistrement pourtant réussi.
             'AccesLecture',
-            // ⚠️ COLONNES ABSENTES DE CETTE LISTE = CHAMPS VIDES SOUS POSTGRESQL.
+            // COLONNES ABSENTES DE CETTE LISTE = CHAMPS VIDES SOUS POSTGRESQL.
             // Reproduit sur une base complète migrée vers PostgreSQL et comparée,
             // route par route, à la même base sous SQLite : la liste des dossiers
             // d'archives n'affichait ni numéro, ni boîte, ni commune, ni DUA ;
@@ -307,6 +328,38 @@ class Database {
             // Alias des requêtes de plans et de l'assistant
             'EtageNom','BatimentNom','ElementNom','BatimentAdresse','EtageNiveau',
             'InterventionNumero','InterventionStatut','InterventionDate',
+            // Larka Connect (initConnectTables) et alias de ses requêtes
+            'Protocole','Hote','Port','Identifiant','Parametres','Secret','IntervalleSecondes',
+            'DernierContact','DerniereCollecte','ProchaineCollecte','DerniereErreur','EchecsConsecutifs',
+            'PasserelleId','Code','Nature','Coefficient','Decalage','Decimales','BandeMorte',
+            'EcritureAutorisee','MinEcriture','MaxEcriture','EquipementId','ElementPlanId',
+            'DerniereValeur','DerniereValeurTexte','DerniereQualite','DerniereLecture','DernierEnregistrement',
+            'PointId','Horodatage','ValeurTexte','Qualite',
+            'Operateur','Seuil','Seuil2','DelaiMinutes','Gravite','CreerDemande','Notifier',
+            'EnCoursDepuis','DernierPalier',
+            'RegleId','Origine','ValeurDeclenchement','Debut','Fin','Acquittee','AcquitteePar',
+            'DateAcquittement','Reseaux','MotsCles','JetonHash','Connexions','Journal',
+            'Destination','CibleId','Heure','JoursSemaine','JourMois','MoisActifs','ExpressionCron',
+            'ToleranceMinutes','FacteurAnomalie','ValidationManuelle','ProchaineExecution','DerniereExecution',
+            'Prevue','Executee','ValeurPrecedente','MesureHorodatage','ReleveId','ValidePar',
+            'Commande','Demandeur','DateExecution','Reponse',
+            'Connecteur','TransactionId','Badge','IndexDebutWh','IndexFinWh','EnergieWh','PuissanceMaxW',
+            'Motif','RecuEnDiffere','Empreinte','DateFichier','NbValeurs',
+            'PasserelleNom','PasserelleProtocole','PasserelleEtat','PointNom','PointUnite','PointCode',
+            'PointNature','PointDecimales','NbPoints','NbAlarmes','NbRegles','NbLiaisons','EquipementNumero',
+            'DemandeStatut','LiaisonNom','CibleNom','DernierHorodatage','ValeurMin','ValeurMax','ValeurMoy',
+            // Plans de maintenance préventive / de contrôle réglementaire (v18)
+            'Annee','Periodicite','ModePrix','PrixPassage','PrixGlobal','DelaiAffichage','PlanId',
+            'ContratNumero','PlanNumero','PlanTitre','NbDocuments',
+            // Lieu / bâtiment d'une intervention ou d'un plan (v22), et celui de son bien
+            'Lieu','BienBatiment','PlanLieu',
+            // Larka Connect : détection par le PC releveur (v19)
+            'Reconnaissance','ReconDate','ReconDemandee',
+            // Version du collecteur d'un PC releveur (v20)
+            'Version',
+            // Serveur LoRaWAN intégré, matériel radio des PC releveurs (v21)
+            'DevAddr','FCntUp','FCntDown','DevNonces','Session','RejointLe','DerniereTrame','Rssi','Snr',
+            'PasserelleRadio','Charge','NbTrames','Materiel',
         ];
     }
 
@@ -329,7 +382,7 @@ class Database {
         // n'est interpolée dans le SQL, ce qui évite tout risque si cette table
         // de correspondance venait un jour à inclure des données externes.
         //
-        // ⚠️ CINQ LIGNES D'AUDIT « UPDATE Utilisateurs » À CHAQUE MIGRATION DE
+        // CINQ LIGNES D'AUDIT « UPDATE Utilisateurs » À CHAQUE MIGRATION DE
         // SCHÉMA — et dans la base en service quand on initialisait une AUTRE
         // base (destination d'une migration, import super admin) : execute()
         // journalise toute écriture, même sans effet. On n'inscrit plus au
@@ -411,7 +464,7 @@ class Database {
             "CREATE INDEX IF NOT EXISTS idx_push_endpoint ON PushSubscriptions(Endpoint)",
             "CREATE INDEX IF NOT EXISTS idx_push_userid   ON PushSubscriptions(UserId)",
             // Documents — lookups par entité.
-            // ⚠️ FIX : la table Documents n'a PAS de colonnes InterventionId /
+            // FIX : la table Documents n'a PAS de colonnes InterventionId /
             // BienId / EquipementId — le lien est polymorphe via
             // (EntiteType, EntiteId). Les 3 anciens index échouaient donc
             // silencieusement dans le catch, et chaque ouverture d'un panneau
@@ -419,13 +472,13 @@ class Database {
             "CREATE INDEX IF NOT EXISTS idx_doc_entite ON Documents(EntiteType, EntiteId)",
             // Interventions — filtres fréquents
             "CREATE INDEX IF NOT EXISTS idx_interv_statut    ON Interventions(Statut)",
-            // ⚠️ FIX : AssigneA n'existe pas ; l'agent est en clair dans AgentNom/AgentPrenom.
+            // FIX : AssigneA n'existe pas ; l'agent est en clair dans AgentNom/AgentPrenom.
             "CREATE INDEX IF NOT EXISTS idx_interv_agent     ON Interventions(AgentNom, AgentPrenom)",
             "CREATE INDEX IF NOT EXISTS idx_interv_bien      ON Interventions(BienId)",
             "CREATE INDEX IF NOT EXISTS idx_interv_demande   ON Interventions(DemandeId)",
             // Demandes intervention
             "CREATE INDEX IF NOT EXISTS idx_demande_statut    ON DemandesIntervention(Statut)",
-            // ⚠️ FIX : la colonne s'appelle EmailDemandeur, pas DemandeurEmail.
+            // FIX : la colonne s'appelle EmailDemandeur, pas DemandeurEmail.
             "CREATE INDEX IF NOT EXISTS idx_demande_demandeur ON DemandesIntervention(EmailDemandeur)",
             // Facturation — liaison facture ↔ intervention (lookups dans les 2 sens)
             "CREATE INDEX IF NOT EXISTS idx_factint_facture ON FactureInterventions(FactureId)",
@@ -509,11 +562,44 @@ class Database {
     //       gros montants, totaux faux). Le bump déclenche convertirReelsPg()
     //       sur les bases déjà déployées. Sans effet sous SQLite et MariaDB,
     //       où REAL est déjà un double.
-    // v14 : cases complémentaires des fiches (« fourre-tout ») — colonne JSON
+    // v14 : Larka Connect — tables des équipements raccordés (connexions,
+    //       points, mesures, règles et alarmes, liaisons planifiées et leurs
+    //       exécutions, commandes, sessions de recharge, fichiers importés).
+    //       Créées par initConnectTables() ; le bump les pose sur les bases
+    //       déjà déployées.
+    // v15 : cases complémentaires des fiches (« fourre-tout ») — colonne JSON
     //       ChampsPerso sur Biens et Equipements, définitions dans Configuration
     //       (champs_perso_biens / champs_perso_equipements). Créées par l'import
     //       (colonnes du fichier sans champ Larka) ou à la main depuis les listes.
-    private const SCHEMA_VERSION = 14;
+    // v16 : Larka Connect — réseaux IP et mots-clés des bâtiments (table
+    //       ConnectBatiments), pour ranger d'office les équipements détectés.
+    //       Créée par initConnectTables() ; le bump la pose sur les bases déjà
+    //       déployées.
+    // v17 : Larka Connect — exclusions de la détection (ConnectExclusions) et
+    //       PC releveurs des appareils en hotspot Wi-Fi (ConnectReleveurs).
+    // v18 : plans de maintenance préventive et de contrôle réglementaire
+    //       (table PlansMaintenance, colonne Interventions.PlanId) : un plan
+    //       prévoit plusieurs passages du même genre dans l'année, avec un prix
+    //       par passage ou un prix unique (réparti ou forfaitaire). Préventive
+    //       et Contrôle réglementaire quittent la liste des types d'intervention.
+    // v19 : Larka Connect — détection des appareils hors réseau par le PC releveur
+    //       (ConnectPasserelles.Reconnaissance, ReconDate, ReconDemandee) et relevés
+    //       automatiques « à chaque relevé du PC releveur ».
+    // v20 : version du collecteur de chaque PC releveur (ConnectReleveurs.Version),
+    //       pour dire à l'écran quand un PC doit retélécharger son collecteur.
+    // v21 : Larka Connect — serveur LoRaWAN intégré : session radio de chaque
+    //       capteur (ConnectLorawan : DevAddr, compteurs de trames, clés de session
+    //       chiffrées) ; matériel radio vu par chaque PC releveur
+    //       (ConnectReleveurs.Materiel).
+    // v22 : lieu / bâtiment d'une intervention et d'un plan de maintenance
+    //       (Interventions.Lieu, PlansMaintenance.Lieu) : contrôles réglementaires
+    //       et préventif listés, filtrés et importés par site.
+    // v23 : cases complémentaires des interventions et du stock (colonne JSON
+    //       ChampsPerso sur Interventions et Stock, définitions dans
+    //       Configuration champs_perso_interventions / champs_perso_stock),
+    //       comme celles des biens et des équipements : une colonne du fichier
+    //       importé sans champ Larka devient une case de la fiche.
+    private const SCHEMA_VERSION = 23;
 
     /**
      * Fichier sentinelle utilisé pour court-circuiter initTables() quand
@@ -543,7 +629,7 @@ class Database {
         $parts = explode('|', trim($content), 2);
         if (($parts[0] ?? '') !== (string)self::SCHEMA_VERSION) return false;
 
-        // ⚠️ UNE BASE SQLITE RECRÉÉE GARDAIT SA SENTINELLE « À JOUR ».
+        // UNE BASE SQLITE RECRÉÉE GARDAIT SA SENTINELLE « À JOUR ».
         // La sentinelle est indexée sur le CHEMIN. Quand le fichier était
         // supprimé (suppression ou purge d'un tenant SQLite, « force_drop »,
         // suppression à la main) puis recréé vide par PDO, la sentinelle disait
@@ -594,7 +680,7 @@ class Database {
     /**
      * DDL dans le dialecte de la base ouverte, pour les types décimaux.
      *
-     * ⚠️ SOUS POSTGRESQL, « REAL » EST UN FLOTTANT SUR 4 OCTETS.
+     * SOUS POSTGRESQL, « REAL » EST UN FLOTTANT SUR 4 OCTETS.
      * SQLite et MariaDB lisent « REAL » comme un double (8 octets, ~15 chiffres
      * significatifs) ; PostgreSQL y voit un float4 : ~7 chiffres. Les montants
      * perdaient leurs centimes au-delà de 262 144 €, les index de compteurs
@@ -647,7 +733,7 @@ class Database {
     }
 
     private function initTables(): void {
-        // ⚠️ FIX PERFS : court-circuit si le schéma est déjà à jour.
+        // FIX PERFS : court-circuit si le schéma est déjà à jour.
         // initTables() exécute ~30 requêtes CREATE TABLE IF NOT EXISTS à
         // chaque instanciation Database. C'est idempotent mais pas gratuit
         // (latence DB). On utilise un flag fichier sentinelle qui matérialise
@@ -658,7 +744,7 @@ class Database {
             return;
         }
 
-        // ⚠️ DIALECTE DE LA BASE OUVERTE, PAS DE LA REQUÊTE EN COURS.
+        // DIALECTE DE LA BASE OUVERTE, PAS DE LA REQUÊTE EN COURS.
         // Cette ligne lisait la constante DB_DRIVER — le pilote du tenant résolu
         // pour la requête (session, domaine) —, alors que l'instance peut viser
         // une AUTRE base : le super admin qui crée un tenant, ou le login qui
@@ -895,6 +981,16 @@ class Database {
             "CREATE TABLE IF NOT EXISTS FactureInterventions (
                 Id $AI, FactureId INTEGER NOT NULL, InterventionId INTEGER NOT NULL,
                 MontantLigne REAL DEFAULT 0, Libelle TEXT DEFAULT '')",
+            // Plans de maintenance préventive / de contrôle réglementaire : les
+            // passages sont des interventions (Interventions.PlanId).
+            "CREATE TABLE IF NOT EXISTS PlansMaintenance (
+                Id $AI, Numero TEXT, Nature TEXT NOT NULL DEFAULT 'Préventive', Titre TEXT NOT NULL,
+                Description TEXT, Annee INTEGER, Periodicite TEXT DEFAULT 'Personnalisée',
+                TypeLiaison TEXT DEFAULT 'Bien', BienId INTEGER, EquipementsIds TEXT,
+                ContratId INTEGER, SocieteManuelle TEXT,
+                ModePrix TEXT DEFAULT 'passage', PrixPassage REAL DEFAULT 0, PrixGlobal REAL DEFAULT 0,
+                DelaiAffichage INTEGER DEFAULT 30, Statut TEXT DEFAULT 'Actif', Commentaire TEXT,
+                CreatedAt TEXT, CreatedBy TEXT, UpdatedAt TEXT, UpdatedBy TEXT)",
         ];
 
         foreach ($tables as $sql) {
@@ -1080,6 +1176,12 @@ class Database {
             // être clôturée sans CBDC/CHMA ni dates (petit dépannage interne,
             // pas de bon de commande, pas de mail au prestataire…).
             ["Interventions",       "SansSuiviAdmin",          "INTEGER DEFAULT 0"],
+            // Passage d'un plan préventif / de contrôle réglementaire (v18)
+            ["Interventions",       "PlanId",                  "INTEGER"],
+            // Lieu / bâtiment (site, bâtiment) d'une intervention ou d'un plan (v22) :
+            // texte libre. Sans lui, l'écran retombe sur le bâtiment du bien ou des équipements.
+            ["Interventions",       "Lieu",                    "TEXT"],
+            ["PlansMaintenance",    "Lieu",                    "TEXT"],
 
             // Inventaire agent : lien direct utilisateur → bien
             ["Biens",               "AffecteUserId",           "INTEGER"],
@@ -1137,6 +1239,9 @@ class Database {
             // Cases complémentaires des fiches (v14) : { "cle": "valeur", … }
             ["Biens",       "ChampsPerso", "TEXT"],
             ["Equipements", "ChampsPerso", "TEXT"],
+            // … puis des interventions et du stock (v23)
+            ["Interventions", "ChampsPerso", "TEXT"],
+            ["Stock",         "ChampsPerso", "TEXT"],
 
             // Archives : colonnes des boîtes ajoutées après coup (elles n'étaient
             // créées que par ensureArchivesBoiteColumns(), propre à SQLite).
@@ -1164,7 +1269,7 @@ class Database {
         }
 
         // ── Admin par défaut — uniquement si PAS en multi-tenant ─────────────
-        // ⚠️ FIX : ce bloc DOIT rester APRÈS la boucle $cols_to_add ci-dessus.
+        // FIX : ce bloc DOIT rester APRÈS la boucle $cols_to_add ci-dessus.
         // Il insère MustChangePassword, colonne absente du CREATE TABLE et
         // ajoutée uniquement par cette migration. Placé avant, il plantait :
         //   - sur toute base MONO-TENANT neuve (colonne pas encore créée) ;
@@ -1178,7 +1283,7 @@ class Database {
                 if (!$isMultiTenant) {
                     // Mode classique (pas de tenants.json) : créer admin/admin
                     // MustChangePassword=1 force l'admin à changer son mot de passe au premier login.
-                    // ⚠️ FIX SÉCURITÉ : plus de mot de passe « admin » connu de tous.
+                    // FIX SÉCURITÉ : plus de mot de passe « admin » connu de tous.
                     // Le premier visiteur pouvait se connecter admin/admin et, en
                     // « changeant » le mot de passe imposé, prendre l'instance.
                     // Mot de passe initial aléatoire, déposé dans un fichier
@@ -1211,7 +1316,8 @@ class Database {
                     ['EtatAsset','Stock',1],['EtatAsset','Utilise',2],['EtatAsset','Jete/Recycle',3],['EtatAsset','Don/Vendu',4],
                     ['StatutEquipement','Commande',1],['StatutEquipement','Livre',2],['StatutEquipement','Installe',3],
                     ['StatutIntervention','Planifiée',1],['StatutIntervention','En cours',2],['StatutIntervention','Réalisée',3],
-                    ['TypeIntervention','Préventive',1],['TypeIntervention','Curative',2],['TypeIntervention','Contrôle réglementaire',3],['TypeIntervention','Divers',4],
+                    // Préventive et Contrôle réglementaire ont leurs propres écrans (plans).
+                    ['TypeIntervention','Curative',1],['TypeIntervention','Divers',2],
                     ['PrioriteIntervention','Basse',1],['PrioriteIntervention','Normale',2],['PrioriteIntervention','Urgente',3],
                     ['StatutContrat','Actif',1],['StatutContrat','Expire',2],['StatutContrat','Resilie',3],
                     ['TypeContrat','Maintenance',1],['TypeContrat','Controle reglementaire',2],['TypeContrat','Location',3],['TypeContrat','Energie',4],['TypeContrat','Autre',5],
@@ -1222,9 +1328,16 @@ class Database {
                 foreach ($defaults as $row) { $stmt->execute($row); }
             }
         }
+        // v18 : Préventive et Contrôle réglementaire ne sont plus des types à
+        // choisir dans une intervention — ils ont leurs écrans (Maintenance →
+        // Préventif, Contrôle réglementaire). Les interventions existantes de
+        // ces types gardent leur type et apparaissent sur ces écrans.
+        try {
+            $this->pdo->exec("DELETE FROM Listes WHERE Categorie = 'TypeIntervention' AND Valeur IN ('Préventive', 'Contrôle réglementaire')");
+        } catch (\PDOException $e) { /* table absente : rien à retirer */ }
         // ── Tables de plans, créées ICI et non plus à la demande ─────────
         //
-        // ⚠️ ELLES N'EXISTAIENT QU'APRÈS LA PREMIÈRE VISITE DE L'ÉCRAN PLANS.
+        // ELLES N'EXISTAIENT QU'APRÈS LA PREMIÈRE VISITE DE L'ÉCRAN PLANS.
         // initPlansTables() était appelée par chaque méthode de plan, jamais à
         // la migration. Sur une base fraîche, « PlanBatiments » et les trois
         // autres n'existaient donc pas — et tout ce qui les touche sans passer
@@ -1235,22 +1348,41 @@ class Database {
         // une table : c'est un effet de bord. Elle est créée avec les autres.
         try { $this->initPlansTables(); } catch (\Throwable $e) { /* best-effort */ }
 
+        // Larka Connect (équipements raccordés) : même règle que les plans,
+        // créées avec les autres tables et non à l'ouverture d'un écran.
+        try { $this->initConnectTables(); } catch (\Throwable $e) { /* best-effort */ }
+
         // Bases PostgreSQL créées avant la version 13 du schéma : colonnes
         // décimales en float4 (voir ddl()). Une seule fois par base.
         $this->convertirReelsPg();
 
-        // ⚠️ FIX PERFS : marquer le schéma comme à jour pour éviter de
+        // FIX PERFS : marquer le schéma comme à jour pour éviter de
         // refaire toutes les CREATE TABLE IF NOT EXISTS au prochain boot.
         // Best-effort — un échec ici n'a aucune conséquence fonctionnelle.
         $this->markSchemaCurrent();
     }
 
-    // ══ CASES COMPLÉMENTAIRES DES FICHES (biens, équipements) ══
+    // ══ CASES COMPLÉMENTAIRES DES FICHES (biens, équipements, interventions, stock) ══
     // Définitions : Configuration « champs_perso_<cible> » = [{cle, libelle, type}]
     // (type : texte | texte_long | date | nombre). Valeurs : colonne JSON
     // ChampsPerso de la fiche. Supprimer une case ne touche pas aux valeurs :
     // recréée sous le même nom, elle les retrouve.
     public const CHAMPS_PERSO_TYPES = ['texte', 'texte_long', 'date', 'nombre'];
+
+    /**
+     * Cibles connues → table. VOCABULAIRE FERMÉ : la table est interpolée dans
+     * le SQL (compter, écrire les valeurs) ; elle ne vient donc jamais de la
+     * requête, seulement de cette liste.
+     */
+    public const CHAMPS_PERSO_CIBLES = ['biens' => 'Biens', 'equipements' => 'Equipements',
+                                        'interventions' => 'Interventions', 'stock' => 'Stock'];
+    /** Libellé des fiches d'une cible, pour le Journal et les écrans. */
+    public const CHAMPS_PERSO_LIBELLES = ['biens' => 'biens', 'equipements' => 'équipements',
+                                          'interventions' => 'interventions', 'stock' => 'articles du stock'];
+
+    public static function champsPersoCibleValide(string $cible): bool {
+        return isset(self::CHAMPS_PERSO_CIBLES[$cible]);
+    }
 
     public static function champsPersoCle(string $libelle): string {
         $t = function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $libelle) : $libelle;
@@ -1260,21 +1392,138 @@ class Database {
     }
 
     public function getChampsPersoDefs(string $cible): array {
-        if (!in_array($cible, ['biens', 'equipements'], true)) return [];
+        if (!self::champsPersoCibleValide($cible)) return [];
         $j = json_decode($this->getConfig('champs_perso_' . $cible), true);
         if (!is_array($j)) return [];
         $out = [];
         foreach ($j as $d) {
             if (!is_array($d) || !preg_match('/^[a-z0-9_]{1,60}$/', (string)($d['cle'] ?? ''))) continue;
-            $out[] = ['cle' => $d['cle'], 'libelle' => mb_substr(trim((string)($d['libelle'] ?? $d['cle'])), 0, 80),
-                      'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+            $e = ['cle' => $d['cle'], 'libelle' => mb_substr(trim((string)($d['libelle'] ?? $d['cle'])), 0, 80),
+                  'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+            foreach (['creee_le', 'creee_par'] as $k) if (isset($d[$k]) && is_string($d[$k])) $e[$k] = mb_substr($d[$k], 0, 60);
+            $out[] = $e;
+        }
+        return $out;
+    }
+
+    // ── Historique des cases retirées ─────────────────────────────────────────
+    // Configuration « champs_perso_<cible>_historique » = [{cle, libelle, type,
+    // creee_le, creee_par, supprimee_le, supprimee_par}]. Retirer une case des
+    // fiches ne l'oublie pas : on sait qu'elle a existé, quand et par qui elle a
+    // été retirée, et combien de fiches gardent encore une valeur (les valeurs,
+    // elles, ne sont jamais effacées). La recréer — sous la même clé — la sort
+    // de l'historique et lui rend ses valeurs.
+    public const CHAMPS_PERSO_SEUIL_RESSEMBLANCE = 0.75;
+
+    public function getChampsPersoHistorique(string $cible, bool $compter = false): array {
+        if (!self::champsPersoCibleValide($cible)) return [];
+        $j = json_decode($this->getConfig('champs_perso_' . $cible . '_historique'), true);
+        if (!is_array($j)) return [];
+        $out = [];
+        foreach ($j as $d) {
+            if (!is_array($d) || !preg_match('/^[a-z0-9_]{1,60}$/', (string)($d['cle'] ?? ''))) continue;
+            $e = ['cle' => $d['cle'], 'libelle' => mb_substr(trim((string)($d['libelle'] ?? $d['cle'])), 0, 80),
+                  'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+            foreach (['creee_le', 'creee_par', 'supprimee_le', 'supprimee_par'] as $k) $e[$k] = isset($d[$k]) && is_string($d[$k]) ? mb_substr($d[$k], 0, 60) : null;
+            if ($compter) $e['nb_fiches'] = $this->compterValeursChampPerso($cible, $e['cle']);
+            $out[] = $e;
+        }
+        return $out;
+    }
+
+    /** Nombre de fiches qui gardent une valeur pour cette case. */
+    public function compterValeursChampPerso(string $cible, string $cle): int {
+        if (!preg_match('/^[a-z0-9_]{1,60}$/', $cle) || !self::champsPersoCibleValide($cible)) return 0;
+        $table = self::CHAMPS_PERSO_CIBLES[$cible];
+        // Les clés ne contiennent que [a-z0-9_] : « "cle": » ne peut pas
+        // apparaître ailleurs que comme clé dans le JSON de la fiche.
+        $r = $this->fetchOne("SELECT COUNT(*) AS n FROM $table WHERE ChampsPerso LIKE :motif", ['motif' => '%"' . $cle . '":%']);
+        return (int)($r['n'] ?? 0);
+    }
+
+    /** Libellé ramené à ses mots (minuscules, sans accents ni ponctuation, sans « de », « la »…). */
+    public static function champsPersoMots(string $libelle): string {
+        $t = function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $libelle) : $libelle;
+        $t = strtolower(preg_replace('/[^A-Za-z0-9]+/', ' ', $t));
+        $mots = array_filter(explode(' ', $t), fn($m) => $m !== '' && !in_array($m, ['de', 'du', 'des', 'la', 'le', 'les', 'l', 'd', 'a', 'au', 'aux', 'en', 'et', 'un', 'une'], true));
+        return implode(' ', $mots);
+    }
+
+    /**
+     * Ressemblance de deux libellés, de 0 à 1 : la meilleure de deux mesures,
+     * l'une sensible aux fautes de frappe (distance d'édition), l'autre aux mots
+     * déplacés ou abrégés (paires de lettres communes). « N° d'inventaire » et
+     * « N° inventaire » valent 1 ; « Garantie » et « Garanti », 0,92 ;
+     * « Code analytique » et « Code analityque », 0,86. Même calcul côté client
+     * (js/ui.js, ChampsPerso.similarite) : l'avertissement à la saisie et le
+     * contrôle à l'enregistrement disent la même chose.
+     */
+    public static function similariteLibelles(string $a, string $b): float {
+        $a = str_replace(' ', '', self::champsPersoMots($a));
+        $b = str_replace(' ', '', self::champsPersoMots($b));
+        if ($a === '' || $b === '') return 0.0;
+        if ($a === $b) return 1.0;
+        $a = substr($a, 0, 120); $b = substr($b, 0, 120);
+        $lev = 1 - levenshtein($a, $b) / max(strlen($a), strlen($b));
+        $paires = function (string $s): array { $p = []; for ($i = 0; $i < strlen($s) - 1; $i++) { $k = substr($s, $i, 2); $p[$k] = ($p[$k] ?? 0) + 1; } return $p; };
+        $pa = $paires($a); $pb = $paires($b);
+        $communes = 0; foreach ($pa as $k => $n) $communes += min($n, $pb[$k] ?? 0);
+        $total = array_sum($pa) + array_sum($pb);
+        $dice = $total ? 2 * $communes / $total : 0.0;
+        return round(max($lev, $dice), 3);
+    }
+
+    /**
+     * Cases NOUVELLES de $defs qui ressemblent (≥ 75 %) à une case existante, à
+     * une case retirée, ou à une autre case nouvelle : la faute de frappe qui
+     * crée « Garanti » à côté de « Garantie », ou recrée « N° inventaire » au
+     * lieu de restaurer « N° d'inventaire » et ses valeurs.
+     */
+    public function champsPersoRessemblances(string $cible, array $defs): array {
+        $avant = $this->getChampsPersoDefs($cible);
+        $clesAvant = array_column($avant, 'cle');
+        $hist = $this->getChampsPersoHistorique($cible);
+        $clesHist = array_column($hist, 'cle');
+        $nouvelles = [];
+        foreach ($defs as $d) {
+            if (!is_array($d)) continue;
+            $lib = trim((string)($d['libelle'] ?? ''));
+            if ($lib === '') continue;
+            $cle = (string)($d['cle'] ?? '');
+            if ($cle !== '' && (in_array($cle, $clesAvant, true) || in_array($cle, $clesHist, true))) continue;   // existante ou restaurée
+            $nouvelles[] = $lib;
+        }
+        $gardees = [];
+        foreach ($defs as $d) if (is_array($d) && in_array((string)($d['cle'] ?? ''), $clesAvant, true)) $gardees[] = (string)$d['cle'];
+        $out = [];
+        foreach ($nouvelles as $i => $lib) {
+            $cands = [];
+            foreach ($avant as $e) $cands[] = $e + ['statut' => in_array($e['cle'], $gardees, true) ? 'existante' : 'retiree_maintenant'];
+            foreach ($hist as $e) $cands[] = $e + ['statut' => 'supprimee'];
+            foreach ($nouvelles as $j => $autre) if ($j < $i) $cands[] = ['cle' => '', 'libelle' => $autre, 'type' => '', 'statut' => 'nouvelle'];
+            foreach ($cands as $c) {
+                $sim = self::similariteLibelles($lib, (string)$c['libelle']);
+                if ($sim < self::CHAMPS_PERSO_SEUIL_RESSEMBLANCE) continue;
+                $r = ['libelle' => $lib, 'ressemble_a' => $c['libelle'], 'cle' => $c['cle'], 'statut' => $c['statut'],
+                      'similarite' => $sim];
+                if ($c['statut'] === 'supprimee') {
+                    $r['supprimee_le'] = $c['supprimee_le'] ?? null;
+                    $r['nb_fiches'] = $this->compterValeursChampPerso($cible, (string)$c['cle']);
+                }
+                $out[] = $r;
+            }
         }
         return $out;
     }
 
     /** Enregistre les définitions (normalisées, clés uniques, 100 au plus). */
-    public function setChampsPersoDefs(string $cible, array $defs): array {
-        if (!in_array($cible, ['biens', 'equipements'], true)) throw new \InvalidArgumentException('Cible inconnue.');
+    public function setChampsPersoDefs(string $cible, array $defs, string $login = ''): array {
+        if (!self::champsPersoCibleValide($cible)) throw new \InvalidArgumentException('Cible inconnue.');
+        $avant = [];
+        foreach ($this->getChampsPersoDefs($cible) as $e) $avant[$e['cle']] = $e;
+        $hist = [];
+        foreach ($this->getChampsPersoHistorique($cible) as $e) $hist[$e['cle']] = $e;
+        $maintenant = date('Y-m-d H:i:s');
         $out = []; $vues = [];
         foreach ($defs as $d) {
             if (!is_array($d)) continue;
@@ -1285,16 +1534,47 @@ class Database {
             $base = $cle; $n = 2;
             while (isset($vues[$cle])) $cle = substr($base, 0, 56) . '_' . $n++;
             $vues[$cle] = true;
-            $out[] = ['cle' => $cle, 'libelle' => $lib,
-                      'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+            $e = ['cle' => $cle, 'libelle' => $lib,
+                  'type' => in_array($d['type'] ?? '', self::CHAMPS_PERSO_TYPES, true) ? $d['type'] : 'texte'];
+            // Date de création : gardée pour une case existante, reprise de
+            // l'historique pour une case restaurée, posée pour une nouvelle.
+            $orig = $avant[$cle] ?? $hist[$cle] ?? null;
+            $e['creee_le'] = $orig['creee_le'] ?? ($orig ? null : $maintenant);
+            $e['creee_par'] = $orig['creee_par'] ?? ($orig ? null : ($login !== '' ? $login : null));
+            $out[] = array_filter($e, fn($v) => $v !== null);
             if (count($out) >= 100) break;
         }
+        // Historique : les cases qui disparaissent y entrent, celles qui
+        // reviennent en sortent.
+        $restaurees = []; $retirees = []; $creees = [];
+        foreach ($vues as $cle => $_) {
+            if (isset($hist[$cle])) { $restaurees[] = $hist[$cle]['libelle']; unset($hist[$cle]); }
+            elseif (!isset($avant[$cle])) $creees[] = $cle;
+        }
+        foreach ($avant as $cle => $e) {
+            if (isset($vues[$cle])) continue;
+            $hist[$cle] = $e + ['supprimee_le' => $maintenant, 'supprimee_par' => $login !== '' ? $login : null];
+            $retirees[] = $e['libelle'];
+        }
         $this->setConfig('champs_perso_' . $cible, json_encode($out, JSON_UNESCAPED_UNICODE));
+        $this->setConfig('champs_perso_' . $cible . '_historique', json_encode(array_values(array_map(
+            fn($e) => array_intersect_key($e, array_flip(['cle', 'libelle', 'type', 'creee_le', 'creee_par', 'supprimee_le', 'supprimee_par'])), $hist)),
+            JSON_UNESCAPED_UNICODE));
+        if (($creees || $retirees || $restaurees) && class_exists('Journal')) {
+            $quoi = self::CHAMPS_PERSO_LIBELLES[$cible];
+            $libCreees = array_map(fn($c) => current(array_filter($out, fn($e) => $e['cle'] === $c))['libelle'] ?? $c, $creees);
+            $parts = [];
+            if ($libCreees)  $parts[] = 'ajoutée(s) : « ' . implode(' », « ', $libCreees) . ' »';
+            if ($retirees)   $parts[] = 'retirée(s) : « ' . implode(' », « ', $retirees) . ' » (valeurs conservées)';
+            if ($restaurees) $parts[] = 'restaurée(s) : « ' . implode(' », « ', $restaurees) . ' »';
+            try { Journal::info('inventaire', "Cases des fiches $quoi " . implode(' ; ', $parts) . ($login !== '' ? " — par $login" : ''), ['cible' => $cible]); }
+            catch (\Throwable $e) { /* le journal ne bloque jamais l'enregistrement */ }
+        }
         return $out;
     }
 
     /** Ajoute les cases absentes (import), sans toucher aux existantes. */
-    public function ajouterChampsPersoDefs(string $cible, array $nouvelles): array {
+    public function ajouterChampsPersoDefs(string $cible, array $nouvelles, string $login = ''): array {
         $defs = $this->getChampsPersoDefs($cible);
         $cles = array_column($defs, 'cle');
         foreach ($nouvelles as $d) {
@@ -1303,7 +1583,7 @@ class Database {
             if ($cle !== '' && in_array($cle, $cles, true)) continue;
             $defs[] = $d; $cles[] = $cle;
         }
-        return $this->setChampsPersoDefs($cible, $defs);
+        return $this->setChampsPersoDefs($cible, $defs, $login);
     }
 
     /**
@@ -1311,7 +1591,10 @@ class Database {
      * (une case absente de $vals n'est pas effacée ; une valeur vide l'efface).
      */
     public function setChampsPersoValeurs(string $cible, int $id, array $vals): void {
-        $table = $cible === 'equipements' ? 'Equipements' : 'Biens';
+        // Une cible inconnue n'écrit RIEN (et surtout pas dans Biens par défaut,
+        // comme le faisait l'ancien « sinon Biens »).
+        if (!self::champsPersoCibleValide($cible)) return;
+        $table = self::CHAMPS_PERSO_CIBLES[$cible];
         $row = $this->fetchOne("SELECT ChampsPerso FROM $table WHERE Id = :id", ['id' => $id]);
         if (!$row) return;
         $cur = json_decode((string)($row['ChampsPerso'] ?? ''), true);
@@ -1356,7 +1639,7 @@ class Database {
     // ══ DOMAINES EMAIL ══
     public function isEmailDomainAllowed(string $email): bool {
         $emailDomain = strtolower((string)substr((string)strrchr($email, '@'), 1));
-        // ⚠️ FIX SÉCURITÉ : « acces.domaine_email_autorise » (config.json),
+        // FIX SÉCURITÉ : « acces.domaine_email_autorise » (config.json),
         // documenté comme restreignant les comptes OAuth à un domaine, était lu
         // (ALLOWED_EMAIL_DOMAIN) mais jamais appliqué. Il l'est désormais, EN
         // PLUS de la liste « domaines_autorises » de la Configuration.
@@ -1407,7 +1690,7 @@ class Database {
      * normalement, pas un droit à s'accorder. Deux cases de plus pour un réglage
      * que personne ne décochait.
      *
-     * ⚠️ « SELECT * », JAMAIS DE COLONNES NOMMÉES SUR « Listes ».
+     * « SELECT * », JAMAIS DE COLONNES NOMMÉES SUR « Listes ».
      * « Obligatoire » et « SaisieLibre » n'existent pas dans les bases
      * antérieures. Les nommer fait échouer la requête entière — et comme
      * l'appelant attrape l'exception, l'échec est SILENCIEUX : la valeur n'est
@@ -1505,7 +1788,7 @@ class Database {
      * de sa catégorie, lus par reglagesCategorie() — lignes existantes d'abord,
      * puis Config pour une catégorie encore vide.
      *
-     * ⚠️ C'EST LA PREMIÈRE VALEUR QUI POSAIT PROBLÈME.
+     * C'EST LA PREMIÈRE VALEUR QUI POSAIT PROBLÈME.
      * L'écran de configuration calculait ces deux drapeaux côté client, en
      * copiant ceux d'une valeur déjà présente. Sur une catégorie VIDE il n'y en
      * a aucune : les drapeaux tombaient à zéro, et la ligne était insérée avec
@@ -1665,7 +1948,7 @@ class Database {
     public function execute(string $sql, array $params = []): void {
         $this->executeInterne($sql, $params);
 
-        // ⚠️ CAPITAL : figer lastInsertId() AVANT d'écrire au journal.
+        // CAPITAL : figer lastInsertId() AVANT d'écrire au journal.
         // L'audit insère une ligne dans la table Journal, ce qui écrase
         // lastInsertId() sur la même connexion PDO. Sans cette capture, tous
         // les add*() — qui appellent lastId() juste après execute() —
@@ -1806,6 +2089,10 @@ class Database {
         if ($this->_dernierIdInsere > 0 && $courant === $this->_idApresAudit) return $this->_dernierIdInsere;
         return (int)$courant;
     }
+    /** Identifiant créé par le dernier execute() d'INSERT (figé avant l'écriture du journal d'audit). */
+    public function dernierIdInsere(): int {
+        return $this->lastId();
+    }
     private function isPg(): bool    { return $this->driver === 'pgsql'; }
     private function isMysql(): bool { return $this->driver === 'mariadb' || $this->driver === 'mysql'; }
 
@@ -1830,7 +2117,9 @@ class Database {
             $seq  = $row['seq'] ?? null;
             if (!$seq) return false;
             // Resync : setval(seq, max(id), true) — true = la prochaine valeur sera max+1
-            $this->pdo->exec("SELECT setval('$seq', COALESCE((SELECT MAX(\"$idColLc\") FROM \"$tableLc\"), 1), true)");
+            // Jamais en arrière : des plages d'identifiants peuvent être réservées
+            // aux appareils synchronisés (Synchro::reserver), au-delà du MAX(Id).
+            $this->pdo->exec("SELECT setval('$seq', GREATEST(COALESCE((SELECT MAX(\"$idColLc\") FROM \"$tableLc\"), 1), (SELECT last_value FROM $seq)), true)");
             return true;
         } catch (\Throwable $e) {
             // Échec silencieux : ne pas bloquer les opérations courantes
@@ -1914,6 +2203,7 @@ class Database {
             'PushSubscriptions','DeclarationsInventaire',
             'ArchivesBoite','ArchivesBordereau','ArchivesDossier',
             'PlanBatiments','PlanEtages','PlanElements','PlanLiens',
+            'Factures','FactureInterventions','PlansMaintenance',
         ];
     }
 
@@ -2016,9 +2306,16 @@ private function calcDepreciationTotal(float $annualite, ?string $startDate, ?st
 }
 
 // ══ AUTH ══
+    /** Empreinte bcrypt sans compte derrière (voir login()). */
+    private const EMPREINTE_FACTICE = '$2y$10$V.Hxy1ShE1iyxn1Ii/1Cb.qIAAePznXRPdeuLFfnb8NZemjM7KuDO';
+
     public function login(string $login, string $password): ?array {
         $user = $this->fetchOne("SELECT * FROM Utilisateurs WHERE LOWER(Login) = LOWER(:login) AND Actif = 1", ['login' => $login]);
-        if (!$user || !password_verify($password, $user['MotDePasse'])) return null;
+        // Identifiant inconnu : un mot de passe est vérifié quand même. Sans cela la
+        // réponse arrivait en ~1 ms au lieu des ~60 ms d'un bcrypt, et le temps de
+        // réponse disait, à qui le mesure, quels identifiants existent.
+        if (!$user) { password_verify($password, self::EMPREINTE_FACTICE); return null; }
+        if (!password_verify($password, (string)($user['MotDePasse'] ?? ''))) return null;
         unset($user['MotDePasse'], $user['ResetToken'], $user['ResetTokenExpiry']);
         return $user;
     }
@@ -2137,7 +2434,7 @@ public function findOrCreateGoogleUser(string $email, string $prenom, string $no
      * Retourne null si non trouvé. Utilisé par le super-admin pour vérifier
      * l'existence d'un compte AVANT création.
      *
-     * ⚠️ FIX PERFS : remplace les patterns `getAllUtilisateurs() + foreach`
+     * FIX PERFS : remplace les patterns `getAllUtilisateurs() + foreach`
      * qui sont O(N) en mémoire et en temps de transfert (transfèrent toute
      * la table au PHP juste pour un seul lookup).
      */
@@ -2499,7 +2796,7 @@ public function deleteContrat(int $id): void {
     /**
      * Numéro d'intervention suivant : INT-AAAAMM-NNNN.
      *
-     * ⚠️ FIX BUG : le compteur était un COUNT(*) des interventions dont la
+     * FIX BUG : le compteur était un COUNT(*) des interventions dont la
      * DateRealisation tombait dans le mois. Il produisait des DOUBLONS dès
      * qu'une intervention du mois était supprimée (5 interventions, on supprime
      * la n°2 → la suivante reprenait le n°5), ou qu'une intervention datée
@@ -2564,6 +2861,7 @@ public function deleteContrat(int $id): void {
         $p
     );
     $newId = $this->lastId();
+    if (array_key_exists('lieu', $i)) $this->poserLieuIntervention($newId, $i['lieu']);
     $this->dedoublonnerNumero('Interventions', $newId, (string)$i['numero'], '/^INT-\d{6}-\d+$/',
         fn() => $this->generateInterventionNumero());
     // Si lié à une demande, mettre à jour le statut de la demande
@@ -2583,6 +2881,9 @@ public function updateIntervention(int $id, array $i, string $login=''): void {
         "UPDATE Interventions SET Numero=:numero,Type=:type,Priorite=:priorite,TypeLiaison=:typeLiaison,BienId=:bienId,EquipementsIds=:equipementsIds,ContratId=:contratId,DemandeId=:demandeId,SocieteManuelle=:societeManuelle,Description=:description,DateRealisation=:dateRealisation,DureeHeures=:dureeHeures,Montant=:montant,MontantMainOeuvre=:montantMainOeuvre,EstRecurrente=:estRecurrente,Recurrence=:recurrence,DateProchaine=:dateProchaine,Statut=:statut,Commentaire=:commentaire,AgentNom=:agentNom,AgentPrenom=:agentPrenom,AgentTel=:agentTel,AgentEmail=:agentEmail,DateDemande=:dateDemande,DateIntervention=:dateIntervention,RelanceChamp=:relanceChamp,RelanceDate=:relanceDate,TypeBudget=:typeBudget,DateEnvoiMail=:dateEnvoiMail,CodeNumeroDemande=:codeNumeroDemande,MontantHT=:montantHT,NotesJSON=:notesJSON,DelaiAffichageDashboard=:delaiAffichageDashboard,HistoriqueModifDates=:historiqueModifDates,SansSuiviAdmin=:sansSuiviAdmin,UpdatedAt=:updatedAt,UpdatedBy=:updatedBy WHERE Id=:id",
         $p
     );
+    // Le lieu n'est écrit que s'il est envoyé : un écran (ou un import) qui ne le
+    // connaît pas ne l'efface pas.
+    if (array_key_exists('lieu', $i)) $this->poserLieuIntervention($id, $i['lieu']);
 
     // Sync statut demande liée
     $demandeId = $p['demandeId'] ?? null;
@@ -2614,7 +2915,7 @@ public function updateIntervention(int $id, array $i, string $login=''): void {
             $this->execute("DELETE FROM IntervStockLignes WHERE InterventionId = :id", ['id' => $id]);
             // Supprimer les lignes de devis liées
             $this->execute("DELETE FROM IntervDevisLignes WHERE InterventionId = :id", ['id' => $id]);
-            // ⚠️ FIX : supprimer les documents joints. La ligne d'intervention
+            // FIX : supprimer les documents joints. La ligne d'intervention
             // étant physiquement supprimée, ces documents deviendraient
             // définitivement inatteignables — et comme le contenu est stocké en
             // base64 dans la colonne Donnees, ils gonflaient la base sans
@@ -2628,6 +2929,15 @@ public function updateIntervention(int $id, array $i, string $login=''): void {
             $this->execute("DELETE FROM Interventions WHERE Id = :id", ['id' => $id]);
         }
     }
+    /** Lieu / bâtiment d'une intervention : texte libre, une ligne, 120 caractères au plus. */
+    public static function lieuPropre($v): ?string {
+        $t = trim(preg_replace('/\s+/u', ' ', (string)$v));
+        return $t === '' ? null : mb_substr($t, 0, 120);
+    }
+    public function poserLieuIntervention(int $id, $lieu): void {
+        $this->execute("UPDATE Interventions SET Lieu = :l WHERE Id = :id", ['l' => self::lieuPropre($lieu), 'id' => $id]);
+    }
+
     private function mapIntervention(array $i): array { return ['numero'=>$i['numero']??'','type'=>$i['type']??'Préventive','priorite'=>$i['priorite']??'','typeLiaison'=>$i['typeLiaison']??'Bien','bienId'=>($i['bienId']??null)?(int)$i['bienId']:null,'equipementsIds'=>$i['equipementsIds']??'','contratId'=>($i['contratId']??null)?(int)$i['contratId']:null,'demandeId'=>($i['demandeId']??null)?(int)$i['demandeId']:null,'societeManuelle'=>$i['societeManuelle']??'','description'=>$i['description']??'','dateRealisation'=>($i['dateRealisation']??'')?:null,'dureeHeures'=>(float)($i['dureeHeures']??0),'montant'=>(float)($i['montant']??0),'montantMainOeuvre'=>(float)($i['montantMainOeuvre']??0),'estRecurrente'=>(int)(bool)($i['estRecurrente']??false),'recurrence'=>$i['recurrence']??'','dateProchaine'=>($i['dateProchaine']??'')?:null,'statut'=>$i['statut']??'Planifiée','commentaire'=>$i['commentaire']??'','agentNom'=>$i['agentNom']??'','agentPrenom'=>$i['agentPrenom']??'','agentTel'=>$i['agentTel']??'','agentEmail'=>$i['agentEmail']??'','dateDemande'=>($i['dateDemande']??'')?:null,'dateIntervention'=>($i['dateIntervention']??'')?:null,'relanceChamp'=>$i['relanceChamp']??'','relanceDate'=>($i['relanceDate']??'')?:null,'typeBudget'=>$i['typeBudget']??'','dateEnvoiMail'=>($i['dateEnvoiMail']??'')?:null,'codeNumeroDemande'=>$i['codeNumeroDemande']??'','montantHT'=>(float)($i['montantHT']??0),'notesJSON'=>$i['notesJSON']??'[]','delaiAffichageDashboard'=>(int)($i['delaiAffichageDashboard']??0),'historiqueModifDates'=>$i['historiqueModifDates']??'[]','sansSuiviAdmin'=>(int)(bool)($i['sansSuiviAdmin']??false)]; }
 
     // ══ STOCK ══
@@ -2653,7 +2963,7 @@ public function updateStock(int $id, array $s, string $login=''): void {
     /**
      * Retire $qte unités du stock, de façon ATOMIQUE, ou lève une exception.
      *
-     * ⚠️ FIX BUG : la quantité était plafonnée à 0 en silence (MAX(0, …)).
+     * FIX BUG : la quantité était plafonnée à 0 en silence (MAX(0, …)).
      * Consommer 5 pièces sur un stock de 2 donnait un stock de 0 mais une ligne
      * de 5 ; supprimer ensuite la ligne restituait 5 → le stock passait à 5,
      * trois pièces apparues de nulle part. Une quantité négative, elle,
@@ -2927,19 +3237,22 @@ private function mapGestionMateriel(array $c): array {
     public function getInterventionsPrevues(): array {
         $bienLabel = $this->sqlFamilleLabel('b');
         $all = $this->fetchAll(
-            "SELECT i.*, b.Numero AS BienNumero, $bienLabel AS BienLabel,
+            "SELECT i.*, b.Numero AS BienNumero, $bienLabel AS BienLabel, b.Batiment AS BienBatiment,
              b.Famille AS BienFamille, b.SousFamille AS BienSousFamille, b.InfoProduit AS BienInfoProduit,
-             c.Societe AS ContratSociete
+             c.Societe AS ContratSociete, pmx.Lieu AS PlanLieu
              FROM Interventions i
              LEFT JOIN Biens b ON i.BienId=b.Id
              LEFT JOIN Contrats c ON i.ContratId=c.Id
+             LEFT JOIN PlansMaintenance pmx ON i.PlanId=pmx.Id
              WHERE i.Statut = 'Planifiée'
              ORDER BY i.DateIntervention ASC, i.Id DESC"
         );
         $today = strtotime('today');
         return array_values(array_filter($all, function($i) use ($today) {
             $type = $i['Type'] ?? '';
-            if ($type === 'Préventive' || $type === 'Contrôle réglementaire') return true;
+            // Passage d'un plan (plusieurs dans l'année) : comme une curative,
+            // affiché à l'approche de sa date — sinon toute l'année s'afficherait.
+            if (empty($i['PlanId']) && ($type === 'Préventive' || $type === 'Contrôle réglementaire')) return true;
             // Curative / Divers : vérifier le délai
             $dateInterv = $i['DateIntervention'] ?? '';
             if (!$dateInterv) return false;
@@ -2953,15 +3266,16 @@ private function mapGestionMateriel(array $c): array {
     public function getInterventionsEnCours(): array {
         $bienLabel = $this->sqlFamilleLabel('b');
         return $this->fetchAll(
-            "SELECT i.*, b.Numero AS BienNumero, $bienLabel AS BienLabel,
+            "SELECT i.*, b.Numero AS BienNumero, $bienLabel AS BienLabel, b.Batiment AS BienBatiment,
              b.Famille AS BienFamille, b.SousFamille AS BienSousFamille, b.InfoProduit AS BienInfoProduit,
-             c.Societe AS ContratSociete
+             c.Societe AS ContratSociete, pmx.Lieu AS PlanLieu
              FROM Interventions i
              LEFT JOIN Biens b ON i.BienId=b.Id
              LEFT JOIN Contrats c ON i.ContratId=c.Id
+             LEFT JOIN PlansMaintenance pmx ON i.PlanId=pmx.Id
              WHERE i.Statut = 'En cours'
              ORDER BY i.UpdatedAt DESC, i.Id DESC
-             LIMIT 20"
+             LIMIT 300"
         );
     }
 
@@ -2995,9 +3309,9 @@ private function mapGestionMateriel(array $c): array {
         $bienLabel = $this->sqlFamilleLabel('b');
         $cbdcConcat = $this->sqlGroupConcat('f.TypeBudget');
         return $this->fetchAll(
-            "SELECT i.*, d.Titre AS DemandeTitre, b.Numero AS BienNumero, $bienLabel AS BienLabel,
+            "SELECT i.*, d.Titre AS DemandeTitre, b.Numero AS BienNumero, $bienLabel AS BienLabel, b.Batiment AS BienBatiment,
              b.Famille AS BienFamille, b.SousFamille AS BienSousFamille, b.InfoProduit AS BienInfoProduit,
-             c.Societe AS ContratSociete,
+             c.Societe AS ContratSociete, pmx.Lieu AS PlanLieu,
              (SELECT COALESCE(SUM(fi.MontantLigne),0) FROM FactureInterventions fi WHERE fi.InterventionId = i.Id) AS TotalFacture,
              (SELECT COUNT(*) FROM FactureInterventions fi WHERE fi.InterventionId = i.Id) AS NbFactures,
              (SELECT $cbdcConcat FROM FactureInterventions fi JOIN Factures f ON f.Id = fi.FactureId WHERE fi.InterventionId = i.Id AND COALESCE(f.TypeBudget,'') <> '') AS CbdcFactures,
@@ -3006,6 +3320,7 @@ private function mapGestionMateriel(array $c): array {
              LEFT JOIN DemandesIntervention d ON i.DemandeId=d.Id
              LEFT JOIN Biens b ON i.BienId=b.Id
              LEFT JOIN Contrats c ON i.ContratId=c.Id
+             LEFT JOIN PlansMaintenance pmx ON i.PlanId=pmx.Id
              WHERE i.Statut != 'Archivée'
              ORDER BY i.Id DESC"
         );
@@ -3014,7 +3329,7 @@ private function mapGestionMateriel(array $c): array {
     /**
      * Version paginée de getAllInterventions().
      *
-     * ⚠️ FIX PERFS : permet aux clients qui en ont besoin de paginer côté
+     * FIX PERFS : permet aux clients qui en ont besoin de paginer côté
      * serveur sans tirer toute la table. Le frontend continue d'utiliser
      * getAllInterventions() tant qu'il n'a pas migré.
      *
@@ -3034,7 +3349,7 @@ private function mapGestionMateriel(array $c): array {
             $params['statut'] = $filters['statut'];
         }
         if (!empty($filters['assignee'])) {
-            // ⚠️ FIX : il n'existe pas de colonne AssigneA sur Interventions —
+            // FIX : il n'existe pas de colonne AssigneA sur Interventions —
             // l'agent qui prend en charge est stocké en clair dans AgentNom /
             // AgentPrenom (cf. prise_en_charge_intervention). On résout donc
             // l'id utilisateur en nom/prénom et on filtre là-dessus. Avant, ce
@@ -3064,16 +3379,17 @@ private function mapGestionMateriel(array $c): array {
 
         $bienLabel = $this->sqlFamilleLabel('b');
 
-        // ⚠️ LIMIT/OFFSET en injection directe car PDO ne bind pas toujours
+        // LIMIT/OFFSET en injection directe car PDO ne bind pas toujours
         // ces placeholders selon le driver. Les valeurs sont déjà castées en int.
         $items = $this->fetchAll(
-            "SELECT i.*, d.Titre AS DemandeTitre, b.Numero AS BienNumero, $bienLabel AS BienLabel,
+            "SELECT i.*, d.Titre AS DemandeTitre, b.Numero AS BienNumero, $bienLabel AS BienLabel, b.Batiment AS BienBatiment,
              b.Famille AS BienFamille, b.SousFamille AS BienSousFamille, b.InfoProduit AS BienInfoProduit,
-             c.Societe AS ContratSociete
+             c.Societe AS ContratSociete, pmx.Lieu AS PlanLieu
              FROM Interventions i
              LEFT JOIN DemandesIntervention d ON i.DemandeId=d.Id
              LEFT JOIN Biens b ON i.BienId=b.Id
              LEFT JOIN Contrats c ON i.ContratId=c.Id
+             LEFT JOIN PlansMaintenance pmx ON i.PlanId=pmx.Id
              $whereSql
              ORDER BY i.Id DESC
              LIMIT $limit OFFSET $offset",
@@ -3087,12 +3403,278 @@ private function mapGestionMateriel(array $c): array {
             'offset' => $offset,
         ];
     }
+    // ══ PLANS DE MAINTENANCE (préventif, contrôle réglementaire) ══════════════
+    //
+    // Un plan prévoit plusieurs passages du même genre dans l'année (« entretien
+    // CTA, 4 fois par an »). Chaque passage est une intervention ordinaire
+    // (Interventions.PlanId) : il se prend en charge, se clôture, se facture et
+    // s'archive comme les autres. Le plan porte ce qui est commun et le prix :
+    //   passage : chaque passage a son prix (PrixPassage, modifiable ensuite) ;
+    //   reparti : un prix unique, partagé à parts égales entre les passages
+    //             (les passages terminés gardent le leur, le reste se partage
+    //             entre ceux qui restent) ;
+    //   forfait : un prix unique, porté par le plan seul ; les passages sont à 0.
+
+    public const PLAN_NATURES = ['Préventive', 'Contrôle réglementaire'];
+    public const PLAN_MODES_PRIX = ['passage', 'reparti', 'forfait'];
+    /** Statuts d'un passage qu'un plan ne modifie plus (travail engagé ou fait). */
+    private const PLAN_PASSAGE_FIGE = ['En cours', 'Réalisée', 'Validée', 'Archivée'];
+
+    public function getPlansMaintenance(?string $nature = null, ?int $annee = null): array {
+        $bienLabel = $this->sqlFamilleLabel('b');
+        $where = []; $p = [];
+        if ($nature !== null && $nature !== '') { $where[] = 'p.Nature = :n'; $p['n'] = $nature; }
+        if ($annee) { $where[] = 'p.Annee = :a'; $p['a'] = $annee; }
+        $plans = $this->fetchAll(
+            "SELECT p.*, b.Numero AS BienNumero, $bienLabel AS BienLabel, b.Batiment AS BienBatiment,
+                    c.Societe AS ContratSociete, c.Numero AS ContratNumero,
+                    (SELECT COUNT(*) FROM Documents dc WHERE dc.EntiteType = 'PlanMaintenance' AND dc.EntiteId = p.Id) AS NbDocuments
+             FROM PlansMaintenance p
+             LEFT JOIN Biens b ON p.BienId = b.Id
+             LEFT JOIN Contrats c ON p.ContratId = c.Id"
+            . ($where ? ' WHERE ' . implode(' AND ', $where) : '') .
+            " ORDER BY p.Annee DESC, p.Titre", $p);
+        if (!$plans) return [];
+        $ids = array_map(fn($r) => (int)$r['Id'], $plans);
+        $passages = $this->fetchAll(
+            "SELECT Id, PlanId, Numero, DateIntervention, DateRealisation, Statut, MontantHT, AgentNom, AgentPrenom
+             FROM Interventions WHERE PlanId IN (" . implode(',', $ids) . ")
+             ORDER BY DateIntervention, Id");
+        $parPlan = [];
+        foreach ($passages as $pa) $parPlan[(int)$pa['PlanId']][] = $pa;
+        foreach ($plans as &$pl) {
+            $pl['Passages'] = $parPlan[(int)$pl['Id']] ?? [];
+            $pl['CoutTotal'] = $this->planCout($pl, $pl['Passages']);
+        }
+        return $plans;
+    }
+
+    public function getPlanMaintenance(int $id): ?array {
+        $p = $this->fetchOne("SELECT * FROM PlansMaintenance WHERE Id = :id", ['id' => $id]);
+        if (!$p) return null;
+        $p['Passages'] = $this->fetchAll(
+            "SELECT Id, PlanId, Numero, DateIntervention, DateRealisation, Statut, MontantHT
+             FROM Interventions WHERE PlanId = :id ORDER BY DateIntervention, Id", ['id' => $id]);
+        $p['CoutTotal'] = $this->planCout($p, $p['Passages']);
+        return $p;
+    }
+
+    /** Coût du plan : le forfait, sinon la somme des passages. */
+    private function planCout(array $plan, array $passages): float {
+        if (($plan['ModePrix'] ?? '') === 'forfait') return round((float)($plan['PrixGlobal'] ?? 0), 2);
+        return round(array_sum(array_map(fn($x) => (float)($x['MontantHT'] ?? 0), $passages)), 2);
+    }
+
+    /**
+     * Valide et normalise un plan reçu de l'écran.
+     * @throws \InvalidArgumentException message lisible par l'utilisateur
+     */
+    private function planNormaliser(array $d): array {
+        $nature = (string)($d['nature'] ?? '');
+        if (!in_array($nature, self::PLAN_NATURES, true)) throw new \InvalidArgumentException('Nature du plan inconnue.');
+        $titre = trim((string)($d['titre'] ?? ''));
+        if ($titre === '') throw new \InvalidArgumentException('Donnez un titre au plan (par exemple « Entretien CTA »).');
+        $mode = (string)($d['modePrix'] ?? 'passage');
+        if (!in_array($mode, self::PLAN_MODES_PRIX, true)) throw new \InvalidArgumentException('Mode de prix inconnu.');
+        $prix = fn($v) => max(0.0, round((float)str_replace(',', '.', (string)($v ?? 0)), 2));
+        $annee = (int)($d['annee'] ?? date('Y'));
+        if ($annee < 2000 || $annee > 2100) throw new \InvalidArgumentException('Année invalide.');
+        $typeLiaison = ($d['typeLiaison'] ?? 'Bien') === 'Equipement' ? 'Equipement' : 'Bien';
+        $equip = implode(',', array_filter(array_map('intval', explode(',', (string)($d['equipementsIds'] ?? '')))));
+        return [
+            'nature' => $nature, 'titre' => mb_substr($titre, 0, 200),
+            'description' => (string)($d['description'] ?? ''),
+            'annee' => $annee,
+            'periodicite' => mb_substr((string)($d['periodicite'] ?? 'Personnalisée'), 0, 40),
+            'typeLiaison' => $typeLiaison,
+            'bienId' => !empty($d['bienId']) ? (int)$d['bienId'] : null,
+            'equipementsIds' => $equip,
+            'contratId' => !empty($d['contratId']) ? (int)$d['contratId'] : null,
+            'societeManuelle' => mb_substr((string)($d['societeManuelle'] ?? ''), 0, 200),
+            'modePrix' => $mode,
+            'prixPassage' => $prix($d['prixPassage'] ?? 0),
+            'prixGlobal' => $prix($d['prixGlobal'] ?? 0),
+            'delaiAffichage' => max(0, min(365, (int)($d['delaiAffichage'] ?? 30))),
+            'statut' => ($d['statut'] ?? 'Actif') === 'Clos' ? 'Clos' : 'Actif',
+            'commentaire' => (string)($d['commentaire'] ?? ''),
+        ];
+    }
+
+    /**
+     * Passages demandés : [{id?, date}] ou ['2026-03-01', …]. Dates AAAA-MM-JJ.
+     * @throws \InvalidArgumentException
+     */
+    private function planPassagesDemandes($liste): array {
+        if (!is_array($liste)) $liste = [];
+        $out = [];
+        foreach ($liste as $x) {
+            $date = is_array($x) ? (string)($x['date'] ?? '') : (string)$x;
+            $pid  = is_array($x) ? (int)($x['id'] ?? 0) : 0;
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4))) {
+                throw new \InvalidArgumentException("Date de passage invalide : « $date ».");
+            }
+            $out[] = ['id' => $pid, 'date' => $date];
+        }
+        if (!$out) throw new \InvalidArgumentException('Prévoyez au moins un passage.');
+        if (count($out) > 366) throw new \InvalidArgumentException('366 passages au plus par plan.');
+        return $out;
+    }
+
+    public function addPlanMaintenance(array $d, string $login = ''): int {
+        $p = $this->planNormaliser($d);
+        $passages = $this->planPassagesDemandes($d['passages'] ?? []);
+        $now = date('Y-m-d H:i:s');
+        $prefixe = ($p['nature'] === 'Préventive' ? 'PRV-' : 'CRT-') . $p['annee'] . '-';
+        $numero = $this->numeroSuivant('PlansMaintenance', $prefixe);
+        $this->pdo->beginTransaction();
+        try {
+            $this->execute(
+                "INSERT INTO PlansMaintenance (Numero,Nature,Titre,Description,Annee,Periodicite,TypeLiaison,BienId,EquipementsIds,ContratId,SocieteManuelle,ModePrix,PrixPassage,PrixGlobal,DelaiAffichage,Statut,Commentaire,CreatedAt,CreatedBy,UpdatedAt,UpdatedBy)
+                 VALUES (:numero,:nature,:titre,:description,:annee,:periodicite,:typeLiaison,:bienId,:equipementsIds,:contratId,:societeManuelle,:modePrix,:prixPassage,:prixGlobal,:delaiAffichage,:statut,:commentaire,:c,:cb,:u,:ub)",
+                $p + ['numero' => $numero, 'c' => $now, 'cb' => $login, 'u' => $now, 'ub' => $login]);
+            $id = $this->lastId();
+            if (array_key_exists('lieu', $d)) $this->execute("UPDATE PlansMaintenance SET Lieu = :l WHERE Id = :id", ['l' => self::lieuPropre($d['lieu']), 'id' => $id]);
+            $this->planSynchroniser($id, $p, $passages, $login);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) $this->pdo->rollBack();
+            throw $e;
+        }
+        return $id;
+    }
+
+    public function updatePlanMaintenance(int $id, array $d, string $login = ''): void {
+        $avant = $this->fetchOne("SELECT * FROM PlansMaintenance WHERE Id = :id", ['id' => $id]);
+        if (!$avant) throw new \InvalidArgumentException('Plan introuvable.');
+        $d['nature'] = $avant['Nature'];                  // la nature d'un plan ne change pas
+        $p = $this->planNormaliser($d);
+        $passages = array_key_exists('passages', $d) ? $this->planPassagesDemandes($d['passages']) : null;
+        $this->pdo->beginTransaction();
+        try {
+            $this->execute(
+                "UPDATE PlansMaintenance SET Titre=:titre,Description=:description,Annee=:annee,Periodicite=:periodicite,TypeLiaison=:typeLiaison,BienId=:bienId,EquipementsIds=:equipementsIds,ContratId=:contratId,SocieteManuelle=:societeManuelle,ModePrix=:modePrix,PrixPassage=:prixPassage,PrixGlobal=:prixGlobal,DelaiAffichage=:delaiAffichage,Statut=:statut,Commentaire=:commentaire,UpdatedAt=:u,UpdatedBy=:ub WHERE Id=:id AND Nature=:nature",
+                $p + ['u' => date('Y-m-d H:i:s'), 'ub' => $login, 'id' => $id]);
+            // Lieu : écrit s'il est envoyé (les passages le lisent par leur plan).
+            if (array_key_exists('lieu', $d)) $this->execute("UPDATE PlansMaintenance SET Lieu = :l WHERE Id = :id", ['l' => self::lieuPropre($d['lieu']), 'id' => $id]);
+            $this->planSynchroniser($id, $p, $passages, $login);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Met les passages du plan en accord avec lui.
+     *   - $demandes null : on ne touche pas aux dates (prix et champs communs seulement).
+     *   - passage existant (id) : nouvelle date si encore « Planifiée » ;
+     *   - date sans id : nouveau passage ;
+     *   - passage « Planifiée » absent de la liste : supprimé ;
+     *   - passage engagé (en cours, réalisé, terminé, archivé) : jamais modifié ni supprimé.
+     */
+    private function planSynchroniser(int $planId, array $p, ?array $demandes, string $login): void {
+        $existants = $this->fetchAll("SELECT * FROM Interventions WHERE PlanId = :id ORDER BY DateIntervention, Id", ['id' => $planId]);
+        $parId = [];
+        foreach ($existants as $e) $parId[(int)$e['Id']] = $e;
+        $fige = fn(array $e) => in_array((string)$e['Statut'], self::PLAN_PASSAGE_FIGE, true);
+        $description = $p['titre'] . ($p['description'] !== '' ? "\n" . $p['description'] : '');
+        $now = date('Y-m-d H:i:s');
+
+        if ($demandes !== null) {
+            $gardes = [];
+            foreach ($demandes as $dm) {
+                if ($dm['id'] && isset($parId[$dm['id']])) {
+                    $gardes[$dm['id']] = true;
+                    $e = $parId[$dm['id']];
+                    if (!$fige($e) && (string)$e['DateIntervention'] !== $dm['date']) {
+                        $this->execute("UPDATE Interventions SET DateIntervention=:d, DateProchaine=:d2, UpdatedAt=:u, UpdatedBy=:ub WHERE Id=:id",
+                            ['d' => $dm['date'], 'd2' => $dm['date'], 'u' => $now, 'ub' => $login, 'id' => $dm['id']]);
+                    }
+                    continue;
+                }
+                // Nouveau passage
+                $nid = $this->addIntervention([
+                    'type' => $p['nature'], 'statut' => 'Planifiée', 'description' => $description,
+                    'typeLiaison' => $p['typeLiaison'], 'bienId' => $p['bienId'], 'equipementsIds' => $p['equipementsIds'],
+                    'contratId' => $p['contratId'], 'societeManuelle' => $p['societeManuelle'],
+                    'dateIntervention' => $dm['date'], 'dateProchaine' => $dm['date'],
+                    'delaiAffichageDashboard' => $p['delaiAffichage'], 'montantHT' => 0,
+                ], $login);
+                $this->execute("UPDATE Interventions SET PlanId = :p WHERE Id = :id", ['p' => $planId, 'id' => $nid]);
+            }
+            foreach ($parId as $eid => $e) {
+                if (!isset($gardes[$eid]) && !$fige($e)) $this->deleteIntervention($eid, $login);
+            }
+        }
+
+        // Champs communs et prix des passages non engagés
+        $passages = $this->fetchAll("SELECT Id, Statut, MontantHT FROM Interventions WHERE PlanId = :id ORDER BY DateIntervention, Id", ['id' => $planId]);
+        $libres = array_values(array_filter($passages, fn($x) => !$fige($x)));
+        $prixLibres = [];
+        if ($p['modePrix'] === 'passage') {
+            foreach ($libres as $x) $prixLibres[(int)$x['Id']] = $p['prixPassage'];
+        } elseif ($p['modePrix'] === 'reparti' && $libres) {
+            $dejaFige = array_sum(array_map(fn($x) => (float)$x['MontantHT'], array_filter($passages, $fige)));
+            $reste = max(0.0, round($p['prixGlobal'] - $dejaFige, 2));
+            $n = count($libres);
+            $part = floor($reste / $n * 100) / 100;
+            foreach ($libres as $i => $x) {
+                // Les centimes qui restent vont au dernier passage : le total tombe juste.
+                $prixLibres[(int)$x['Id']] = ($i === $n - 1) ? round($reste - $part * ($n - 1), 2) : $part;
+            }
+        } else {
+            foreach ($libres as $x) $prixLibres[(int)$x['Id']] = 0.0;
+        }
+        foreach ($libres as $x) {
+            $this->execute(
+                "UPDATE Interventions SET Type=:t, Description=:de, TypeLiaison=:tl, BienId=:b, EquipementsIds=:e, ContratId=:c,
+                        SocieteManuelle=:s, DelaiAffichageDashboard=:da, MontantHT=:m, UpdatedAt=:u, UpdatedBy=:ub WHERE Id=:id",
+                ['t' => $p['nature'], 'de' => $description, 'tl' => $p['typeLiaison'], 'b' => $p['bienId'], 'e' => $p['equipementsIds'],
+                 'c' => $p['contratId'], 's' => $p['societeManuelle'], 'da' => $p['delaiAffichage'],
+                 'm' => $prixLibres[(int)$x['Id']] ?? 0.0, 'u' => $now, 'ub' => $login, 'id' => (int)$x['Id']]);
+        }
+    }
+
+    /**
+     * Supprime un plan : ses passages encore « Planifiée » partent avec lui ;
+     * ceux qui sont engagés ou faits restent, détachés du plan (historique,
+     * factures et budget intacts). Renvoie [supprimés, gardés].
+     */
+    public function deletePlanMaintenance(int $id, string $login = ''): array {
+        $plan = $this->fetchOne("SELECT * FROM PlansMaintenance WHERE Id = :id", ['id' => $id]);
+        if (!$plan) return [0, 0];
+        $sup = 0; $gardes = 0;
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($this->fetchAll("SELECT Id, Statut FROM Interventions WHERE PlanId = :id", ['id' => $id]) as $e) {
+                if (in_array((string)$e['Statut'], self::PLAN_PASSAGE_FIGE, true)) {
+                    $this->execute("UPDATE Interventions SET PlanId = NULL WHERE Id = :i", ['i' => (int)$e['Id']]);
+                    $gardes++;
+                } else {
+                    $this->deleteIntervention((int)$e['Id'], $login);
+                    $sup++;
+                }
+            }
+            // Documents du plan : inatteignables sans lui (même règle que deleteIntervention).
+            $this->execute("DELETE FROM Documents WHERE EntiteType = 'PlanMaintenance' AND EntiteId = :id", ['id' => $id]);
+            $this->logSuppression('PlansMaintenance', $id, (string)$plan['Numero'], (string)$plan['Titre'], $login);
+            $this->execute("DELETE FROM PlansMaintenance WHERE Id = :id", ['id' => $id]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) $this->pdo->rollBack();
+            throw $e;
+        }
+        return [$sup, $gardes];
+    }
+
     public function getInterventionsArchivees(): array {
         return $this->fetchAll(
-            "SELECT i.*, d.Titre AS DemandeTitre, b.Numero AS BienNumero
+            "SELECT i.*, d.Titre AS DemandeTitre, b.Numero AS BienNumero,
+                    pm.Numero AS PlanNumero, pm.Titre AS PlanTitre
              FROM Interventions i
              LEFT JOIN DemandesIntervention d ON i.DemandeId=d.Id
              LEFT JOIN Biens b ON i.BienId=b.Id
+             LEFT JOIN PlansMaintenance pm ON i.PlanId=pm.Id
              WHERE i.Statut = 'Archivée'
              ORDER BY i.DateArchivage DESC, i.Id DESC"
         );
@@ -3469,7 +4051,7 @@ private function mapGestionMateriel(array $c): array {
     public function getStatsAvanceesCompletes(array $filtres = []): array {
         $dateDebut = $filtres['dateDebut'] ?? null;
         $dateFin   = $filtres['dateFin']   ?? null;
-        // ⚠️ FIX : ces 2 filtres étaient proposés dans l'UI mais jamais appliqués
+        // FIX : ces 2 filtres étaient proposés dans l'UI mais jamais appliqués
         // (la route ne les transmettait pas et la requête ne les utilisait pas).
         $typeInterv   = $filtres['typeInterv']   ?? null;
         $statutInterv = $filtres['statutInterv'] ?? null;
@@ -3498,7 +4080,7 @@ private function mapGestionMateriel(array $c): array {
             // factures ne sont saisies qu'en HT).
             'facturesParBudget'    => $this->fetchAll("SELECT COALESCE(NULLIF(TypeBudget,''),'Non renseigné') as TypeBudget,COUNT(*) as Nb,COALESCE(SUM(COALESCE(NULLIF(MontantTTC,0),MontantHT,0)),0) as MontantTotal FROM Factures GROUP BY COALESCE(NULLIF(TypeBudget,''),'Non renseigné') ORDER BY MontantTotal DESC"),
             'facturesParFournisseur'=> $this->fetchAll("SELECT COALESCE(NULLIF(Fournisseur,''),'Non renseigné') as Societe,COUNT(*) as Nb,COALESCE(SUM(COALESCE(NULLIF(MontantTTC,0),MontantHT,0)),0) as Total FROM Factures GROUP BY COALESCE(NULLIF(Fournisseur,''),'Non renseigné') ORDER BY Total DESC LIMIT 10"),
-            // ⚠️ FIX PG 22007 : on n'utilise PAS sqlYearMonth() ici (qui ferait
+            // FIX PG 22007 : on n'utilise PAS sqlYearMonth() ici (qui ferait
             // (DateFacture)::DATE et planterait sur les dates héritées valant ''
             // au lieu de NULL). La date étant stockée en texte 'YYYY-MM-DD', on
             // extrait directement 'YYYY-MM' (aucune conversion = aucune erreur),
@@ -3516,6 +4098,13 @@ private function mapGestionMateriel(array $c): array {
             'totalBiens'          => (int)$this->pdo->query("SELECT COUNT(*) FROM Biens WHERE DateSuppression IS NULL AND (Etat IS NULL OR Etat NOT IN ('Jete/Recycle','Don/Vendu'))")->fetchColumn(),
             'totalEquipements'    => (int)$this->pdo->query("SELECT COUNT(*) FROM Equipements WHERE DateSuppression IS NULL AND (Etat IS NULL OR Etat NOT IN ('Jete/Recycle','Don/Vendu'))")->fetchColumn(),
             'interventionsActives'=> (int)$this->pdo->query("SELECT COUNT(*) FROM Interventions WHERE Statut IN ('Planifiée','En cours')")->fetchColumn(),
+            // Détail du chiffre « Interventions actives » : seul, il mêlait le travail en
+            // cours et les passages planifiés jusqu'à l'an prochain (plans, historique
+            // importé) — 165 « actives » pour 20 réellement en cours. Date en texte ISO :
+            // la comparaison lexicographique avec la date du jour suffit sur les trois moteurs.
+            'interventionsEnCours'   => (int)$this->pdo->query("SELECT COUNT(*) FROM Interventions WHERE Statut = 'En cours'")->fetchColumn(),
+            'interventionsPlanifiees'=> (int)$this->pdo->query("SELECT COUNT(*) FROM Interventions WHERE Statut = 'Planifiée'")->fetchColumn(),
+            'interventionsEnRetard'  => (int)($this->fetchOne("SELECT COUNT(*) AS n FROM Interventions WHERE Statut = 'Planifiée' AND DateIntervention IS NOT NULL AND DateIntervention <> '' AND SUBSTR(DateIntervention,1,10) < :j", ['j' => date('Y-m-d')])['n'] ?? 0),
             'stockEnAlerte'       => (int)$this->pdo->query("SELECT COUNT(*) FROM Stock WHERE Quantite <= SeuilAlerte")->fetchColumn(),
             // La liste de valeurs livrée écrit « Expire » (sans accent) : le compteur
             // cherchait « Expiré » et restait à 0. Les deux graphies sont comptées.
@@ -3541,9 +4130,10 @@ private function mapGestionMateriel(array $c): array {
      * @return array Liste ORDONNÉE du plus ancien au plus récent :
      *               [ ['mois'=>'YYYY-MM','annee'=>2026,'label'=>'Fév','count'=>3], … ]
      */
-    public function getInterventionsParMois(int $months = 6, ?string $debut = null, ?string $fin = null): array {
-        $labelsFr = ['01'=>'Jan','02'=>'Fév','03'=>'Mar','04'=>'Avr','05'=>'Mai','06'=>'Jun',
-                     '07'=>'Jul','08'=>'Aoû','09'=>'Sep','10'=>'Oct','11'=>'Nov','12'=>'Déc'];
+    public function getInterventionsParMois(int $months = 6, ?string $debut = null, ?string $fin = null, ?string $type = null): array {
+        // Abréviations françaises usuelles (« Jun », « Jul » se lisaient en anglais).
+        $labelsFr = ['01'=>'Janv','02'=>'Févr','03'=>'Mars','04'=>'Avr','05'=>'Mai','06'=>'Juin',
+                     '07'=>'Juil','08'=>'Août','09'=>'Sept','10'=>'Oct','11'=>'Nov','12'=>'Déc'];
 
         // Convertit 'YYYY-MM' (ou 'YYYY-MM-DD') en 1er jour du mois ; null si invalide.
         $mkMonth = static function (?string $s): ?\DateTimeImmutable {
@@ -3583,10 +4173,12 @@ private function mapGestionMateriel(array $c): array {
         $rows = $this->fetchAll(
             "SELECT DateRealisation, DateIntervention, CreatedAt
              FROM Interventions
-             WHERE COALESCE(DateRealisation,'') >= :c1
+             WHERE (COALESCE(DateRealisation,'') >= :c1
                 OR COALESCE(DateIntervention,'') >= :c2
-                OR COALESCE(CreatedAt,'')        >= :c3",
-            ['c1' => $cut, 'c2' => $cut, 'c3' => $cut]
+                OR COALESCE(CreatedAt,'')        >= :c3)"
+             // Un seul type (tableau de bord : « curatives », « contrôles réglementaires »…).
+             . ($type !== null && $type !== '' ? " AND Type = :t" : ''),
+            ['c1' => $cut, 'c2' => $cut, 'c3' => $cut] + ($type !== null && $type !== '' ? ['t' => mb_substr($type, 0, 60)] : [])
         );
 
         foreach ($rows as $r) {
@@ -3738,7 +4330,9 @@ public function deleteEnergieCompteur(int $id): void {
 public function getEnergieReleves(int $compteurId): array {
     $this->initEnergieTable();
     return $this->fetchAll(
-        "SELECT * FROM ReleverEnergie WHERE CompteurId=? ORDER BY Date DESC",
+        // « Id DESC » : deux saisies du même jour sortaient dans un ordre quelconque, et
+        // l'écran prenait pour index précédent l'une ou l'autre selon le moteur de base.
+        "SELECT * FROM ReleverEnergie WHERE CompteurId=? ORDER BY Date DESC, Id DESC",
         [$compteurId]
     );
 }
@@ -4042,7 +4636,7 @@ public function updateArchivesBoite(int $id, array $d, string $login=''): void {
         $d['description']??null,$d['statut']??'Active',$d['codeBarre']??null,$now,$login,$id]);
 }
 private function ensureArchivesBoiteColumns(): void {
-    // ⚠️ Cette méthode lisait « PRAGMA table_info », instruction propre à SQLite :
+    // Cette méthode lisait « PRAGMA table_info », instruction propre à SQLite :
     // sous PostgreSQL ou MariaDB, la requête échouait et TOUTE création ou
     // modification de boîte d'archives répondait par une erreur serveur.
     // Les colonnes sont désormais créées par la migration commune
@@ -4334,7 +4928,7 @@ public function getArchivesBordereauData(int $id): ?array {
         } catch (\Throwable $_) {}
 
         // Archives — Boîtes
-        // ⚠️ FIX : les colonnes « Numero » et « Intitule » n'existent pas dans ces
+        // FIX : les colonnes « Numero » et « Intitule » n'existent pas dans ces
         // tables (NumeroBoite / NumeroDossier, Description). La requête échouait,
         // l'exception était avalée : l'assistant ne trouvait JAMAIS une archive.
         if ($want('archives_boites')) try {
@@ -4415,7 +5009,7 @@ public function getArchivesBordereauData(int $id): ?array {
             LEFT JOIN PlanBatiments b ON e.BatimentId = b.Id
             WHERE " . str_replace('LOWER(CAST(', 'LOWER(CAST(e.', $where) . "
             ORDER BY b.Nom, e.Niveau LIMIT 20";
-            // ⚠ Patch SQL : préfixer les colonnes par "e." dans la clause WHERE car
+            // Patch SQL : préfixer les colonnes par "e." dans la clause WHERE car
             // PlanEtages contient peu de colonnes mais on est en JOIN ambigu.
             $rows = $this->fetchAll($sql, $bindings);
             if ($rows) $results['plan_etages'] = $rows;
@@ -4615,7 +5209,7 @@ public function getArchivesBordereauData(int $id): ?array {
     }
 
     public function deletePushSubscription(string $endpoint): void {
-        // ⚠️ Méthode interne — n'utiliser QUE pour le nettoyage suite à un endpoint
+        // Méthode interne — n'utiliser QUE pour le nettoyage suite à un endpoint
         // invalide remonté par le service push (410 Gone). Ne JAMAIS appeler depuis
         // une route exposée à l'utilisateur sans filtrer par UserId, sinon n'importe
         // quel utilisateur authentifié peut désabonner n'importe quel autre.
@@ -4813,6 +5407,156 @@ public function getArchivesBordereauData(int $id): ?array {
                     : "ALTER TABLE $table ADD COLUMN $col $def";
                 $this->pdo->exec($this->ddl($sql));
             } catch (\PDOException $e) { /* colonne déjà existante */ }
+        }
+    }
+
+    /**
+     * Tables de Larka Connect (équipements raccordés : GTB, compteurs, bornes…).
+     *
+     * Le code métier vit dans api/connect/ ; seules les tables sont ici, pour
+     * profiter du dialecte de la base ouverte (clé auto-incrémentée, décimaux
+     * en DOUBLE PRECISION sous PostgreSQL) et de la sentinelle de schéma.
+     *
+     * Les colonnes indexées sont en VARCHAR et non en TEXT : MariaDB refuse un
+     * index sur une colonne TEXT sans longueur de préfixe, et les horodatages
+     * (« 2026-10-27 15:04:05 ») comme les états tiennent largement en 32.
+     */
+    public function initConnectTables(): void {
+        $isPg    = ($this->driver === 'pgsql');
+        $isMysql = ($this->driver === 'mariadb' || $this->driver === 'mysql');
+        $AI      = $isPg ? 'SERIAL PRIMARY KEY' : ($isMysql ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT');
+        $tables = [
+            // Une connexion : passerelle Modbus, automate BACnet, broker MQTT,
+            // superviseur REST, dossier d'export CSV, borne OCPP.
+            "CREATE TABLE IF NOT EXISTS ConnectPasserelles (
+                Id $AI, Nom TEXT NOT NULL, Protocole VARCHAR(20) NOT NULL,
+                Hote TEXT, Port INTEGER, Identifiant TEXT,
+                Parametres TEXT, Secret TEXT,
+                IntervalleSecondes INTEGER DEFAULT 60, Actif INTEGER DEFAULT 1,
+                BatimentId INTEGER, Description TEXT,
+                Etat VARCHAR(20) DEFAULT 'inconnu', DernierContact TEXT, DerniereCollecte TEXT,
+                ProchaineCollecte VARCHAR(32), DerniereErreur TEXT, EchecsConsecutifs INTEGER DEFAULT 0,
+                CreatedAt TEXT, CreatedBy TEXT, UpdatedAt TEXT, UpdatedBy TEXT)",
+            // Un point : une grandeur lue (ou écrite) sur une connexion.
+            "CREATE TABLE IF NOT EXISTS ConnectPoints (
+                Id $AI, PasserelleId INTEGER NOT NULL, Nom TEXT NOT NULL, Code TEXT,
+                Nature VARCHAR(20) DEFAULT 'mesure', Unite TEXT, Adresse TEXT,
+                Coefficient REAL DEFAULT 1, Decalage REAL DEFAULT 0, Decimales INTEGER DEFAULT 2,
+                BandeMorte REAL DEFAULT 0,
+                EcritureAutorisee INTEGER DEFAULT 0, MinEcriture REAL, MaxEcriture REAL,
+                EquipementId INTEGER, ElementPlanId INTEGER,
+                Actif INTEGER DEFAULT 1, Ordre INTEGER DEFAULT 0,
+                DerniereValeur REAL, DerniereValeurTexte TEXT, DerniereQualite VARCHAR(20),
+                DerniereLecture TEXT, DernierEnregistrement TEXT, DerniereErreur TEXT,
+                CreatedAt TEXT, CreatedBy TEXT, UpdatedAt TEXT, UpdatedBy TEXT)",
+            // Historique brut des valeurs (bande morte + valeur périodique).
+            "CREATE TABLE IF NOT EXISTS ConnectMesures (
+                Id $AI, PointId INTEGER NOT NULL, Horodatage VARCHAR(32) NOT NULL,
+                Valeur REAL, ValeurTexte TEXT, Qualite VARCHAR(20) DEFAULT 'bonne')",
+            // Règles d'alarme d'un point (seuil, plage, état, absence, palier).
+            "CREATE TABLE IF NOT EXISTS ConnectRegles (
+                Id $AI, PointId INTEGER NOT NULL, Nom TEXT, Operateur VARCHAR(20) NOT NULL,
+                Seuil REAL, Seuil2 REAL, ValeurTexte TEXT, DelaiMinutes INTEGER DEFAULT 0,
+                Gravite VARCHAR(20) DEFAULT 'majeure', CreerDemande INTEGER DEFAULT 1,
+                Notifier INTEGER DEFAULT 1, Actif INTEGER DEFAULT 1,
+                EnCoursDepuis TEXT, DernierPalier REAL,
+                CreatedAt TEXT, CreatedBy TEXT, UpdatedAt TEXT, UpdatedBy TEXT)",
+            "CREATE TABLE IF NOT EXISTS ConnectAlarmes (
+                Id $AI, PointId INTEGER, RegleId INTEGER, PasserelleId INTEGER,
+                Origine VARCHAR(20) DEFAULT 'regle', Code TEXT, Gravite VARCHAR(20), Message TEXT,
+                ValeurDeclenchement REAL, Debut VARCHAR(32) NOT NULL, Fin VARCHAR(32),
+                Etat VARCHAR(20) DEFAULT 'active', Acquittee INTEGER DEFAULT 0,
+                AcquitteePar TEXT, DateAcquittement TEXT, DemandeId INTEGER, Commentaire TEXT)",
+            // « Ce point alimente telle fiche, selon tel calendrier. »
+            "CREATE TABLE IF NOT EXISTS ConnectLiaisons (
+                Id $AI, Nom TEXT, PointId INTEGER NOT NULL,
+                Destination VARCHAR(30) DEFAULT 'releve_energie', CibleId INTEGER,
+                Coefficient REAL DEFAULT 1, Frequence VARCHAR(20) DEFAULT 'quotidien',
+                Heure VARCHAR(5) DEFAULT '23:55', JoursSemaine TEXT, JourMois INTEGER,
+                MoisActifs TEXT, ExpressionCron TEXT, ToleranceMinutes INTEGER DEFAULT 15,
+                FacteurAnomalie REAL DEFAULT 5, ValidationManuelle INTEGER DEFAULT 0,
+                Actif INTEGER DEFAULT 1, ProchaineExecution VARCHAR(32), DerniereExecution TEXT,
+                CreatedAt TEXT, CreatedBy TEXT, UpdatedAt TEXT, UpdatedBy TEXT)",
+            // Une échéance de liaison : faite, rattrapée, manquante, en anomalie…
+            "CREATE TABLE IF NOT EXISTS ConnectExecutions (
+                Id $AI, LiaisonId INTEGER NOT NULL, Prevue VARCHAR(32) NOT NULL, Executee TEXT,
+                Statut VARCHAR(20) NOT NULL, Valeur REAL, ValeurPrecedente REAL, Consommation REAL,
+                MesureHorodatage TEXT, ReleveId INTEGER, Message TEXT,
+                ValidePar TEXT, DateValidation TEXT)",
+            // Écritures et commandes (consigne, arrêt de charge à distance…).
+            "CREATE TABLE IF NOT EXISTS ConnectCommandes (
+                Id $AI, PasserelleId INTEGER NOT NULL, PointId INTEGER,
+                Commande VARCHAR(40) NOT NULL, Valeur TEXT,
+                Statut VARCHAR(20) DEFAULT 'en_attente', Demandeur TEXT,
+                DateDemande VARCHAR(32), DateExecution TEXT, Reponse TEXT)",
+            // Sessions de recharge reçues des bornes OCPP.
+            "CREATE TABLE IF NOT EXISTS ConnectSessionsVE (
+                Id $AI, PasserelleId INTEGER NOT NULL, Connecteur INTEGER DEFAULT 1,
+                TransactionId INTEGER, Badge TEXT, Debut VARCHAR(32), Fin VARCHAR(32),
+                IndexDebutWh REAL, IndexFinWh REAL, EnergieWh REAL, PuissanceMaxW REAL,
+                Motif TEXT, Statut VARCHAR(20) DEFAULT 'en_cours', RecuEnDiffere INTEGER DEFAULT 0)",
+            // Fichiers d'export lus (une GTB qui dépose des CSV) : jamais deux fois.
+            "CREATE TABLE IF NOT EXISTS ConnectFichiers (
+                Id $AI, PasserelleId INTEGER NOT NULL, NomFichier TEXT, Taille INTEGER,
+                Empreinte VARCHAR(64), DateFichier TEXT, DateTraitement TEXT,
+                Statut VARCHAR(20), NbValeurs INTEGER DEFAULT 0, Message TEXT)",
+            // Réseaux IP et mots-clés d'un bâtiment des plans : la détection y range
+            // d'elle-même les équipements trouvés (api/connect/Batiments.php).
+            "CREATE TABLE IF NOT EXISTS ConnectBatiments (
+                BatimentId INTEGER NOT NULL PRIMARY KEY, Reseaux TEXT, MotsCles TEXT,
+                UpdatedAt TEXT, UpdatedBy TEXT)",
+            // Ce que la détection ne doit plus proposer : un appareil, une machine,
+            // ou des plages jamais parcourues (postes utilisateurs).
+            "CREATE TABLE IF NOT EXISTS ConnectExclusions (
+                Id $AI, Type VARCHAR(20) NOT NULL, Valeur TEXT, Nom TEXT,
+                CreatedAt TEXT, CreatedBy TEXT)",
+            // PC qui relèvent hors ligne les appareils joignables par leur seul
+            // hotspot Wi-Fi : jeton (empreinte seulement), connexions confiées.
+            "CREATE TABLE IF NOT EXISTS ConnectReleveurs (
+                Id $AI, Nom TEXT NOT NULL, JetonHash VARCHAR(64), Connexions TEXT, Actif INTEGER DEFAULT 1,
+                DernierContact TEXT, DerniereErreur TEXT, Journal TEXT,
+                CreatedAt TEXT, CreatedBy TEXT, UpdatedAt TEXT, UpdatedBy TEXT)",
+            // v21 : session radio d'un capteur LoRaWAN (une ligne par connexion).
+            // Les clés de session sont chiffrées comme les secrets des connexions ;
+            // les compteurs de trames protègent contre le rejeu, même après un
+            // redémarrage du service.
+            "CREATE TABLE IF NOT EXISTS ConnectLorawan (
+                PasserelleId INTEGER PRIMARY KEY, DevAddr VARCHAR(8), FCntUp INTEGER, FCntDown INTEGER DEFAULT 0,
+                DevNonces TEXT, Session TEXT, RejointLe TEXT, DerniereTrame TEXT, Rssi REAL, Snr REAL,
+                PasserelleRadio TEXT, Charge TEXT, NbTrames INTEGER DEFAULT 0)",
+        ];
+        foreach ($tables as $sql) {
+            $this->pdo->exec($this->ddl($sql));
+        }
+        // Colonnes ajoutées après la création des tables (idempotent).
+        foreach ([['ConnectPoints', 'DerniereErreur', 'TEXT'],
+                  // v19 : ce que le PC releveur a trouvé sur un appareil hors réseau (détection, points proposés)
+                  ['ConnectPasserelles', 'Reconnaissance', 'TEXT'], ['ConnectPasserelles', 'ReconDate', 'TEXT'],
+                  ['ConnectPasserelles', 'ReconDemandee', 'TEXT'],
+                  // v20 : version du collecteur du PC releveur (d'après son en-tête User-Agent)
+                  ['ConnectReleveurs', 'Version', 'TEXT'],
+                  // v21 : récepteurs radio branchés sur le PC releveur (inventaire USB)
+                  ['ConnectReleveurs', 'Materiel', 'TEXT']] as [$table, $col, $def]) {
+            try {
+                $this->pdo->exec($this->ddl($isPg ? "ALTER TABLE $table ADD COLUMN IF NOT EXISTS $col $def"
+                                                  : "ALTER TABLE $table ADD COLUMN $col $def"));
+            } catch (\PDOException $e) { /* colonne déjà existante */ }
+        }
+        $index = [
+            "CREATE INDEX IF NOT EXISTS idx_cmes_point_horo ON ConnectMesures(PointId, Horodatage)",
+            "CREATE INDEX IF NOT EXISTS idx_cpoints_passerelle ON ConnectPoints(PasserelleId)",
+            "CREATE INDEX IF NOT EXISTS idx_cregles_point ON ConnectRegles(PointId)",
+            "CREATE INDEX IF NOT EXISTS idx_calarmes_etat ON ConnectAlarmes(Etat)",
+            "CREATE INDEX IF NOT EXISTS idx_calarmes_point ON ConnectAlarmes(PointId)",
+            "CREATE INDEX IF NOT EXISTS idx_cexec_liaison ON ConnectExecutions(LiaisonId, Prevue)",
+            "CREATE INDEX IF NOT EXISTS idx_ccmd_statut ON ConnectCommandes(Statut)",
+            "CREATE INDEX IF NOT EXISTS idx_csess_passerelle ON ConnectSessionsVE(PasserelleId, Statut)",
+            "CREATE INDEX IF NOT EXISTS idx_cfich_passerelle ON ConnectFichiers(PasserelleId, Empreinte)",
+        ];
+        foreach ($index as $sql) {
+            // MariaDB < 10.5 ne connaît pas « IF NOT EXISTS » sur un index :
+            // l'index existe déjà, ou il sera posé au prochain passage.
+            try { $this->pdo->exec($sql); } catch (\PDOException $e) { }
         }
     }
 

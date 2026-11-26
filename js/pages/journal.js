@@ -24,7 +24,7 @@
  *  identifiants de connexion et le détail des modifications).
  */
 
-let _jrFiltres = { niveauMin: '', canal: '', login: '', q: '', depuis: '', jusqua: '', codeMin: '' };
+let _jrFiltres = { niveauMin: '', canal: '', login: '', q: '', depuis: '', jusqua: '', codeMin: '', domaine: '', code: '', avecCode: '' };
 let _jrOffset  = 0;
 const _JR_PAR_PAGE = 100;
 
@@ -32,10 +32,10 @@ const _JR_PAR_PAGE = 100;
 const _JR_COULEURS = {
   debug:    { fond: '#f1f5f9', texte: '#64748b', icone: '·'  },
   info:     { fond: '#eff6ff', texte: '#2563eb', icone: 'i'  },
-  audit:    { fond: '#f0fdf4', texte: '#16a34a', icone: '✎'  },
+  audit:    { fond: '#f0fdf4', texte: '#16a34a', icone: lk('pencil')  },
   warning:  { fond: '#fffbeb', texte: '#d97706', icone: '!'  },
   error:    { fond: '#fef2f2', texte: '#dc2626', icone: '✕'  },
-  critique: { fond: '#7f1d1d', texte: '#ffffff', icone: '‼'  },
+  critique: { fond: '#7f1d1d', texte: '#ffffff', icone: lk('circle-exclamation-point', 'ko')  },
 };
 
 function _jrBadge(niveau) {
@@ -103,9 +103,20 @@ async function renderJournal() {
               <option value="client">client (JS)</option>
               <option value="securite">securite</option>
               <option value="systeme">systeme</option>
+              <option value="connect">connect (supervision)</option>
+              <option value="sauvegarde">sauvegarde</option>
               <option value="journal">journal</option>
             </select>
           </div>
+          <div>
+            <label class="form-label" style="font-size:11px">Domaine de l'erreur</label>
+            <select class="form-control" id="jrDomaine" style="min-width:150px" onchange="_jrAppliquer()"><option value="">Tous</option></select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px">Code</label>
+            <input class="form-control" id="jrCode" placeholder="ex. CXR-002" style="width:105px;text-transform:uppercase" onkeydown="if(event.key==='Enter')_jrAppliquer()">
+          </div>
+          <label class="cx-case" style="font-size:12px;align-self:center"><input type="checkbox" id="jrAvecCode" onchange="_jrAppliquer()"> Incidents expliqués seulement</label>
           <div>
             <label class="form-label" style="font-size:11px">Utilisateur</label>
             <input class="form-control" id="jrLogin" placeholder="login" style="width:130px" onkeydown="if(event.key==='Enter')_jrAppliquer()">
@@ -118,17 +129,26 @@ async function renderJournal() {
             <label class="form-label" style="font-size:11px">Depuis</label>
             <input class="form-control" type="date" id="jrDepuis" style="width:150px" onchange="_jrAppliquer()">
           </div>
-          <button class="btn btn-primary btn-sm" onclick="_jrAppliquer()">🔍 Filtrer</button>
+          <button class="btn btn-primary btn-sm" onclick="_jrAppliquer()">${lk('search')} Filtrer</button>
           <button class="btn btn-ghost btn-sm" onclick="_jrReset()">↺</button>
+          <button class="btn btn-ghost btn-sm" onclick="ouvrirCatalogueCodes()" title="Ce que veut dire chaque code, et quoi faire">${lk('book-open')} Codes d'erreur</button>
           ${App.currentUser?.Role === 'Admin' ? `
             <a class="btn btn-ghost btn-sm" style="text-decoration:none"
-               href="api/index.php?action=journal_export&depuis=${encodeURIComponent(new Date(Date.now()-7*864e5).toISOString().slice(0,10))}">⬇️ CSV</a>
-            <button class="btn btn-ghost btn-sm" onclick="_jrPurger()">🗑️ Purger</button>` : ''}
+               href="api/index.php?action=journal_export&depuis=${encodeURIComponent(new Date(Date.now()-7*864e5).toISOString().slice(0,10))}">${lk('arrow-down')} CSV</a>
+            <button class="btn btn-ghost btn-sm" onclick="_jrPurger()">${lk('trash')} Purger</button>` : ''}
         </div>
       </div>
       <div id="jrListe"></div>
     </div>`;
 
+  // Domaines des codes : liste fermée, fournie par le serveur.
+  CodesErreurUI.catalogue().then(cat => {
+    const sel = document.getElementById('jrDomaine');
+    if (!sel || !cat) return;
+    sel.innerHTML = '<option value="">Tous</option>' + Object.entries(cat.domaines || {})
+      .map(([k, v]) => `<option value="${escHtml(k)}">${escHtml(k)} — ${escHtml(v)}</option>`).join('');
+    sel.value = _jrFiltres.domaine || '';
+  }).catch(() => {});
   await Promise.all([_jrChargerStats(), _jrCharger()]);
 }
 
@@ -147,6 +167,7 @@ async function _jrChargerStats() {
     el.innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap">
       ${tuile('Sur 7 jours', (s.parNiveau || []).map(r => ligne(_jrBadge(r.Niveau), r.Total)).join(''))}
       ${tuile('Canaux', (s.parCanal || []).slice(0, 6).map(r => ligne(escHtml(r.Canal || '—'), r.Total)).join(''))}
+      ${tuile('Incidents par code', (s.parCode || []).slice(0, 6).map(r => ligne(`${codeErreurBadge(r.Code, r.Titre)} <span title="${escHtml(r.Titre || '')}">${escHtml((r.Titre || '').slice(0, 30))}</span>`, r.Total)).join(''))}
       ${tuile('Erreurs fréquentes', (s.topErreurs || []).slice(0, 5).map(r => ligne(escHtml((r.Message || '').slice(0, 42)), r.Total)).join(''))}
       ${tuile('Routes lentes (>2s)', (s.lentes || []).slice(0, 5).map(r => ligne(escHtml(r.Route || '—'), r.PireMs + ' ms')).join(''))}
       ${tuile('Utilisateurs actifs', (s.actifs || []).slice(0, 5).map(r => ligne(escHtml(r.Login || '—'), r.Total)).join(''))}
@@ -159,7 +180,7 @@ async function _jrChargerStats() {
 async function _jrCharger() {
   const el = document.getElementById('jrListe');
   if (!el) return;
-  el.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--gray-text)">⏳ Chargement…</div>`;
+  el.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--gray-text)">${lk('hourglass')} Chargement…</div>`;
 
   let r;
   try {
@@ -187,6 +208,7 @@ async function _jrCharger() {
             <th style="padding:7px 10px;white-space:nowrap">Date</th>
             <th style="padding:7px 10px">Niveau</th>
             <th style="padding:7px 10px">Canal</th>
+            <th style="padding:7px 10px">Code</th>
             <th style="padding:7px 10px">Message</th>
             <th style="padding:7px 10px">Utilisateur</th>
             <th style="padding:7px 10px;text-align:right">Durée</th>
@@ -198,6 +220,7 @@ async function _jrCharger() {
                 <td style="padding:6px 10px;white-space:nowrap;font-family:monospace;font-size:11px">${escHtml((e.DateHeure || '').slice(5, 19))}</td>
                 <td style="padding:6px 10px">${_jrBadge(e.Niveau)}</td>
                 <td style="padding:6px 10px;color:var(--gray-text)">${escHtml(e.Canal || '')}</td>
+                <td style="padding:6px 10px">${e.Code ? codeErreurBadge(e.Code) : ''}</td>
                 <td style="padding:6px 10px">${escHtml(e.Message || '')}
                   ${e.CodeHttp ? `<span style="font-size:10px;color:${e.CodeHttp >= 400 ? 'var(--red)' : 'var(--gray-text)'};margin-left:6px">HTTP ${escHtml(e.CodeHttp)}</span>` : ''}</td>
                 <td style="padding:6px 10px">${escHtml(e.Login || '—')}</td>
@@ -248,8 +271,25 @@ async function _jrDetail(id) {
     } catch (_) { /* corrélation optionnelle */ }
   }
 
+  // Incident codé : l'explication et la marche à suivre, en tête du détail.
+  let explication = '';
+  if (e.Code) {
+    const f = await CodesErreurUI.fiche(e.Code);
+    if (f) {
+      explication = `<div class="ce-message" style="background:var(--gray-bg);margin-bottom:12px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">${codeErreurBadge(f.code)} <strong>${escHtml(f.titre)}</strong>
+          <span style="font-size:11px;color:var(--gray-text);margin-left:auto">à traiter par : ${escHtml(f.qui)}</span></div>
+        <div style="font-size:12.5px;margin-bottom:6px">${_ceTexte(f.description)}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;margin:6px 0 2px">Comment y remédier</div>
+        <ol class="ce-remedes" style="font-size:12.5px">${(f.remedes || []).map(r => `<li>${_ceTexte(r)}</li>`).join('')}</ol>
+        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="ouvrirCodeErreur(${jsArg(f.code)}, {message: ${jsArg(e.Message || '')}, reference: ${jsArg(e.RequestId || '')}})">${lk('book-open')} Fiche complète (causes, copie pour le support)</button>
+      </div>`;
+    }
+  }
+
   openModal(`${_jrBadge(e.Niveau)} ${escHtml((e.Message || '').slice(0, 60))}`, `
     <div style="max-height:66vh;overflow-y:auto">
+      ${explication}
       ${champ('Date', e.DateHeure)}
       ${champ('Canal', e.Canal)}
       ${champ('Action', e.Action)}
@@ -259,6 +299,7 @@ async function _jrDetail(id) {
       ${champ('Code HTTP', e.CodeHttp)}
       ${champ('Durée', e.DureeMs != null ? e.DureeMs + ' ms' : '')}
       ${champ('Entité', e.EntiteType ? e.EntiteType + (e.EntiteId ? ' #' + e.EntiteId : '') : '')}
+      ${champ('Code', e.Code)}
       ${champ('Corrélation', e.RequestId)}
       ${champ('Navigateur', e.UserAgent)}
       ${bloc('Avant', e.Avant ? joli(e.Avant) : '')}
@@ -277,16 +318,20 @@ function _jrAppliquer() {
     depuis:    document.getElementById('jrDepuis')?.value ? document.getElementById('jrDepuis').value + ' 00:00:00' : '',
     jusqua:    '',
     codeMin:   '',
+    domaine:   document.getElementById('jrDomaine')?.value || '',
+    code:      (document.getElementById('jrCode')?.value || '').trim().toUpperCase(),
+    avecCode:  document.getElementById('jrAvecCode')?.checked ? '1' : '',
   };
   _jrOffset = 0;
   _jrCharger();
 }
 
 function _jrReset() {
-  ['jrNiveau', 'jrCanal', 'jrLogin', 'jrQ', 'jrDepuis'].forEach(id => {
+  ['jrNiveau', 'jrCanal', 'jrLogin', 'jrQ', 'jrDepuis', 'jrDomaine', 'jrCode'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const ac = document.getElementById('jrAvecCode'); if (ac) ac.checked = false;
   _jrAppliquer();
 }
 

@@ -35,6 +35,9 @@ const _BIENS_IMPORT = {
   sheetNames: [],
   selectedSheet: null,
   rawRows: [],
+  refs: [],                         // n° d'origine de chaque ligne de rawRows (ligne ou colonne de la feuille, à partir de 1)
+  orientation: 'lignes',            // 'lignes' : une fiche par ligne, titres en haut ; 'colonnes' : une fiche par colonne, titres à gauche
+  orientationChoisie: false,        // vrai quand l'utilisateur l'a fixée (sinon : détectée)
   headerRowIdx: 0,
   headers: [],                      // [{ idx:0, label:'Code bien', sample:'10776', suggested:'Numero' }]
   mapping: {},                      // { colIdx: 'fieldKey' | '' (ignoré) }
@@ -106,6 +109,22 @@ function _biCreerCase(colIdx) {
   _BIENS_IMPORT.mapping[colIdx] = 'cp+:' + colIdx;
 }
 
+/** Remplace la case qu'un import allait créer par une case connue (existante, ou retirée : restaurée). */
+function _biUtiliserCaseConnue(colIdx, r) {
+  if (!r) return;
+  if (r.statut === 'existante' && r.cle) {
+    delete _BIENS_IMPORT.nouvellesCases[colIdx];
+    _BIENS_IMPORT.mapping[colIdx] = 'cp:' + r.cle;
+  } else if (r.statut === 'supprimee' && r.cle) {
+    // Recréer la case SOUS SA CLÉ la sort de l'historique : ses valeurs reviennent.
+    const n = _BIENS_IMPORT.nouvellesCases[colIdx] || {};
+    _BIENS_IMPORT.nouvellesCases[colIdx] = { cle: r.cle, libelle: r.ressemble_a, type: n.type || 'texte' };
+    _BIENS_IMPORT.mapping[colIdx] = 'cp+:' + colIdx;
+  }
+  toast(r.statut === 'supprimee' ? 'La case « ' + r.ressemble_a + ' » sera restaurée.' : 'La colonne remplira la case « ' + r.ressemble_a + ' ».', 'success');
+  _biRunDryRun();
+}
+
 function _biCasesPourNonAssociees() {
   let n = 0;
   _BIENS_IMPORT.headers.forEach(h => {
@@ -171,7 +190,7 @@ function _biIsSorti(item) {
 
 const _BI_FIELDS_BIENS = [
   { key: 'Numero',           label: 'N° du bien',                 required: true,
-    exact: ['code bien','n° bien','numero bien','numéro bien','code'],
+    exact: ['code bien','n° bien','numero bien','numéro bien','code','code du bien','numéro du bien','numero du bien'],
     contains: [['code','bien']],
     negative: ['famille','origine','sous-famille','source','série','serie','immobilisation','immo','bc','référence','reference','mandat','ligne','marche','marché'] },
 
@@ -470,14 +489,19 @@ function _biLireClasseur(buf, delaiMs = _BI_LECTURE_DELAI_MS, nomFichier = '') {
 function _biValiderClasseur(d) {
   if (!d || d.ok !== true) throw new Error((d && typeof d.message === 'string' && d.message) || 'lecture impossible');
   if (!Array.isArray(d.feuilles)) throw new Error('réponse du lecteur Excel invalide');
-  const SheetNames = [], feuilles = new Map();
+  const SheetNames = [], feuilles = new Map(), fusions = new Map();
+  const entier = (x) => (Number.isInteger(x) && x >= 0 ? x : -1);
   for (const f of d.feuilles) {
     if (!Array.isArray(f) || typeof f[0] !== 'string' || !Array.isArray(f[1])) throw new Error('réponse du lecteur Excel invalide');
     if (feuilles.has(f[0])) continue;
     SheetNames.push(f[0]);
-    feuilles.set(f[0], f[1].map((l) => (Array.isArray(l) ? l.map((c) => (typeof c === 'string' ? c : '')) : [])));
+    feuilles.set(f[0], f[1].map((l) => (Array.isArray(l) ? Array.from(l, (c) => (typeof c === 'string' ? c : '')) : [])));
+    // Zones fusionnées : quatre entiers positifs, dans l'ordre ; le reste est écarté.
+    fusions.set(f[0], (Array.isArray(f[2]) ? f[2] : [])
+      .map((z) => (Array.isArray(z) && z.length === 4 ? z.map(entier) : null))
+      .filter((z) => z && z.every((x) => x >= 0) && z[0] <= z[2] && z[1] <= z[3]));
   }
-  return { SheetNames, feuilles };
+  return { SheetNames, feuilles, fusions };
 }
 
 // ══════════════ ENTRÉE PRINCIPALE ══════════════
@@ -487,7 +511,7 @@ async function openImportBiens() {
   Object.assign(_BIENS_IMPORT, {
     target: 'auto',
     workbook: null, sheetNames: [], selectedSheet: null,
-    rawRows: [], headerRowIdx: 0, headers: [], mapping: {},
+    rawRows: [], refs: [], orientation: 'lignes', orientationChoisie: false, headerRowIdx: 0, headers: [], mapping: {},
     valueMap: { Statut: {}, Etat: {} }, dedupStrategy: 'update', step: 1,
     lignes: [], selFiltre: 'toutes', selRecherche: '', selPage: 1, prixMin: '', prixMax: '',
     listesNePasCreer: {}, dernierRapport: null, nouvellesCases: {},
@@ -499,7 +523,7 @@ async function openImportBiens() {
 function _biRenderModal() {
   const html = '<div id="biImportContainer">' + _biRenderStep() + '</div>';
   if (typeof openModal === 'function') {
-    openModal('📥 Importer des données', html, null);
+    openModal('Importer des données', html, null);
     setTimeout(() => {
       // ⚠️ BUGFIX : openModal() utilise #modalOverlay, PAS #confirmModal.
       // Cibler #confirmModal masquait le footer de la modale de confirmation
@@ -559,7 +583,7 @@ function _biRenderStep1() {
   const autoActive = t === 'auto';
   html += '<div onclick="_biSetTarget(\'auto\')" style="cursor:pointer;padding:14px;border:2px solid '+(autoActive?'#16a34a':'var(--gray-border)')+';border-radius:10px;background:'+(autoActive?'#f0fdf4':'var(--white)')+';transition:all .15s;position:relative">';
   if (autoActive) html += '<div style="position:absolute;top:6px;right:6px;background:#16a34a;color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700">RECOMMANDÉ</div>';
-  html += '<div style="font-size:24px;text-align:center;margin-bottom:6px">🪄</div>';
+  html += ('<div style="font-size:24px;text-align:center;margin-bottom:6px">' + lk('wand-sparkles') + '</div>');
   html += '<div style="font-weight:700;text-align:center;font-size:13px;color:'+(autoActive?'#16a34a':'var(--text)')+'">Auto-détection</div>';
   html += '<div style="font-size:11px;color:var(--gray-text);margin-top:6px;text-align:center;line-height:1.4">Chaque ligne est routée selon sa famille.</div>';
   html += '</div>';
@@ -567,7 +591,7 @@ function _biRenderStep1() {
   // Carte Biens
   const biensActive = t === 'biens';
   html += '<div onclick="_biSetTarget(\'biens\')" style="cursor:pointer;padding:14px;border:2px solid '+(biensActive?'var(--blue)':'var(--gray-border)')+';border-radius:10px;background:'+(biensActive?'var(--blue-pale)':'var(--white)')+';transition:all .15s">';
-  html += '<div style="font-size:24px;text-align:center;margin-bottom:6px">🏢</div>';
+  html += ('<div style="font-size:24px;text-align:center;margin-bottom:6px">' + lk('building-complex') + '</div>');
   html += '<div style="font-weight:700;text-align:center;font-size:13px;color:'+(biensActive?'var(--blue)':'var(--text)')+'">Tout en Biens</div>';
   html += '<div style="font-size:11px;color:var(--gray-text);margin-top:6px;text-align:center;line-height:1.4">Force toutes les lignes en Biens.</div>';
   html += '</div>';
@@ -575,7 +599,7 @@ function _biRenderStep1() {
   // Carte Équipements
   const eqActive = t === 'equipements';
   html += '<div onclick="_biSetTarget(\'equipements\')" style="cursor:pointer;padding:14px;border:2px solid '+(eqActive?'var(--blue)':'var(--gray-border)')+';border-radius:10px;background:'+(eqActive?'var(--blue-pale)':'var(--white)')+';transition:all .15s">';
-  html += '<div style="font-size:24px;text-align:center;margin-bottom:6px">⚙️</div>';
+  html += ('<div style="font-size:24px;text-align:center;margin-bottom:6px">' + lk('settings') + '</div>');
   html += '<div style="font-weight:700;text-align:center;font-size:13px;color:'+(eqActive?'var(--blue)':'var(--text)')+'">Tout en Équipements</div>';
   html += '<div style="font-size:11px;color:var(--gray-text);margin-top:6px;text-align:center;line-height:1.4">Force toutes les lignes en Équipements.</div>';
   html += '</div>';
@@ -584,9 +608,9 @@ function _biRenderStep1() {
   // Détails du mode auto
   if (autoActive) {
     html += '<div style="padding:12px;background:#fef9c3;border:1px solid #eab308;border-radius:8px;margin-bottom:14px;font-size:12px;color:#713f12">';
-    html += '<strong>🪄 Comment fonctionne l\'auto-détection ?</strong><br>';
-    html += '• Famille <strong>CVC, Plomberie, Électricité, SSI, Chauffage, Ventilation…</strong> → ⚙️ Équipement<br>';
-    html += '• Famille <strong>Mobilier, Informatique, Véhicule, Bureautique, Audio-Vidéo…</strong> → 🏢 Bien<br>';
+    html += ('<strong>' + lk('wand-sparkles') + ' Comment fonctionne l\'auto-détection ?</strong><br>');
+    html += ('• Famille <strong>CVC, Plomberie, Électricité, SSI, Chauffage, Ventilation…</strong> → ' + lk('settings') + ' Équipement<br>');
+    html += ('• Famille <strong>Mobilier, Informatique, Véhicule, Bureautique, Audio-Vidéo…</strong> → ' + lk('building-complex') + ' Bien<br>');
     html += '• Les biens <strong>"sortis"</strong> (HU, SORTI, JETÉ, DON/VENDU…) restent en Biens avec leur état marqué comme tel.';
     html += '</div>';
   }
@@ -610,10 +634,10 @@ function _biSetTarget(t) {
 // ══════════════ ÉTAPE 2 — Fichier + feuille ══════════════
 function _biRenderStep2() {
   let html = '<div style="text-align:center;padding:24px 20px;border:2px dashed var(--gray-border);border-radius:10px;background:var(--gray-bg);margin-bottom:14px">';
-  html += '<div style="font-size:28px;margin-bottom:8px">📂</div>';
+  html += ('<div style="font-size:28px;margin-bottom:8px">' + lk('folder-open') + '</div>');
   html += '<div style="font-size:13px;color:var(--text);margin-bottom:12px">Fichier <strong>Excel (.xlsx, .xls)</strong> ou <strong>CSV</strong></div>';
   html += '<input type="file" id="biFile" accept=".xlsx,.xls,.csv" onchange="_biFileSelected(event)" style="display:none">';
-  html += '<button class="btn btn-primary" onclick="document.getElementById(\'biFile\').click()">📁 Choisir un fichier</button>';
+  html += ('<button class="btn btn-primary" onclick="document.getElementById(\'biFile\').click()">' + lk('folder') + ' Choisir un fichier</button>');
   html += '<div id="biFileInfo" style="margin-top:12px;font-size:12px;color:var(--gray-text)"></div>';
   html += '</div>';
 
@@ -627,15 +651,17 @@ function _biRenderStep2() {
     html += '</select></div>';
 
     if (_BIENS_IMPORT.rawRows.length > 0) {
-      html += '<div><label class="form-label">Ligne d\'en-tête</label>';
+      const enCol = _BIENS_IMPORT.orientation === 'colonnes';
+      html += '<div><label class="form-label">' + (enCol ? 'Colonne des titres' : 'Ligne d\'en-tête') + '</label>';
       html += '<select class="form-control" id="biHeaderRow" onchange="_biHeaderRowChanged(this.value)">';
       for (let i = 0; i < Math.min(20, _BIENS_IMPORT.rawRows.length); i++) {
         const apercu = (_BIENS_IMPORT.rawRows[i] || []).map(c => String(c || '').trim()).filter(Boolean).slice(0, 3).join(' · ');
-        html += '<option value="'+i+'" '+(i===_BIENS_IMPORT.headerRowIdx?'selected':'')+'>Ligne '+(i+1)+(apercu ? ' — '+_esc(apercu.substring(0, 50)) : '')+'</option>';
+        html += '<option value="'+i+'" '+(i===_BIENS_IMPORT.headerRowIdx?'selected':'')+'>'+_esc(_biRefLong(_BIENS_IMPORT.orientation, _BIENS_IMPORT.refs[i] || i + 1))+(apercu ? ' — '+_esc(apercu.substring(0, 50)) : '')+'</option>';
       }
       html += '</select></div>';
     }
     html += '</div>';
+    html += _biOrientationHtml(_BIENS_IMPORT, '_biSetOrientation');
 
     if (_BIENS_IMPORT.rawRows.length > 0) html += _biRenderPreview();
   }
@@ -653,7 +679,7 @@ function _biRenderPreview() {
   if (preview.length === 0) return '';
   let html = '<div style="margin-bottom:10px">';
   const nbDonnees = Math.max(0, _BIENS_IMPORT.rawRows.length - _BIENS_IMPORT.headerRowIdx - 1);
-  html += '<div style="font-size:11px;color:var(--gray-text);margin-bottom:4px">Aperçu autour de la ligne d\'en-tête (en bleu) — <strong>'+nbDonnees+' lignes de données</strong></div>';
+  html += '<div style="font-size:11px;color:var(--gray-text);margin-bottom:4px">'+(_BIENS_IMPORT.orientation === 'colonnes' ? 'Aperçu, remis à l\'endroit (une fiche par ligne), autour des titres (en bleu) — <strong>'+nbDonnees+' fiches</strong>' : 'Aperçu autour de la ligne d\'en-tête (en bleu) — <strong>'+nbDonnees+' lignes de données</strong>')+'</div>';
   html += '<div style="overflow-x:auto;border:1px solid var(--gray-border);border-radius:6px;max-height:200px">';
   html += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
   preview.forEach((row, k) => {
@@ -684,7 +710,7 @@ async function _biFileSelected(evt) {
   _biRender();
   // #biFileInfo est recréé à chaque rendu : on le relit au moment d'écrire.
   const afficher = (html) => { const el = document.getElementById('biFileInfo'); if (el) el.innerHTML = html; };
-  afficher('⏳ Lecture en cours...');
+  afficher((lk('hourglass') + ' Lecture en cours...'));
   try {
     const buf = await file.arrayBuffer();
     if (jeton !== _biJetonLecture) return;
@@ -701,11 +727,11 @@ async function _biFileSelected(evt) {
                   - (s.toLowerCase().includes('instruction') || s.toLowerCase().includes('mapping') || s.toLowerCase().includes('récap') ? 80 : 0);
       if (score > bestScore) { bestScore = score; bestSheet = s; }
     });
-    afficher('<span style="color:#16a34a">✅ '+_esc(file.name)+' chargé ('+wb.SheetNames.length+' feuille'+(wb.SheetNames.length>1?'s':'')+')</span>');
+    afficher(('<span style="color:#16a34a">' + lk('circle-check', 'ok') + ' ')+_esc(file.name)+' chargé ('+wb.SheetNames.length+' feuille'+(wb.SheetNames.length>1?'s':'')+')</span>');
     _biSheetSelected(bestSheet);
   } catch(e) {
     if ((e && e.annulee) || jeton !== _biJetonLecture) return;   // remplacée par une lecture plus récente
-    afficher('<span style="color:#e74c3c">❌ Erreur : '+_esc(e.message)+'</span>');
+    afficher(('<span style="color:#e74c3c">' + lk('circle-x', 'ko') + ' Erreur : ')+_esc(e.message)+'</span>');
   }
 }
 
@@ -714,7 +740,11 @@ function _biSheetSelected(name) {
   // Lignes déjà converties par le lecteur isolé (mêmes options sheet_to_json
   // qu'avant) ; copiées pour que chaque sélection reparte du fichier d'origine.
   const arr = (_BIENS_IMPORT.workbook.feuilles.get(name) || []).map(r => r.slice());
-  _BIENS_IMPORT.rawRows = arr.filter(r => r.some(c => c !== '' && c != null && String(c).trim() !== ''));
+  // Disposition : détectée à chaque feuille, sauf si l'utilisateur l'a fixée.
+  if (!_BIENS_IMPORT.orientationChoisie) _BIENS_IMPORT.orientation = _biOrientationProbable(arr, _biCelluleEstTitre);
+  const f = _biPreparerFeuille(arr, _BIENS_IMPORT.orientation);
+  _BIENS_IMPORT.rawRows = f.rows;
+  _BIENS_IMPORT.refs = f.refs;
   _BIENS_IMPORT.headerRowIdx = _biDetecterEntete(_BIENS_IMPORT.rawRows);
   _biUpdateHeaders();
   _biRender();
@@ -758,6 +788,104 @@ function _biDetecterEntete(rows) {
     if (score > bestScore) { bestScore = score; best = i; }
   }
   return best;
+}
+
+// ── Disposition du tableau : une fiche par ligne, ou une fiche par colonne ─────
+// ⚠️ SEULS LES TABLEAUX « EN LIGNES » ÉTAIENT LUS. Beaucoup de registres
+// (contrôles réglementaires, fiches d'équipement, relevés) sont tenus dans
+// l'autre sens : les titres dans la colonne A, une fiche par colonne. On les
+// remet à l'endroit (transposition) avant tout le reste : détection des titres,
+// correspondances, contrôles et import ne voient que des lignes. Les
+// références montrées à l'utilisateur restent celles de SON fichier : « L12 »
+// pour une ligne, « Col. M » pour une colonne. Commun à l'import des biens et
+// à celui des interventions.
+
+/** 1 → A, 27 → AA. */
+function _biColLettre(n) {
+  let s = '', x = parseInt(n, 10) || 0;
+  while (x > 0) { const r = (x - 1) % 26; s = String.fromCharCode(65 + r) + s; x = Math.floor((x - 1) / 26); }
+  return s || '?';
+}
+// Une référence déjà écrite (« D7 », « Bordeaux!D7 » : planning déplié) est montrée telle quelle.
+function _biRefCourt(orientation, n) { return typeof n === 'string' ? n : orientation === 'colonnes' ? 'Col. ' + _biColLettre(n) : 'L' + n; }
+function _biRefLong(orientation, n) { return typeof n === 'string' ? 'Cellule ' + n : orientation === 'colonnes' ? 'Colonne ' + _biColLettre(n) : 'Ligne ' + n; }
+
+/** Feuille → lignes non vides, dans la disposition demandée ; refs[i] = n° d'origine (ligne, ou colonne). */
+function _biPreparerFeuille(brutes, orientation) {
+  let rows = brutes;
+  if (orientation === 'colonnes') {
+    // Les lignes d'en-tête du document (titre « Contrôles 2025 », ligne vide) n'ont
+    // qu'une cellule : une fois retournées elles deviendraient une fausse colonne de
+    // titres. On ne retire que celles du haut, avant la première vraie ligne : plus
+    // bas, une ligne à une seule cellule peut porter une valeur.
+    const pleines = r => r.filter(c => c != null && String(c).trim() !== '').length;
+    const debut = brutes.findIndex(r => pleines(r) >= 2);
+    if (debut > 0) brutes = brutes.map((r, i) => (i < debut ? [] : r));
+    const larg = brutes.reduce((m, r) => Math.max(m, r.length), 0);
+    rows = [];
+    for (let c = 0; c < larg; c++) rows.push(brutes.map(r => (r[c] == null ? '' : r[c])));
+  }
+  const out = [], refs = [];
+  rows.forEach((r, i) => {
+    if (r.some(c => c !== '' && c != null && String(c).trim() !== '')) { out.push(r); refs.push(i + 1); }
+  });
+  return { rows: out, refs };
+}
+
+/**
+ * Disposition la plus probable : celle dont le meilleur « bord » (une des 20
+ * premières lignes, ou une des 20 premières colonnes) porte le plus de titres
+ * reconnus. Dans le doute, en lignes — le cas courant.
+ */
+function _biOrientationProbable(brutes, estTitre) {
+  const meilleur = rows => {
+    let best = 0;
+    for (let i = 0; i < Math.min(20, rows.length); i++) {
+      const n = (rows[i] || []).filter(c => String(c == null ? '' : c).trim() && estTitre(String(c))).length;
+      if (n > best) best = n;
+    }
+    return best;
+  };
+  const enLignes = meilleur(_biPreparerFeuille(brutes, 'lignes').rows);
+  const enColonnes = meilleur(_biPreparerFeuille(brutes, 'colonnes').rows);
+  return (enColonnes >= 3 && enColonnes >= enLignes * 1.5 + 1) ? 'colonnes' : 'lignes';
+}
+
+/** Une cellule ressemble-t-elle à un titre de colonne de l'import des biens ? */
+function _biCelluleEstTitre(c) {
+  const k = _biNormalize(c);
+  if (!k || _biNombre(c) !== null || _biParseDate(c)) return false;
+  return _biGetFields().some(f => (f.exact || []).some(e => _biNormalize(e) === k)
+    || (f.contains || []).some(g => g.every(w => k.split(' ').includes(_biNormalize(w)))));
+}
+
+/** Choix « une fiche par ligne / par colonne » (étape Fichier), commun aux deux imports. */
+function _biOrientationHtml(etat, fonction) {
+  const o = etat.orientation;
+  const bouton = (val, icone, titre, aide) => {
+    const a = o === val;
+    return '<button type="button" onclick="' + fonction + '(\'' + val + '\')" style="flex:1;display:flex;align-items:center;gap:10px;text-align:left;padding:8px 12px;border-radius:8px;cursor:pointer;border:2px solid '
+      + (a ? 'var(--blue)' : 'var(--gray-border)') + ';background:' + (a ? 'var(--blue-pale)' : 'var(--white)') + '">'
+      + '<span style="font-size:20px;color:' + (a ? 'var(--blue)' : 'var(--gray-text)') + '">' + lk(icone) + '</span>'
+      + '<span><span style="display:block;font-weight:700;font-size:12px;color:' + (a ? 'var(--blue)' : 'var(--text)') + '">' + titre + '</span>'
+      + '<span style="display:block;font-size:11px;color:var(--gray-text)">' + aide + '</span></span></button>';
+  };
+  return '<div style="margin-bottom:12px"><label class="form-label">Disposition du tableau'
+    + (etat.orientationChoisie ? '' : ' <span style="font-weight:400;color:var(--gray-text)">(détectée — modifiable)</span>') + '</label>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + bouton('lignes', 'rows-3', 'Une fiche par ligne', 'Les titres en haut, sur une ligne')
+    + bouton('colonnes', 'columns-3', 'Une fiche par colonne', 'Les titres à gauche, dans une colonne')
+    // Planning (une ligne par matériel, une colonne par année) : proposé seulement
+    // quand la feuille en a la forme — import des interventions.
+    + (etat.planningPossible ? bouton('planning', 'calendar-days', 'Un planning', 'Une ligne par matériel, des colonnes par année') : '')
+    + '</div></div>';
+}
+
+function _biSetOrientation(o) {
+  _BIENS_IMPORT.orientation = o === 'colonnes' ? 'colonnes' : 'lignes';
+  _BIENS_IMPORT.orientationChoisie = true;
+  if (_BIENS_IMPORT.workbook && _BIENS_IMPORT.selectedSheet) _biSheetSelected(_BIENS_IMPORT.selectedSheet);
+  else _biRender();
 }
 
 function _biHeaderRowChanged(idx) {
@@ -915,7 +1043,10 @@ function _biScoreLabel(label, fieldDef) {
 
   // 1. Vérifier les négatifs : si le label contient un mot négatif → score 0
   // Sauf si le label contient AUSSI un mot exact attendu (cas limite)
-  const hasExactMatch = (fieldDef.exact || []).some(e => _biNormalize(e) === norm);
+  // Le libellé du champ lui-même (« N° du bien ») vaut libellé exact : un fichier
+  // fait à partir du modèle, ou d'un export Larka, doit toujours se reconnaître.
+  const exacts = (fieldDef.exact || []).concat(fieldDef.label ? [fieldDef.label] : []);
+  const hasExactMatch = exacts.some(e => _biNormalize(e) === norm);
   if (!hasExactMatch && fieldDef.negative && fieldDef.negative.length > 0) {
     for (const neg of fieldDef.negative) {
       const negNorm = _biNormalize(neg);
@@ -928,7 +1059,7 @@ function _biScoreLabel(label, fieldDef) {
   let bestScore = 0, bestReason = '';
 
   // 2. Match exact (avec normalisation) → 50 pts
-  for (const e of (fieldDef.exact || [])) {
+  for (const e of exacts) {
     if (_biNormalize(e) === norm) {
       return { score: 50, reasons: ['libellé exact "'+e+'"'] };
     }
@@ -1084,7 +1215,7 @@ function _biMemoireEcrire() {
 // ── Correspondances proposées par l'IA (assistant configuré) ─────────────────
 async function _biProposerIa() {
   const btn = document.getElementById('biBtnIa');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ L\'IA analyse les colonnes…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'L\'IA analyse les colonnes…'; }
   const fields = _biGetFields();
   const colStatut = Object.entries(_BIENS_IMPORT.mapping).find(([_, v]) => v === 'Statut')?.[0];
   const colEtat   = Object.entries(_BIENS_IMPORT.mapping).find(([_, v]) => v === 'Etat')?.[0];
@@ -1128,7 +1259,7 @@ function _biRenderStep3() {
   if (missingRequired.length > 0) {
     const labels = missingRequired.map(k => fields.find(f => f.key === k)?.label || k);
     html += '<div style="padding:10px 14px;background:#fef9c3;border:1px solid #eab308;border-radius:8px;margin-bottom:14px;font-size:12px;color:#713f12">';
-    html += '⚠️ <strong>Champs obligatoires non assignés :</strong> ' + labels.join(', ');
+    html += (lk('triangle-exclamation-point', 'warn') + ' <strong>Champs obligatoires non assignés :</strong> ') + labels.join(', ');
     html += '</div>';
   }
 
@@ -1144,12 +1275,12 @@ function _biRenderStep3() {
 
   html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 12px;background:var(--gray-bg);border-radius:8px;font-size:12px;flex-wrap:wrap">';
   html += '<span style="font-weight:600">'+mappedCols+' / '+totalCols+'</span> colonnes assignées';
-  if (highConfidence > 0) html += '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">🟢 '+highConfidence+' sûres</span>';
-  if (lowConfidence > 0)  html += '<span style="background:#fef3c7;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">🟡 '+lowConfidence+' à vérifier</span>';
+  if (highConfidence > 0) html += ('<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">' + lk('circle', 'p vert') + ' ')+highConfidence+' sûres</span>';
+  if (lowConfidence > 0)  html += ('<span style="background:#fef3c7;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">' + lk('circle', 'p jaune') + ' ')+lowConfidence+' à vérifier</span>';
   html += '<div style="flex:1;height:6px;background:var(--gray-border);border-radius:3px;overflow:hidden;min-width:80px"><div style="width:'+Math.round(mappedCols/totalCols*100)+'%;height:100%;background:linear-gradient(90deg,#16a34a 0%,#16a34a '+Math.round(highConfidence/totalCols*100)+'%,#eab308 '+Math.round(highConfidence/totalCols*100)+'%,#eab308 '+Math.round(mappedCols/totalCols*100)+'%);transition:width .2s"></div></div>';
   html += '<button onclick="_biAutoMap()" style="border:1px solid var(--gray-border);background:var(--white);color:var(--blue);cursor:pointer;font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px">↺ Re-détecter</button>';
   if (_BIENS_IMPORT.iaDispo) {
-    html += '<button id="biBtnIa" onclick="_biProposerIa()" style="border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;cursor:pointer;font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px" title="Le modèle IA configuré reçoit les en-têtes et 5 valeurs d\'exemple par colonne — jamais le fichier">🤖 Proposer avec l\'IA</button>';
+    html += ('<button id="biBtnIa" onclick="_biProposerIa()" style="border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;cursor:pointer;font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px" title="Le modèle IA configuré reçoit les en-têtes et 5 valeurs d\'exemple par colonne — jamais le fichier">' + lk('bot') + ' Proposer avec l\'IA</button>');
   }
   html += '<button onclick="_biClearMapping()" style="border:1px solid var(--gray-border);background:var(--white);color:var(--gray-text);cursor:pointer;font-size:12px;padding:4px 10px;border-radius:6px">Tout effacer</button>';
   html += '</div>';
@@ -1157,7 +1288,7 @@ function _biRenderStep3() {
   if (libres) {
     html += '<div style="display:flex;align-items:center;gap:10px;margin:-4px 0 12px;padding:8px 12px;background:#f5f3ff;border:1px dashed #7c3aed;border-radius:8px;font-size:12px;color:#5b21b6">'
       + '<span style="flex:1"><b>'+libres+'</b> <span>colonne(s) remplie(s) sans champ Larka : elles peuvent devenir des cases de la fiche (section « Informations complémentaires »).</span></span>'
-      + '<button type="button" class="btn btn-ghost btn-sm" onclick="_biCasesPourNonAssociees()">🗂️ Créer les cases</button></div>';
+      + ('<button type="button" class="btn btn-ghost btn-sm" onclick="_biCasesPourNonAssociees()">' + lk('folders') + ' Créer les cases</button></div>');
   }
 
   // Tableau des colonnes avec code couleur
@@ -1180,11 +1311,11 @@ function _biRenderStep3() {
     const reasonTitle = (h.reasons || []).map(r => '• ' + r).join('\n') || 'Aucune correspondance détectée';
 
     // Couleur selon la confiance (uniquement si on a une suggestion)
-    let bgRow = '', icon = '⚪', iconTitle = 'Non détecté';
-    if (cur && score >= 50) { bgRow = 'background:#f0fdf4'; icon = '🟢'; iconTitle = 'Détection sûre (score '+score+')'; }
-    else if (cur && score >= 30) { bgRow = 'background:#fffbeb'; icon = '🟡'; iconTitle = 'À vérifier (score '+score+')'; }
-    else if (cur) { bgRow = 'background:#fff'; icon = '🔵'; iconTitle = 'Choix manuel'; }
-    else { bgRow = 'background:#fafafa'; icon = '⚪'; iconTitle = 'Non assigné'; }
+    let bgRow = '', icon = lk('circle', 'p gris'), iconTitle = 'Non détecté';
+    if (cur && score >= 50) { bgRow = 'background:#f0fdf4'; icon = lk('circle', 'p vert'); iconTitle = 'Détection sûre (score '+score+')'; }
+    else if (cur && score >= 30) { bgRow = 'background:#fffbeb'; icon = lk('circle', 'p jaune'); iconTitle = 'À vérifier (score '+score+')'; }
+    else if (cur) { bgRow = 'background:#fff'; icon = lk('circle', 'p bleu'); iconTitle = 'Choix manuel'; }
+    else { bgRow = 'background:#fafafa'; icon = lk('circle', 'p gris'); iconTitle = 'Non assigné'; }
 
     html += '<tr style="border-bottom:1px solid var(--gray-bg);'+bgRow+'">';
     html += '<td style="padding:8px 10px;text-align:center" title="'+_esc(iconTitle + (h.reasons && h.reasons.length ? '\n\n' + reasonTitle : ''))+'">'+icon+'</td>';
@@ -1203,10 +1334,10 @@ function _biRenderStep3() {
     html += '</optgroup><optgroup label="Cases complémentaires des fiches">';
     _biCasesCible().forEach(d => {
       const k = 'cp:' + d.cle, used = usedSet.has(k) && k !== cur;
-      html += '<option value="'+_esc(k)+'" '+(cur===k?'selected':'')+(used?' style="color:#999"':'')+'>🗂️ '+_esc(d.libelle)+(used?' — déjà utilisé':'')+'</option>';
+      html += '<option value="'+_esc(k)+'" '+(cur===k?'selected':'')+(used?' style="color:#999"':'')+'>'+_esc(d.libelle)+(used?' — déjà utilisé':'')+'</option>';
     });
-    if (cur.startsWith('cp+:')) html += '<option value="'+_esc(cur)+'" selected>➕ '+_esc(_biLibelleChamp(cur))+' (nouvelle case)</option>';
-    else html += '<option value="cp+">➕ Nouvelle case « '+_esc(String(h.label).substring(0, 40))+' »</option>';
+    if (cur.startsWith('cp+:')) html += '<option value="'+_esc(cur)+'" selected>'+_esc(_biLibelleChamp(cur))+' (nouvelle case)</option>';
+    else html += '<option value="cp+">Nouvelle case « '+_esc(String(h.label).substring(0, 40))+' »</option>';
     html += '</optgroup>';
     html += '</select>';
     if (cur.startsWith('cp+:')) {
@@ -1230,7 +1361,7 @@ function _biRenderStep3() {
 
   // Stratégie de doublon
   html += '<div style="margin-top:14px;padding:12px;background:var(--gray-bg);border-radius:8px">';
-  html += '<div style="font-weight:600;margin-bottom:6px;font-size:13px">🔁 Si un numéro existe déjà</div>';
+  html += ('<div style="font-weight:600;margin-bottom:6px;font-size:13px">' + lk('repeat') + ' Si un numéro existe déjà</div>');
   html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;margin-bottom:4px"><input type="radio" name="biDedup" value="update" '+(_BIENS_IMPORT.dedupStrategy==='update'?'checked':'')+' onchange="_BIENS_IMPORT.dedupStrategy=this.value"> Mettre à jour les fiches existantes</label>';
   html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px"><input type="radio" name="biDedup" value="skip" '+(_BIENS_IMPORT.dedupStrategy==='skip'?'checked':'')+' onchange="_BIENS_IMPORT.dedupStrategy=this.value"> Ignorer (créer uniquement les nouveaux)</label>';
   html += '</div>';
@@ -1270,7 +1401,7 @@ function _biRenderValueMapBlock(field, label, colIdx, gmaoVals) {
   const distinct = _biGetDistinctValues(colIdx);
   if (distinct.length === 0) return '';
   let html = '<div style="margin-top:14px;padding:12px;background:var(--blue-pale);border:1px solid var(--blue);border-radius:8px">';
-  html += '<div style="font-weight:600;margin-bottom:6px;font-size:13px">🎯 Correspondance des valeurs « '+label+' »</div>';
+  html += ('<div style="font-weight:600;margin-bottom:6px;font-size:13px">' + lk('target') + ' Correspondance des valeurs « ')+label+' »</div>';
   html += '<div style="font-size:11px;color:var(--gray-text);margin-bottom:8px">Faites correspondre les valeurs de votre fichier aux valeurs Larka (laissez vide pour conserver telles quelles).</div>';
   html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;font-size:12px">';
   distinct.forEach(v => {
@@ -1400,7 +1531,7 @@ function _biRenderStep4() {
   // Règles de sélection
   html += '<div style="padding:10px 12px;background:var(--gray-bg);border-radius:8px;margin-bottom:10px;font-size:12px">';
   html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">';
-  html += '<strong>💶 Seuil de prix</strong>';
+  html += ('<strong>' + lk('euro') + ' Seuil de prix</strong>');
   html += '<input id="biPrixMin" class="form-control" type="text" inputmode="decimal" placeholder="min (ex. 500)" value="'+_esc(_BIENS_IMPORT.prixMin)+'" style="width:120px;font-size:12px;padding:4px 8px">';
   html += '<span>–</span>';
   html += '<input id="biPrixMax" class="form-control" type="text" inputmode="decimal" placeholder="max" value="'+_esc(_BIENS_IMPORT.prixMax)+'" style="width:110px;font-size:12px;padding:4px 8px">';
@@ -1413,7 +1544,7 @@ function _biRenderStep4() {
   L.forEach(l => { const k = l.item.famille || '(sans famille)'; fam[k] = fam[k] || { n: 0, c: 0 }; fam[k].n++; if (l.inclus) fam[k].c++; });
   const familles = Object.entries(fam).sort((a, b) => b[1].n - a[1].n);
   if (familles.length > 1) {
-    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><strong style="margin-right:4px">🏷️ Familles</strong>';
+    html += ('<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><strong style="margin-right:4px">' + lk('tag') + ' Familles</strong>');
     familles.slice(0, 40).forEach(([k, v]) => {
       const etat = (v.c === v.n) ? 'checked' : '';   // partielle : non cochée + indéterminée (un clic coche toute la famille)
       html += '<label style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--gray-border);border-radius:12px;background:var(--white);cursor:pointer" title="'+v.c+' / '+v.n+' cochées">'
@@ -1427,7 +1558,7 @@ function _biRenderStep4() {
   // Barre d'outils de la liste
   const vis = _biLignesVisibles();
   html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">';
-  html += '<input class="form-control" type="text" placeholder="🔍 Filtrer (n°, famille, désignation, site…)" value="'+_esc(_BIENS_IMPORT.selRecherche)+'" oninput="_biSelRecherche(this.value)" style="max-width:280px;font-size:12px;padding:4px 8px">';
+  html += ('<input class="form-control" type="text" placeholder="Filtrer (n°, famille, désignation, site…)" value="')+_esc(_BIENS_IMPORT.selRecherche)+'" oninput="_biSelRecherche(this.value)" style="max-width:280px;font-size:12px;padding:4px 8px">';
   html += '<select class="form-control" style="width:auto;font-size:12px;padding:4px 8px" onchange="_biSelFiltre(this.value)">';
   [['toutes','Toutes les lignes'],['cochees','Cochées'],['decochees','Non cochées'],['erreurs','En erreur'],['avert','Avec avertissement']].forEach(([v, l]) => {
     html += '<option value="'+v+'" '+(_BIENS_IMPORT.selFiltre===v?'selected':'')+'>'+l+'</option>';
@@ -1447,24 +1578,24 @@ function _biRenderStep4() {
   const debut = (_BIENS_IMPORT.selPage - 1) * PAR_PAGE;
   html += '<div style="max-height:340px;overflow:auto;border:1px solid var(--gray-border);border-radius:6px">';
   html += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
-  html += '<thead style="position:sticky;top:0;background:var(--gray-bg);z-index:1"><tr style="font-weight:700"><td style="padding:6px 8px;width:28px"></td><td style="padding:6px 8px">Ligne</td><td style="padding:6px 8px">N°</td><td style="padding:6px 8px">Famille</td><td style="padding:6px 8px">Désignation</td><td style="padding:6px 8px;text-align:right">Prix</td><td style="padding:6px 8px">État</td><td style="padding:6px 8px">Site</td><td style="padding:6px 8px">Contrôle</td></tr></thead><tbody>';
+  html += '<thead style="position:sticky;top:0;background:var(--gray-bg);z-index:1"><tr style="font-weight:700"><td style="padding:6px 8px;width:28px"></td><td style="padding:6px 8px">'+(_BIENS_IMPORT.orientation === 'colonnes' ? 'Colonne' : 'Ligne')+'</td><td style="padding:6px 8px">N°</td><td style="padding:6px 8px">Famille</td><td style="padding:6px 8px">Désignation</td><td style="padding:6px 8px;text-align:right">Prix</td><td style="padding:6px 8px">État</td><td style="padding:6px 8px">Site</td><td style="padding:6px 8px">Contrôle</td></tr></thead><tbody>';
   if (!vis.length) html += '<tr><td colspan="9" style="padding:14px;text-align:center;color:var(--gray-text)">Aucune ligne.</td></tr>';
   vis.slice(debut, debut + PAR_PAGE).forEach(l => {
     const bloque = l.erreurs.length > 0;
     const fond = bloque ? 'background:#fff5f5' : (l.inclus ? '' : 'opacity:.55');
-    const pb = [...l.erreurs.map(e => '⛔ ' + (e.champ ? e.champ + ' : ' : '') + e.message + (e.valeur ? ' (« ' + e.valeur + ' »)' : '')),
-                ...l.avert.map(e => '⚠️ ' + (e.champ ? e.champ + ' : ' : '') + e.message + (e.valeur ? ' (« ' + e.valeur + ' »)' : ''))];
+    const pb = [...l.erreurs.map(e => '' + (e.champ ? e.champ + ' : ' : '') + e.message + (e.valeur ? ' (« ' + e.valeur + ' »)' : '')),
+                ...l.avert.map(e => '' + (e.champ ? e.champ + ' : ' : '') + e.message + (e.valeur ? ' (« ' + e.valeur + ' »)' : ''))];
     html += '<tr style="border-top:1px solid var(--gray-bg);'+fond+'">';
     html += '<td style="padding:4px 8px"><input type="checkbox" '+(l.inclus?'checked':'')+' '+(bloque?'disabled title="Ligne en erreur : elle ne peut pas être importée"':'')+' onchange="_biSelLigne('+l.i+',this.checked)"></td>';
-    html += '<td style="padding:4px 8px;color:var(--gray-text)">'+l.row+'</td>';
+    html += '<td style="padding:4px 8px;color:var(--gray-text)">'+_esc(_biRefCourt(_BIENS_IMPORT.orientation, l.row))+'</td>';
     html += '<td style="padding:4px 8px;font-weight:600">'+_esc(l.item.numero||'')+'</td>';
     html += '<td style="padding:4px 8px">'+_esc(l.item.famille||'')+'</td>';
     html += '<td style="padding:4px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_esc(l.item.infoProduit||'')+'">'+_esc(l.item.infoProduit||'')+'</td>';
     html += '<td style="padding:4px 8px;text-align:right;white-space:nowrap">'+(l.item.prix ? _esc(_biFmtEuro(l.item.prix)) : '<span style="color:var(--gray-text)">—</span>')+'</td>';
-    html += '<td style="padding:4px 8px">'+_esc(l.item.etat||'')+(l.item._isSorti?' <span title="Bien sorti">🗃️</span>':'')+'</td>';
+    html += '<td style="padding:4px 8px">'+_esc(l.item.etat||'')+(l.item._isSorti?(' <span title="Bien sorti">' + lk('archive') + '</span>'):'')+'</td>';
     html += '<td style="padding:4px 8px">'+_esc(l.item.batiment||'')+'</td>';
     const pr = l.erreurs[0] || l.avert[0];
-    html += '<td style="padding:4px 8px;white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis" title="'+_esc(pb.join('\n'))+'">'+(bloque ? '⛔ ' : '')+(l.avert.length ? '⚠️ ' : '')
+    html += '<td style="padding:4px 8px;white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis" title="'+_esc(pb.join('\n'))+'">'+(bloque ? (lk('octagon-x', 'ko') + ' ') : '')+(l.avert.length ? (lk('triangle-exclamation-point', 'warn') + ' ') : '')
       + (pr ? '<span style="color:var(--gray-text)">'+(pr.champ ? '<span>'+_esc(pr.champ)+'</span> : ' : '')+'<span>'+_esc(pr.message)+'</span>'+(pb.length > 1 ? ' (+'+(pb.length-1)+')' : '')+'</span>'
             : '<span style="color:#16a34a">✓</span>')+'</td>';
     html += '</tr>';
@@ -1585,7 +1716,7 @@ function _biConstruireLignes() {
     }
 
     const item = {
-      _row: i + 1, _targetGuess: target, _isSorti: sorti,
+      _row: _BIENS_IMPORT.refs[i] || i + 1, _targetGuess: target, _isSorti: sorti,
       numero, famille,
       sousFamille: get('SousFamille'),
       infoProduit: info,
@@ -1657,7 +1788,7 @@ function _biConstruireLignes() {
       if (vusNum[cle] > 1) avert.push({ champ: libelle('Numero'), message: 'N° déjà présent plus haut dans le fichier : il sera suffixé (-2, -3…)', valeur: numero });
     }
 
-    out.push({ i, row: i + 1, item, erreurs, avert, inclus: !erreurs.length && !ligneTotal });
+    out.push({ i, row: _BIENS_IMPORT.refs[i] || i + 1, item, erreurs, avert, inclus: !erreurs.length && !ligneTotal });
   }
   return out;
 }
@@ -1704,7 +1835,7 @@ function _biGoStep5() {
 }
 
 function _biRenderStep5() {
-  return '<div id="biPreviewArea" style="min-height:200px"><div style="text-align:center;padding:40px;color:var(--gray-text)">⏳ Validation en cours…</div></div>';
+  return ('<div id="biPreviewArea" style="min-height:200px"><div style="text-align:center;padding:40px;color:var(--gray-text)">' + lk('hourglass') + ' Validation en cours…</div></div>');
 }
 
 /**
@@ -1782,11 +1913,11 @@ function _biShowApiError(result, context) {
   const c = document.getElementById('biPreviewArea');
   if (!c) return;
   let html = '<div style="padding:14px;background:#fee;border:1px solid #e74c3c;border-radius:8px;margin-bottom:12px">';
-  html += '<div style="font-weight:700;color:#c00;margin-bottom:8px;font-size:14px">❌ Échec de l\'import</div>';
+  html += ('<div style="font-weight:700;color:#c00;margin-bottom:8px;font-size:14px">' + lk('circle-x', 'ko') + ' Échec de l\'import</div>');
   html += '<div style="font-size:13px;margin-bottom:10px"><strong>Étape :</strong> ' + _esc(context) + '</div>';
   if (result.status) html += '<div style="font-size:12px;margin-bottom:6px"><strong>Code HTTP :</strong> ' + result.status + '</div>';
   html += '<div style="font-size:12px;margin-bottom:6px"><strong>Erreur :</strong> ' + _esc(result.error) + '</div>';
-  if (result.hint) html += '<div style="font-size:12px;margin-bottom:8px;padding:8px 10px;background:#fff;border-radius:6px;color:#854d0e"><strong>💡 Cause probable :</strong> ' + _esc(result.hint) + '</div>';
+  if (result.hint) html += ('<div style="font-size:12px;margin-bottom:8px;padding:8px 10px;background:#fff;border-radius:6px;color:#854d0e"><strong>' + lk('lightbulb') + ' Cause probable :</strong> ') + _esc(result.hint) + '</div>';
   if (result.body) {
     html += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#666">Détails techniques (réponse brute du serveur)</summary>';
     html += '<pre style="font-size:10px;background:#fff;padding:8px;border-radius:4px;max-height:250px;overflow:auto;margin-top:6px;white-space:pre-wrap;word-break:break-all">' + _esc(result.body) + '</pre>';
@@ -1849,14 +1980,14 @@ function _biRapportHtml(lignes, titre) {
   });
   let html = '<div style="padding:12px;background:'+(nErr?'#fff5f5':'#fffbeb')+';border:1px solid '+(nErr?'#e74c3c':'#eab308')+';border-radius:8px;margin-bottom:12px">';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="font-weight:600;font-size:13px;flex:1">'+titre+'</div>'
-    + '<button class="btn btn-ghost btn-sm" onclick="_biTelechargerRapport()" title="Toutes les lignes du rapport, pour corriger le fichier d\'origine">⬇️ Télécharger le rapport (CSV)</button></div>';
+    + ('<button class="btn btn-ghost btn-sm" onclick="_biTelechargerRapport()" title="Toutes les lignes du rapport, pour corriger le fichier d\'origine">' + lk('arrow-down') + ' Télécharger le rapport (CSV)</button></div>');
   Object.entries(groupes).sort((a, b) => (a[0] < b[0] ? -1 : 1)).forEach(([k, arr]) => {
     const grav = arr[0].gravite, champ = arr[0].champ, msg = arr[0].message;
-    html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px">'+(grav === 'erreur' ? '⛔' : '⚠️')+' <strong>'+arr.length+'</strong> × '
+    html += '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px">'+(grav === 'erreur' ? lk('octagon-x', 'ko') : lk('triangle-exclamation-point', 'warn'))+' <strong>'+arr.length+'</strong> × '
       + (champ ? '<span>'+_esc(champ)+'</span> : ' : '') + '<span>'+_esc(msg)+'</span></summary>';
     html += '<div style="max-height:160px;overflow-y:auto;font-size:11px;font-family:monospace;margin:4px 0 6px 18px">';
     arr.slice(0, 200).forEach(l => {
-      html += '<div style="padding:2px 0;border-bottom:1px solid rgba(0,0,0,.05)">L'+_esc(String(l.row))+(l.numero ? ' (n° '+_esc(l.numero)+')' : '')+(l.valeur ? ' — « '+_esc(l.valeur)+' »' : '')+'</div>';
+      html += '<div style="padding:2px 0;border-bottom:1px solid rgba(0,0,0,.05)">'+_esc(_biRefCourt(_BIENS_IMPORT.orientation, l.row))+(l.numero ? ' (n° '+_esc(l.numero)+')' : '')+(l.valeur ? ' — « '+_esc(l.valeur)+' »' : '')+'</div>';
     });
     if (arr.length > 200) html += '<div style="color:var(--gray-text)">… et '+(arr.length - 200)+' autre(s) (voir le CSV)</div>';
     html += '</div></details>';
@@ -1869,8 +2000,9 @@ function _biTelechargerRapport() {
   const r = _BIENS_IMPORT.dernierRapport;
   if (!r || !r.lignes.length) return;
   const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const csv = '﻿' + ['Ligne;N°;Gravité;Colonne;Valeur;Message']
-    .concat(r.lignes.map(l => [l.row, l.numero, l.gravite, l.champ, l.valeur, l.message].map(q).join(';'))).join('\r\n');
+  const enCol = _BIENS_IMPORT.orientation === 'colonnes';
+  const csv = '﻿' + [(enCol ? 'Colonne du fichier' : 'Ligne') + ';N°;Gravité;Champ;Valeur;Message']
+    .concat(r.lignes.map(l => [enCol ? _biColLettre(l.row) : l.row, l.numero, l.gravite, l.champ, l.valeur, l.message].map(q).join(';'))).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = 'rapport-import-' + (r.etape || 'apercu') + '-' + new Date().toISOString().substring(0, 10) + '.csv';
@@ -1904,11 +2036,11 @@ function _biRenderPreviewResult(result, items) {
   // Récap de routage en mode auto
   if (isAuto && (result.routedBiens > 0 || result.routedEquipements > 0)) {
     html += '<div style="padding:12px;background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;margin-bottom:12px">';
-    html += '<div style="font-weight:600;margin-bottom:8px;font-size:13px;color:#166534">🪄 Routage automatique</div>';
+    html += ('<div style="font-weight:600;margin-bottom:8px;font-size:13px;color:#166534">' + lk('wand-sparkles') + ' Routage automatique</div>');
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px">';
-    html += '<div style="padding:8px;background:#fff;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--blue)">🏢 '+result.routedBiens+'</div><div style="font-size:11px;color:var(--gray-text)">vers Biens</div></div>';
-    html += '<div style="padding:8px;background:#fff;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#9333ea">⚙️ '+result.routedEquipements+'</div><div style="font-size:11px;color:var(--gray-text)">vers Équipements</div></div>';
-    html += '<div style="padding:8px;background:#fff;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#dc2626">🗃️ '+(result.sortis||0)+'</div><div style="font-size:11px;color:var(--gray-text)">marqués sortis</div></div>';
+    html += ('<div style="padding:8px;background:#fff;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--blue)">' + lk('building-complex') + ' ')+result.routedBiens+'</div><div style="font-size:11px;color:var(--gray-text)">vers Biens</div></div>';
+    html += ('<div style="padding:8px;background:#fff;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#9333ea">' + lk('settings') + ' ')+result.routedEquipements+'</div><div style="font-size:11px;color:var(--gray-text)">vers Équipements</div></div>';
+    html += ('<div style="padding:8px;background:#fff;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#dc2626">' + lk('archive') + ' ')+(result.sortis||0)+'</div><div style="font-size:11px;color:var(--gray-text)">marqués sortis</div></div>';
     html += '</div></div>';
   }
 
@@ -1918,7 +2050,7 @@ function _biRenderPreviewResult(result, items) {
   Object.entries(_BIENS_IMPORT.listesNePasCreer || {}).forEach(([cat, set]) => { if (set && set.size) { proposees[cat] = proposees[cat] || new Set(); set.forEach(v => proposees[cat].add(v)); } });
   if (Object.keys(proposees).length > 0) {
     html += '<div style="padding:12px;background:var(--blue-pale);border:1px solid var(--blue);border-radius:8px;margin-bottom:12px">';
-    html += '<div style="font-weight:600;margin-bottom:2px;font-size:13px">📋 Nouvelles valeurs pour les listes de choix</div>';
+    html += ('<div style="font-weight:600;margin-bottom:2px;font-size:13px">' + lk('clipboard-list') + ' Nouvelles valeurs pour les listes de choix</div>');
     html += '<div style="font-size:11px;color:var(--gray-text);margin-bottom:6px">Cochées : ajoutées aux listes (Configuration → Listes). Décochées : la fiche garde la valeur, la liste n\'est pas modifiée.</div>';
     Object.entries(proposees).forEach(([cat, set]) => {
       const exclues = (_BIENS_IMPORT.listesNePasCreer || {})[cat] || new Set();
@@ -1937,23 +2069,43 @@ function _biRenderPreviewResult(result, items) {
   const casesUtilisees = Object.values(_BIENS_IMPORT.mapping).filter(k => k && k.startsWith('cp')).length;
   if (casesUtilisees) {
     html += '<div style="padding:10px 14px;background:#f5f3ff;border:1px solid #7c3aed;border-radius:8px;margin-bottom:12px;font-size:12px;color:#5b21b6">'
-      + '🗂️ <span>Cases complémentaires remplies dans les fiches :</span> <b>' + casesUtilisees + '</b>'
+      + (lk('folders') + ' <span>Cases complémentaires remplies dans les fiches :</span> <b>') + casesUtilisees + '</b>'
       + (nouvellesCases.length ? '<div style="margin-top:4px"><span>Nouvelles cases créées :</span> ' + nouvellesCases.map(l => '<span class="badge badge-blue" style="font-size:10px">' + _esc(l) + '</span>').join(' ') + '</div>' : '')
       + '</div>';
+  }
+  // Une case que l'import va créer ressemble à une case existante ou retirée :
+  // probablement la même, mal orthographiée ou renommée. On propose de s'en
+  // servir — et, pour une case retirée, de la restaurer avec ses valeurs.
+  const ress = (result.casesRessemblances || []).filter(r => r.statut === 'existante' || r.statut === 'supprimee');
+  if (ress.length) {
+    html += '<div style="padding:10px 14px;background:#fff7ed;border:1px solid #f59e0b;border-radius:8px;margin-bottom:12px;font-size:12px;color:#7c2d12">'
+      + lk('triangle-exclamation-point', 'warn') + ' <strong>Cases qui ressemblent à une case déjà connue</strong>'
+      + ress.map(r => {
+          const col = Object.entries(_BIENS_IMPORT.nouvellesCases).find(([, n]) => n.libelle === r.libelle);
+          const pct = Math.round(r.similarite * 100);
+          const quoi = r.statut === 'supprimee'
+            ? 'la case retirée « ' + _esc(r.ressemble_a) + ' »' + (r.nb_fiches ? ' (' + r.nb_fiches + ' fiche' + (r.nb_fiches > 1 ? 's' : '') + ' en gardent une valeur)' : '')
+            : 'la case « ' + _esc(r.ressemble_a) + ' »';
+          return '<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>« ' + _esc(r.libelle) + ' » ressemble à ' + pct + ' % à ' + quoi + '.</span>'
+            + (col ? '<button type="button" class="btn btn-ghost btn-sm" onclick="_biUtiliserCaseConnue(' + col[0] + ',' + _esc(JSON.stringify(r)) + ')">'
+              + (r.statut === 'supprimee' ? lk('rotate-ccw') + ' Restaurer « ' + _esc(r.ressemble_a) + ' »' : 'Utiliser « ' + _esc(r.ressemble_a) + ' »') + '</button>' : '')
+            + '</div>';
+        }).join('')
+      + '<div style="margin-top:6px;color:#9a3412">Sinon, l\'import créera une case de plus, à côté de l\'autre.</div></div>';
   }
 
   // Info sur les doublons internes suffixés
   if (result.duplicatesSuffixed && result.duplicatesSuffixed > 0) {
     html += '<div style="padding:10px 14px;background:#fef9c3;border:1px solid #eab308;border-radius:8px;margin-bottom:12px;font-size:12px;color:#713f12">';
-    html += 'ℹ️ <strong>'+result.duplicatesSuffixed+' doublon(s) interne(s)</strong> au fichier détecté(s). Ils seront automatiquement suffixés (ex. "9205-2", "9205-3") pour préserver toutes les lignes.';
+    html += (lk('info') + ' <strong>')+result.duplicatesSuffixed+' doublon(s) interne(s)</strong> au fichier détecté(s). Ils seront automatiquement suffixés (ex. "9205-2", "9205-3") pour préserver toutes les lignes.';
     html += '</div>';
   }
 
   const rapport = _biRapport(errors, result.avertissements || [], 'apercu');
   const nAv = rapport.filter(l => l.gravite !== 'erreur').length;
   html += _biRapportHtml(rapport, errors.length
-    ? '⛔ <b>'+errors.length+'</b> <span>erreur(s) : lignes ignorées</span>'+(nAv ? ' · <b>'+nAv+'</b> <span>avertissement(s)</span>' : '')
-    : '⚠️ <b>'+nAv+'</b> <span>avertissement(s) : les lignes sont importées, voir le détail</span>');
+    ? (lk('octagon-x', 'ko') + ' <b>')+errors.length+'</b> <span>erreur(s) : lignes ignorées</span>'+(nAv ? ' · <b>'+nAv+'</b> <span>avertissement(s)</span>' : '')
+    : (lk('triangle-exclamation-point', 'warn') + ' <b>')+nAv+'</b> <span>avertissement(s) : les lignes sont importées, voir le détail</span>');
 
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:6px">Aperçu (5 premières lignes cochées) :</div>';
   html += '<div style="max-height:200px;overflow-y:auto;border:1px solid var(--gray-border);border-radius:6px;margin-bottom:14px">';
@@ -1975,7 +2127,7 @@ function _biRenderPreviewResult(result, items) {
   html += '<div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:14px;border-top:1px solid var(--gray-border)">';
   html += '<button class="btn btn-secondary" onclick="_BIENS_IMPORT.step=4;_biRender()">◀ Retour à la sélection</button>';
   if (result.toCreate + result.toUpdate > 0) {
-    html += '<button class="btn btn-primary" onclick="_biRunImport()">✅ Importer ('+(result.toCreate+result.toUpdate)+' '+targetLabel+')</button>';
+    html += ('<button class="btn btn-primary" onclick="_biRunImport()">' + lk('circle-check', 'ok') + ' Importer (')+(result.toCreate+result.toUpdate)+' '+targetLabel+')</button>';
   } else {
     html += '<button class="btn btn-primary" disabled>Aucun à importer</button>';
   }
@@ -1995,7 +2147,7 @@ async function _biRunImport() {
   const renderProgress = (done, msg) => {
     const pct = total > 0 ? Math.round(done / total * 100) : 0;
     c.innerHTML = '<div style="text-align:center;padding:30px">'
-      + '<div style="font-size:24px;margin-bottom:10px">⏳</div>'
+      + ('<div style="font-size:24px;margin-bottom:10px">' + lk('hourglass') + '</div>')
       + '<div style="font-size:14px;font-weight:600;margin-bottom:14px">'+(msg || 'Import en cours…')+'</div>'
       + '<div style="background:var(--gray-bg);border-radius:8px;height:24px;overflow:hidden;margin:0 auto;max-width:400px;position:relative">'
       + '<div style="background:linear-gradient(90deg,var(--blue) 0%,#16a34a 100%);height:100%;width:'+pct+'%;transition:width .3s"></div>'
@@ -2034,7 +2186,7 @@ async function _biRunImport() {
   const r = totals;
   const rapport = _biRapport(r.errors, [], 'import');
   let html = '<div style="text-align:center;padding:24px 10px">';
-  html += '<div style="font-size:48px;margin-bottom:10px">'+(r.failed ? '⚠️' : '🎉')+'</div>';
+  html += '<div style="font-size:48px;margin-bottom:10px">'+(r.failed ? lk('triangle-exclamation-point', 'warn') : lk('party-popper'))+'</div>';
   html += '<div style="font-size:18px;font-weight:700;margin-bottom:14px">'+(r.failed ? 'Import terminé, avec des lignes en échec' : 'Import terminé !')+'</div>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px;max-width:500px;margin-left:auto;margin-right:auto">';
   html += '<div style="padding:14px;background:var(--blue-pale);border-radius:8px"><div style="font-size:24px;font-weight:700;color:var(--blue)">'+r.created+'</div><div style="font-size:11px">créés</div></div>';
@@ -2044,7 +2196,7 @@ async function _biRunImport() {
   if (r.comptaCreated) html += '<div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">+ '+r.comptaCreated+' entrée(s) en gestion matériel</div>';
   if (r.listesAdded)   html += '<div style="font-size:12px;color:var(--gray-text);margin-bottom:14px">+ '+r.listesAdded+' valeur(s) ajoutée(s) dans les listes</div>';
   html += '</div>';
-  html += '<div style="text-align:left;max-width:680px;margin:0 auto">' + _biRapportHtml(rapport, '⚠️ <b>'+rapport.length+'</b> <span>point(s) à reprendre</span>') + '</div>';
+  html += '<div style="text-align:left;max-width:680px;margin:0 auto">' + _biRapportHtml(rapport, (lk('triangle-exclamation-point', 'warn') + ' <b>')+rapport.length+'</b> <span>point(s) à reprendre</span>') + '</div>';
 
   const reloadFn = _BIENS_IMPORT.target === 'equipements' ? 'renderEquipements' : 'renderBiens';
   html += '<div style="text-align:center;margin-top:10px"><button class="btn btn-primary" onclick="closeModal();typeof '+reloadFn+'===\'function\'&&'+reloadFn+'()">Fermer & rafraîchir</button></div>';
@@ -2142,7 +2294,7 @@ function openImportEquipements() {
   Object.assign(_BIENS_IMPORT, {
     target: 'equipements',
     workbook: null, sheetNames: [], selectedSheet: null,
-    rawRows: [], headerRowIdx: 0, headers: [], mapping: {},
+    rawRows: [], refs: [], orientation: 'lignes', orientationChoisie: false, headerRowIdx: 0, headers: [], mapping: {},
     valueMap: { Statut: {}, Etat: {} }, dedupStrategy: 'update', step: 1,
     lignes: [], selFiltre: 'toutes', selRecherche: '', selPage: 1, prixMin: '', prixMax: '',
     listesNePasCreer: {}, dernierRapport: null, nouvellesCases: {},

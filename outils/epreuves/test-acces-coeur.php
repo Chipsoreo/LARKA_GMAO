@@ -198,6 +198,13 @@ try {
     verifier('gestionnaire : journaux hors de data/ refusés',
         ($cfgApres['logs']['dossier'] ?? '') !== '/var/www/html', "HTTP $c", $ok, $ko);
     if ($avant !== '') @file_put_contents($dir . '/config.json', $avant);
+    // Audit 3.0.0 : la migration écrivait la base n'importe où (config_serveur, lui,
+    // réserve base_de_donnees.path hors de data/ au Super Administrateur).
+    foreach (['css/copie.css' => 400, 'data/../css/copie.db' => 400, '/tmp/larka-copie.db' => 400, 'data/.user.ini' => 400,
+              'data/copie-epreuve.db' => 200] as $chemin => $attendu) {
+        [$c] = $api('adm', 'POST', 'db_migrate_test', ['destination' => ['driver' => 'sqlite', 'path' => $chemin]]);
+        verifier("gestionnaire : migration vers « $chemin »" . ($attendu === 200 ? '' : ' refusée'), $c === $attendu, "HTTP $c", $ok, $ko);
+    }
 
     // ── #3 router.php ─────────────────────────────────────────────────────────
     echo "\n  #3 Serveur intégré : chemins détournés\n";
@@ -292,6 +299,21 @@ try {
     $jar = (string)@file_get_contents($jarres['dem1'] ?? '');
     verifier('cookie de session nommé GMAO_SID', (bool)preg_match('/\tGMAO_SID\t/', $jar),
              preg_match('/\t(\w*SESS\w*|GMAO_SID)\t/', $jar, $m) ? $m[1] : '?', $ok, $ko);
+    // Audit 3.0.0 : un mot de passe changé (par soi, ou réinitialisé par un
+    // gestionnaire) laissait ouvertes les autres sessions du compte.
+    $api('dem2b', 'POST', 'login', ['login' => 'dem2', 'password' => 'Epreuve-dem2-1']);
+    [$c1] = $api('dem2', 'GET', 'me');
+    [$c] = $api('dem2b', 'POST', 'change_password', ['oldPassword' => 'Epreuve-dem2-1', 'newPassword' => 'Epreuve-dem2-2']);
+    [$cA] = $api('dem2', 'GET', 'me');
+    [$cB] = $api('dem2b', 'GET', 'me');
+    verifier('mot de passe changé : l\'autre session du compte fermée', $c1 === 200 && $c === 200 && $cA === 401, "HTTP $c1 → $cA", $ok, $ko);
+    verifier('… celle qui l\'a changé reste ouverte', $cB === 200, "HTTP $cB", $ok, $ko);
+    $api('adm', 'PUT', 'utilisateurs&id=' . ($ids['dem2'] ?? 0), ['nom' => 'dem2', 'prenom' => 'E', 'login' => 'dem2',
+         'role' => 'Demandeur', 'provider' => 'local', 'actif' => 1, 'motDePasse' => 'Epreuve-dem2-3']);
+    [$c] = $api('dem2b', 'GET', 'me');
+    [$cG] = $api('adm', 'GET', 'me');
+    verifier('mot de passe réinitialisé par le gestionnaire : session fermée', $c === 401, "HTTP $c", $ok, $ko);
+    verifier('… la session du gestionnaire reste ouverte', $cG === 200, "HTTP $cG", $ok, $ko);
 
     // ── #10 / #11 numérotation et stock ───────────────────────────────────────
     echo "\n  #10 Numéros d'intervention   ·   #11 Stock\n";
@@ -420,6 +442,15 @@ try {
     $api('sa2', 'POST', 'superadmin_login', ['login' => 'sa2', 'password' => 'Epreuve-SA2-12']);
     [$c] = $api('sa2', 'POST', 'superadmin_emails_save', ['emails' => ['intrus@exemple.test']]);
     verifier('super admin secondaire : ajout d\'une adresse super admin refusé', $c === 403, "HTTP $c", $ok, $ko);
+    // Audit 3.0.0 : supprimé, un compte super admin gardait sa session (≤ 4 h) et
+    // son adresse Microsoft autorisée.
+    [$c1] = $api('sa2', 'GET', 'superadmin_me');
+    $api('sa', 'POST', 'superadmin_account_remove', ['login' => 'sa2']);
+    [$c] = $api('sa2', 'GET', 'superadmin_me');
+    verifier('super admin supprimé : sa session tombe', $c1 === 200 && $c === 401, "HTTP $c1 → $c", $ok, $ko);
+    [, $r] = $api('sa', 'GET', 'superadmin_emails');
+    verifier('… et son adresse Microsoft est retirée', is_array($r['data'] ?? null)
+             && !in_array('sa2@epreuve.test', array_map('strtolower', $r['data']), true), json_encode($r['data'] ?? null), $ok, $ko);
     foreach (['config.json' => 400, 'data/superadmin.db' => 409, 'data/tenant_beta.db' => 409] as $chemin => $attendu) {
         [$c] = $api('sa', 'POST', 'superadmin_tenant_save', ['key' => 'gamma', 'nom' => 'gamma',
              'domaines_email' => ['gamma.test'], 'db_driver' => 'sqlite', 'db_path' => $chemin]);
@@ -431,6 +462,13 @@ try {
     verifier('tenant sans domaine e-mail : refusé', $c === 400 && str_contains((string)($r['error'] ?? ''), 'Domaine e-mail requis'), "HTTP $c", $ok, $ko);
     [$c, $r] = $api('sa', 'POST', 'superadmin_tenant_save', ['key' => 'delta', 'nom' => 'delta', 'db_driver' => 'sqlite', 'domaines_email' => ['jean@delta.test']]);
     verifier('domaine e-mail mal formé (adresse au lieu du domaine) : refusé', $c === 400 && str_contains((string)($r['error'] ?? ''), 'invalide'), "HTTP $c", $ok, $ko);
+    // Audit 3.0.0 : un mot de passe super admin changé n'éteignait pas les autres sessions.
+    $api('saB', 'POST', 'superadmin_login', ['login' => 'sa', 'password' => 'Epreuve-SA-12']);
+    [$c] = $api('saB', 'POST', 'superadmin_change_password', ['oldPassword' => 'Epreuve-SA-12', 'newPassword' => 'Epreuve-SA-13']);
+    [$cA] = $api('sa', 'GET', 'superadmin_me');
+    [$cB] = $api('saB', 'GET', 'superadmin_me');
+    verifier('mot de passe super admin changé : l\'autre session tombe', $c === 200 && $cA === 401, "HTTP $c, $cA", $ok, $ko);
+    verifier('… celle qui l\'a changé reste ouverte', $cB === 200, "HTTP $cB", $ok, $ko);
 } catch (\Throwable $e) {
     $ko[] = 'déroulé : ' . $e->getMessage();
     echo "  ❌  " . $e->getMessage() . "\n";

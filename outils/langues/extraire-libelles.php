@@ -2,10 +2,13 @@
 // SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
 // SPDX-License-Identifier: LicenseRef-Larka-Proprietary
 /**
- * Extrait les libellés de l'interface vers lang/fr.json.
+ * Extrait les libellés de l'interface vers lang/traductions.json.
  *
- * Ce fichier est le CATALOGUE DE RÉFÉRENCE : la liste de ce qui est
- * traduisible, avec le texte français d'origine en clé ET en valeur.
+ * Ce fichier est le fichier de traduction UNIQUE de l'interface (voir
+ * outils/langues/traductions.php) : la liste de ce qui est traduisible — le
+ * texte français d'origine en clé —, avec sa traduction dans chaque langue.
+ * La récolte ajoute les nouveaux libellés (lignes vides, à traduire), retire
+ * ceux qui ont disparu du code, et garde les traductions des autres.
  *
  * Il sert trois choses :
  *   1. corriger un libellé sans toucher au code — le JSON est prioritaire ;
@@ -21,6 +24,8 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit("Ligne de commande uniqu
 
 // Deux niveaux : ce script vit dans outils/<famille>/, pas à la racine.
 $racine = dirname(__DIR__, 2);
+require __DIR__ . '/traductions.php';
+$trad = trad_lire($racine);
 // ⚠️ js/components/ et js/filtres/ n'étaient pas parcourus : les panneaux de
 // filtres (boutons « Réinitialiser », « Appliquer », intitulés de critères) et
 // le sélecteur de personnes restaient en français dans une interface traduite.
@@ -102,6 +107,11 @@ foreach ($fichiers as $f) {
     // sur « il se contente d » perd confiance dans tout le fichier.
     $s = preg_replace('!/\*.*?\*/!s', ' ', $s);
     $s = preg_replace('!^\s*//.*$!m', ' ', $s);
+    // Listes de SYNONYMES des imports (exact: […], contains: [[…]], negative: […]) :
+    // des en-têtes de colonnes possibles, réduits en minuscules sans accents
+    // (« date prevue », « n bon de commande »). Jamais affichés ; ils remplissaient
+    // le catalogue de centaines de lignes « à traduire » qui ne servent à rien.
+    $s = preg_replace('/\b(?:exact|contains|negative)\s*:\s*\[(?:[^\[\]]|\[[^\[\]]*\])*\]/u', ' ', $s);
 
     if (preg_match_all('/>\s*([^<>{}\n]{2,140}?)\s*</u', $s, $m)) {
         foreach ($m[1] as $t) $ajouter($t);
@@ -221,7 +231,7 @@ foreach ($fichiers as $f) {
 // les sources sont gardées : la récolte ne les reconnaît pas toutes (textes
 // assemblés, attributs posés par le code), et un traducteur ne doit pas voir
 // disparaître une ligne qu'il a déjà traduite tant qu'elle s'affiche.
-$avant = json_decode((string)@file_get_contents($racine . '/lang/fr.json'), true)['libelles'] ?? [];
+$avant = $trad['libelles'];
 if ($avant) {
     $sources = '';
     foreach ($fichiers as $f) $sources .= (string)@file_get_contents($f) . "\n";
@@ -229,26 +239,27 @@ if ($avant) {
         if (!isset($vus[$t]) && mb_strlen($t) <= LIBELLE_MAX && str_contains($sources, $t)) $vus[$t] = true;
     }
 }
-// Complément tenu à la main (lang/complements.json : liste de libellés) :
+// Complément tenu à la main (« complements » du fichier de traduction) :
 // textes assemblés à l'exécution que la récolte ne peut pas voir.
-$compl = json_decode((string)@file_get_contents($racine . '/lang/complements.json'), true);
-foreach ((array)($compl['libelles'] ?? []) as $t) {
+foreach ($trad['complements'] as $t) {
     if (is_string($t) && trim($t) !== '' && mb_strlen(trim($t)) <= LIBELLE_MAX) $vus[trim($t)] = true;
 }
 
 $libelles = array_keys($vus);
 sort($libelles, SORT_NATURAL | SORT_FLAG_CASE);
 
-// Clé ET valeur en français : un traducteur remplace la valeur, jamais la clé.
+// Traductions déjà faites : gardées ; nouveaux libellés : ligne vide, à traduire.
 $catalogue = [];
-foreach ($libelles as $t) $catalogue[$t] = $t;
+foreach ($libelles as $t) $catalogue[$t] = $trad['libelles'][$t] ?? [];
+$nouveaux = count(array_diff_key($catalogue, $trad['libelles']));
+$retires  = count(array_diff_key($trad['libelles'], $catalogue));
+$trad['libelles'] = $catalogue;
+$trad['version']  = date('Y-m-d');
+trad_ecrire($racine, $trad);
 
-$sortie = $racine . '/lang/fr.json';
-file_put_contents($sortie, json_encode([
-    'langue'   => 'fr',
-    'nom'      => 'Français',
-    'version'  => date('Y-m-d'),
-    'libelles' => $catalogue,
-], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
-
-printf("✓ lang/fr.json — %d libellés\n", count($catalogue));
+printf("✓ %s — %d libellés (%d nouveau(x), %d retiré(s))\n", TRAD_CHEMIN, count($catalogue), $nouveaux, $retires);
+foreach (array_keys($trad['langues']) as $code) {
+    if ($code === 'fr') continue;
+    $aFaire = count(array_filter($catalogue, fn($e) => !isset($e[$code])));
+    if ($aFaire) printf("  %s : %d libellé(s) à traduire\n", $code, $aFaire);
+}

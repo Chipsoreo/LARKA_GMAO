@@ -16,7 +16,7 @@
 /**
  * Qui peut migrer la base.
  *
- * ⚠️ UN ADMINISTRATEUR DE TENANT RÉÉCRIVAIT LA CONFIGURATION DU SERVEUR.
+ * UN ADMINISTRATEUR DE TENANT RÉÉCRIVAIT LA CONFIGURATION DU SERVEUR.
  * « config_serveur » refuse les admins de tenant en multi-tenant — mais
  * « db_migrate » réécrivait lui aussi config.json (section base_de_donnees,
  * commune à tout le serveur) et « db_migrate_test » ouvrait une connexion vers
@@ -39,12 +39,40 @@ if (!function_exists('_mig_exiger_droits')) {
     }
 }
 
+/**
+ * Destination SQLite acceptable ? Message de refus, ou null.
+ *
+ * LA MIGRATION ÉCRIVAIT LA BASE OÙ ON LE LUI DISAIT.
+ * Le chemin d'une destination SQLite n'était pas borné : la base complète
+ * (comptes et empreintes de mot de passe compris) pouvait être créée n'importe
+ * où sur le disque — sous la racine web avec une extension servie telle quelle
+ * (« css/copie.css »), ou sous un nom que PHP lit (« .user.ini ») — puis
+ * config.json basculait dessus. config_serveur réserve pourtant ce même réglage
+ * (base_de_donnees.path hors de data/) au Super Administrateur : la migration le
+ * contournait. Même règle ici : sous data/ pour un gestionnaire, partout pour
+ * le Super Administrateur ; et toujours une extension de base (.db, .sqlite,
+ * .sqlite3), que nginx et router.php ne servent jamais.
+ */
+function _mig_cheminRefuse(array $dest, array $user): ?string {
+    if (($dest['driver'] ?? '') !== 'sqlite') return null;
+    $p = str_replace('\\', '/', trim((string)($dest['path'] ?? '')));
+    if ($p === '') return null;   // défaut : data/gmao.db
+    if (str_contains($p, "\0")) return 'Chemin de base invalide.';
+    if (!preg_match('/\.(db|sqlite|sqlite3)$/i', $p)) return 'Le fichier de destination doit se terminer par .db, .sqlite ou .sqlite3.';
+    if (($user['Role'] ?? '') === 'SuperAdmin') return null;
+    if (larka_chemin_absolu($p) || str_contains($p, '..') || !str_starts_with($p, 'data/')) {
+        return 'Destination SQLite hors de data/ : réservée au Super Administrateur (ou à config.json sur le serveur).';
+    }
+    return null;
+}
+
 // ── Test de connexion seul ─────────────────────────────────────────────────
 if ($action === 'db_migrate_test') {
     $user = _mig_exiger_droits();
     if ($method !== 'POST') json_error('Méthode non supportée.', 405);
     $dest = get_body()['destination'] ?? null;
     if (!$dest) json_error('Paramètre destination manquant.', 400);
+    if (is_array($dest) && ($refus = _mig_cheminRefuse($dest, $user)) !== null) json_error($refus, 400);
     try {
         $pdo = _mig_makePdo($dest);
         $pdo->query('SELECT 1');
@@ -66,8 +94,9 @@ if ($action === 'db_migrate') {
     if (!in_array($dest['driver'], ['sqlite', 'pgsql', 'mariadb', 'mysql'], true)) {
         json_error('Driver de destination inconnu (sqlite, pgsql ou mariadb).', 400);
     }
+    if (($refus = _mig_cheminRefuse($dest, $user)) !== null) json_error($refus, 400);
 
-    // ⚠️ DESTINATION = SOURCE : LA MIGRATION VIDAIT LA BASE EN SERVICE.
+    // DESTINATION = SOURCE : LA MIGRATION VIDAIT LA BASE EN SERVICE.
     // Rien n'empêchait de désigner comme destination la base même que l'on
     // migre (même fichier SQLite — le chemin proposé par défaut est celui de
     // la base principale —, ou même base PostgreSQL). L'étape « vider la
@@ -107,7 +136,7 @@ if ($action === 'db_migrate') {
         $test = _mig_makePdo($dest);
         $test->query('SELECT 1');
         $test = null;
-        $report[] = ['table'=>'🔌 Connexion destination','rows'=>0,'status'=>'ok',
+        $report[] = ['table'=>'Connexion destination','rows'=>0,'status'=>'ok',
             'detail'=> strtoupper($dest['driver']) . ' joignable'];
     } catch (\Exception $e) {
         // Supprimer la sauvegarde si elle a été créée
@@ -120,7 +149,7 @@ if ($action === 'db_migrate') {
     // ÉTAPE 3 — Inventaire de la source
     // ════════════════════════════════════════════════════════════════════
     //
-    // ⚠️ LA LISTE DES TABLES ÉTAIT ÉCRITE EN DUR — ET NE SUIVAIT PLUS LE SCHÉMA.
+    // LA LISTE DES TABLES ÉTAIT ÉCRITE EN DUR — ET NE SUIVAIT PLUS LE SCHÉMA.
     // Seize tables du cœur, puis celles des modules. Tout ce qui est venu
     // ensuite restait derrière, sans un mot : factures et leur ventilation,
     // lignes de devis, archives (boîtes, dossiers, bordereaux), plans
@@ -150,7 +179,7 @@ if ($action === 'db_migrate') {
     // ÉTAPE 4 — Structure de la destination
     // ════════════════════════════════════════════════════════════════════
     //
-    // ⚠️ LA STRUCTURE ÉTAIT RECOPIÉE ICI, À LA MAIN, FIGÉE À UNE VERSION ANCIENNE.
+    // LA STRUCTURE ÉTAIT RECOPIÉE ICI, À LA MAIN, FIGÉE À UNE VERSION ANCIENNE.
     // Seize CREATE TABLE où manquaient les colonnes apparues depuis : sur une
     // destination vierge, la première ligne portant une colonne récente faisait
     // échouer la migration. Le schéma vient désormais de Database — la même
@@ -169,7 +198,7 @@ if ($action === 'db_migrate') {
         $detail = 'Schéma Larka créé/vérifié';
         if ($structure['creees'])   $detail .= ' ; tables reprises de la source : ' . implode(', ', $structure['creees']);
         if ($structure['colonnes']) $detail .= ' ; colonnes ajoutées : ' . implode(', ', $structure['colonnes']);
-        $report[] = ['table'=>'🏗️ Structure','rows'=>0,'status'=>'ok','detail'=>$detail];
+        $report[] = ['table'=>'Structure','rows'=>0,'status'=>'ok','detail'=>$detail];
     } catch (\Throwable $e) {
         if ($savedAt && file_exists($savedAt)) unlink($savedAt);
         json_error('Erreur création tables : ' . $e->getMessage(), 500);
@@ -177,9 +206,9 @@ if ($action === 'db_migrate') {
 
     // Vider la destination (tables concernées uniquement)
     _mig_truncate($destPdo, array_values(array_unique($nomsDest)), $isPgDest, $isMysqlDest);
-    $report[] = ['table'=>'🗑️ Nettoyage','rows'=>0,'status'=>'ok','detail'=>'Destination vidée'];
+    $report[] = ['table'=>'Nettoyage','rows'=>0,'status'=>'ok','detail'=>'Destination vidée'];
 
-    // ⚠️ « SET session_replication_role » EST RÉSERVÉ AU SUPERUTILISATEUR.
+    // « SET session_replication_role » EST RÉSERVÉ AU SUPERUTILISATEUR.
     // Sur l'installation recommandée — un rôle PostgreSQL dédié, propriétaire de
     // sa base mais sans privilège superutilisateur —, l'ordre levait « permission
     // denied to set parameter », non rattrapé : la migration vers PostgreSQL
@@ -327,7 +356,7 @@ if ($action === 'db_migrate') {
             } catch (\Exception $e) {}
         }
         if ($synced) {
-            $report[] = ['table'=>'🔄 Séquences PG','rows'=>count($synced),'status'=>'ok',
+            $report[] = ['table'=>'Séquences PG','rows'=>count($synced),'status'=>'ok',
                 'detail'=>'Resynchronisées : ' . implode(', ', $synced)];
         }
     }
@@ -345,7 +374,7 @@ if ($action === 'db_migrate') {
         $cfg['base_de_donnees']['port']    = (int)($dest['port'] ?? ($isPgDest ? 5432 : 3306));
         $cfg['base_de_donnees']['dbname']  = $dest['dbname']  ?? 'gmao';
         $cfg['base_de_donnees']['user']    = $dest['user']    ?? '';
-        // ⚠️ LE MOT DE PASSE ÉTAIT ÉCRIT EN CLAIR DANS config.json.
+        // LE MOT DE PASSE ÉTAIT ÉCRIT EN CLAIR DANS config.json.
         // Deux défauts : (1) contraire à la règle « les secrets vivent dans
         // .env » ; (2) bug fonctionnel — .env PRIME sur config.json : si
         // GMAO_DB_PASSWORD y était déjà défini, le nouveau mot de passe était
@@ -384,7 +413,7 @@ if ($action === 'db_migrate') {
         ]);
     }
 
-    $report[] = ['table'=>'⚙️ config.json','rows'=>0,'status'=>'ok',
+    $report[] = ['table'=>'config.json','rows'=>0,'status'=>'ok',
         'detail'=>"driver mis à jour → $destDriver — redémarrez le serveur"];
 
     json_ok([
@@ -493,7 +522,7 @@ function _mig_backup(?string $customPath, array &$report): ?string {
     $driver = DB_DRIVER;
     // SQLite → copie du fichier .db
     if ($driver === 'sqlite' && file_exists(DB_PATH)) {
-        // ⚠️ LE CHEMIN VENAIT DU CLIENT, SANS AUCUNE BORNE.
+        // LE CHEMIN VENAIT DU CLIENT, SANS AUCUNE BORNE.
         // copy(DB_PATH, <chemin reçu>) pouvait écrire n'importe où sur le disque
         // accessible au serveur — y compris PAR-DESSUS config.json, .env ou le
         // code de l'application. Seul le NOM est désormais retenu, réduit à un
@@ -517,12 +546,12 @@ function _mig_backup(?string $customPath, array &$report): ?string {
             json_error("Impossible de créer la sauvegarde dans data/backups/$nom — vérifiez les permissions.", 500);
         }
         @chmod($customPath, 0640);
-        $report[] = ['table'=>'📦 Sauvegarde','rows'=>0,'status'=>'ok',
+        $report[] = ['table'=>'Sauvegarde','rows'=>0,'status'=>'ok',
             'detail'=>'SQLite → ' . basename($customPath)];
         return $customPath;
     }
     // PostgreSQL / MariaDB → pas de fichier à copier, on signale
-    $report[] = ['table'=>'📦 Sauvegarde','rows'=>0,'status'=>'info',
+    $report[] = ['table'=>'Sauvegarde','rows'=>0,'status'=>'info',
         'detail'=>'Source ' . strtoupper($driver) . ' : faites un pg_dump/mysqldump avant de continuer. Pas de sauvegarde automatique.'];
     return null;
 }
@@ -671,7 +700,7 @@ function _mig_tablesConnues(): array {
         'NotesInfo', 'Factures', 'FactureInterventions', 'ArchivesBoite', 'ArchivesDossier',
         'ArchivesBordereau', 'PushSubscriptions', 'DeclarationsInventaire', 'MobiliteCarbone',
         'FacteurCarboneOfficiel', 'FacteurCarboneSimple', 'FacteurMobilite', 'ReseauChaleur',
-        'PlanBatiments', 'PlanEtages', 'PlanElements', 'PlanLiens', 'Journal',
+        'PlanBatiments', 'PlanEtages', 'PlanElements', 'PlanLiens', 'Journal', 'PlansMaintenance',
     ];
 }
 
@@ -782,17 +811,17 @@ function _mig_diagnose(array $dest, string $msg): string {
     $lines = ["Erreur : $msg", "Driver : $drv | Serveur : $host:$port"];
 
     if (str_contains($msg, 'Connection refused') || str_contains($msg, '10061') || str_contains($msg, 'refused')) {
-        $lines[] = "⚠️  Le serveur $drv n'est pas démarré ou n'écoute pas sur ce port.";
+        $lines[] = "⚠ Le serveur $drv n'est pas démarré ou n'écoute pas sur ce port.";
         if ($drv === 'pgsql')   $lines[] = "→  Installez PostgreSQL : https://www.postgresql.org/download/";
         if ($drv !== 'sqlite')  $lines[] = "→  Ou repassez en SQLite dans la config.";
     } elseif (str_contains($msg, 'could not find driver') || !extension_loaded('pdo_' . ($drv==='mariadb'?'mysql':$drv))) {
         $ext = 'pdo_' . ($drv === 'mariadb' ? 'mysql' : $drv);
-        $lines[] = "⚠️  Extension PHP $ext non activée.";
+        $lines[] = "⚠ Extension PHP $ext non activée.";
         $lines[] = "→  Ajoutez extension=php_{$ext}.dll dans php.ini";
     } elseif (str_contains($msg, 'password authentication') || str_contains($msg, 'Access denied')) {
-        $lines[] = "⚠️  Identifiants incorrects (user / password).";
+        $lines[] = "⚠ Identifiants incorrects (user / password).";
     } elseif (str_contains($msg, 'does not exist') || str_contains($msg, 'Unknown database')) {
-        $lines[] = "⚠️  La base de données \"" . ($dest['dbname'] ?? '') . "\" n'existe pas.";
+        $lines[] = "⚠ La base de données \"" . ($dest['dbname'] ?? '') . "\" n'existe pas.";
         $lines[] = $drv === 'pgsql'
             ? "→  Créez-la : CREATE DATABASE " . ($dest['dbname']??'gmao') . ";"
             : "→  Créez-la : CREATE DATABASE " . ($dest['dbname']??'gmao') . " CHARACTER SET utf8mb4;";

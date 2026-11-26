@@ -190,7 +190,7 @@ final class ExtSecurite
                     'motif' => 'type_de_colonne_inconnu',
                 ]);
             }
-            $defs[] = '"' . $col . '" ' . $t;
+            $defs[] = $this->q($col) . ' ' . $t;
         }
         if (count($defs) > 40) {
             throw ExtJournalSecurite::refuser([
@@ -200,7 +200,7 @@ final class ExtSecurite
         }
 
         $this->db->getPdo()->exec(
-            'CREATE TABLE "' . $complet . '" (' . implode(', ', $defs) . ')');
+            'CREATE TABLE ' . $this->q($complet) . ' (' . implode(', ', $defs) . ')');
         ExtPolitiqueDonnees::oublier();
 
         ExtJournalSecurite::consigner(ExtJournalSecurite::AUTORISE, [
@@ -249,7 +249,7 @@ final class ExtSecurite
 
             try {
                 $this->db->getPdo()->exec(
-                    'ALTER TABLE "' . $reel . '" ADD COLUMN "' . $cle . '" ' . $t);
+                    'ALTER TABLE ' . $this->q($reel) . ' ADD COLUMN ' . $this->q((string)$cle) . ' ' . $t);
                 $ajoutees[] = (string)$cle;
             } catch (\Throwable $e) {
                 // Une colonne qu'on ne peut pas ajouter n'empêche pas les autres.
@@ -266,6 +266,13 @@ final class ExtSecurite
             ]);
         }
         return $ajoutees;
+    }
+
+    /** Identifiant SQL entre les guillemets du moteur (voir ExtRequete::q) : `…` sous MySQL / MariaDB. */
+    private function q(string $nom): string
+    {
+        return $this->db->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+            ? '`' . $nom . '`' : '"' . $nom . '"';
     }
 
     /** Type SQL d'un champ « decimal » : un double sur tous les moteurs. */
@@ -316,7 +323,7 @@ final class ExtSecurite
         }
 
         // ── 5. Les secrets doivent être hors de portée ───────────────────
-        // ⚠️ PAS SOUS WINDOWS : NTFS protège par des listes de contrôle d'accès,
+        // PAS SOUS WINDOWS : NTFS protège par des listes de contrôle d'accès,
         // que fileperms() ignore — il y rend « 666 » pour tout fichier
         // modifiable. Le contrôle déclarait donc .env « lisible par tous » sur
         // chaque poste Windows, et en production refusait toute installation de

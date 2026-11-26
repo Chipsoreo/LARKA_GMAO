@@ -1,0 +1,428 @@
+{
+    "identifiant": "larka.qualite-air",
+    "format": "declaratif/1",
+    "nom": "Qualité de l'air intérieur",
+    "version": "1.0.1",
+    "auteur": "Larka",
+    "description": "Le CO₂ et la température de chaque salle, lus en direct sur les sondes raccordées à Larka Connect, et un registre des dépassements tenu tout seul à partir des alarmes techniques : quand, combien, combien de temps, et ce qui a été fait.",
+    "donnees": {
+        "salles": {
+            "libelle": "Salle",
+            "libelle_pluriel": "Salles",
+            "champs": {
+                "nom": {
+                    "type": "texte",
+                    "libelle": "Salle",
+                    "obligatoire": true,
+                    "max": 80,
+                    "exemple": "Classe CM2, Salle du conseil…",
+                    "groupe": "Salle"
+                },
+                "batiment": {
+                    "type": "lien",
+                    "vers": "batiments",
+                    "libelle": "Bâtiment",
+                    "groupe": "Salle"
+                },
+                "usage": {
+                    "type": "choix",
+                    "libelle": "Usage",
+                    "valeurs": [
+                        "Classe",
+                        "Dortoir",
+                        "Restauration",
+                        "Bureau",
+                        "Réunion",
+                        "Accueil du public",
+                        "Autre"
+                    ],
+                    "defaut": "Classe",
+                    "groupe": "Salle"
+                },
+                "capacite": {
+                    "type": "entier",
+                    "libelle": "Capacité",
+                    "min": 0,
+                    "max": 2000,
+                    "unite": "pers.",
+                    "groupe": "Salle"
+                },
+                "sonde_co2": {
+                    "type": "lien",
+                    "vers": "points_connect",
+                    "libelle": "Sonde de CO₂",
+                    "aide": "Le point de Larka Connect qui mesure le CO₂ de cette salle (en ppm).",
+                    "groupe": "Sondes"
+                },
+                "sonde_temperature": {
+                    "type": "lien",
+                    "vers": "points_connect",
+                    "libelle": "Sonde de température",
+                    "groupe": "Sondes"
+                },
+                "seuil_vigilance": {
+                    "type": "entier",
+                    "libelle": "Seuil de vigilance",
+                    "min": 400,
+                    "max": 5000,
+                    "defaut": 800,
+                    "unite": "ppm",
+                    "groupe": "Seuils"
+                },
+                "seuil_alerte": {
+                    "type": "entier",
+                    "libelle": "Seuil d'alerte",
+                    "min": 400,
+                    "max": 5000,
+                    "defaut": 1500,
+                    "unite": "ppm",
+                    "groupe": "Seuils"
+                },
+                "remarques": {
+                    "type": "texte_long",
+                    "libelle": "Remarques (ouvrants, ventilation…)",
+                    "max": 1000,
+                    "masque_liste": true,
+                    "groupe": "Salle"
+                },
+                "co2": {
+                    "type": "mesure",
+                    "de": "sonde_co2",
+                    "grandeur": "valeur",
+                    "libelle": "CO₂"
+                },
+                "co2_max": {
+                    "type": "mesure",
+                    "de": "sonde_co2",
+                    "grandeur": "maximum_24h",
+                    "libelle": "Max. 24 h"
+                },
+                "co2_moyen": {
+                    "type": "mesure",
+                    "de": "sonde_co2",
+                    "grandeur": "moyenne_24h",
+                    "libelle": "Moyenne 24 h",
+                    "masque_liste": true
+                },
+                "temperature": {
+                    "type": "mesure",
+                    "de": "sonde_temperature",
+                    "grandeur": "valeur",
+                    "libelle": "Température"
+                },
+                "etat_sonde": {
+                    "type": "mesure",
+                    "de": "sonde_co2",
+                    "grandeur": "etat",
+                    "libelle": "Sonde"
+                },
+                "air": {
+                    "type": "formule",
+                    "libelle": "Air",
+                    "expression": "{{if(isEmpty(record.co2), '—', if(record.co2 >= record.seuil_alerte, 'À aérer', if(record.co2 >= record.seuil_vigilance, 'À surveiller', 'Bon')))}}"
+                }
+            }
+        },
+        "depassements": {
+            "libelle": "Dépassement",
+            "libelle_pluriel": "Dépassements",
+            "champs": {
+                "alarme": {
+                    "type": "entier",
+                    "libelle": "N° d'alarme",
+                    "masque_liste": true
+                },
+                "sonde": {
+                    "type": "lien",
+                    "vers": "points_connect",
+                    "libelle": "Sonde"
+                },
+                "batiment": {
+                    "type": "lien",
+                    "vers": "batiments",
+                    "libelle": "Bâtiment"
+                },
+                "debut": {
+                    "type": "horodatage",
+                    "libelle": "Début"
+                },
+                "fin": {
+                    "type": "horodatage",
+                    "libelle": "Fin"
+                },
+                "duree": {
+                    "type": "duree",
+                    "libelle": "Durée"
+                },
+                "valeur": {
+                    "type": "decimal",
+                    "libelle": "Valeur au déclenchement",
+                    "unite": "ppm"
+                },
+                "gravite": {
+                    "type": "choix",
+                    "libelle": "Gravité",
+                    "valeurs": [
+                        "critique",
+                        "majeure",
+                        "mineure",
+                        "info"
+                    ],
+                    "couleurs": {
+                        "critique": "rouge",
+                        "majeure": "orange",
+                        "mineure": "jaune",
+                        "info": "gris"
+                    }
+                },
+                "etat": {
+                    "type": "choix",
+                    "libelle": "Alarme",
+                    "valeurs": [
+                        "active",
+                        "terminee"
+                    ],
+                    "couleurs": {
+                        "active": "rouge",
+                        "terminee": "vert"
+                    }
+                },
+                "message": {
+                    "type": "texte",
+                    "libelle": "Message",
+                    "max": 300,
+                    "masque_liste": true
+                },
+                "suivi": {
+                    "type": "choix",
+                    "libelle": "Suivi",
+                    "valeurs": [
+                        "À analyser",
+                        "Aération faite",
+                        "Ventilation à vérifier",
+                        "Occupation à revoir",
+                        "Sans suite"
+                    ],
+                    "defaut": "À analyser",
+                    "couleurs": {
+                        "À analyser": "orange",
+                        "Aération faite": "vert",
+                        "Ventilation à vérifier": "rouge",
+                        "Occupation à revoir": "violet",
+                        "Sans suite": "gris"
+                    }
+                },
+                "action": {
+                    "type": "texte_long",
+                    "libelle": "Action menée",
+                    "max": 1000,
+                    "masque_liste": true
+                }
+            }
+        }
+    },
+    "alarmes": [
+        {
+            "jeu": "depassements",
+            "si": {
+                "points_de": "salles.sonde_co2"
+            },
+            "champs": {
+                "alarme": "@alarme",
+                "sonde": "@point",
+                "batiment": "@batiment",
+                "debut": "@debut",
+                "fin": "@fin",
+                "duree": "@duree",
+                "valeur": "@valeur",
+                "gravite": "@gravite",
+                "etat": "@etat",
+                "message": "@message"
+            },
+            "historique_jours": 60
+        }
+    ],
+    "ancrages": [
+        {
+            "emplacement": "connect.supervision",
+            "type": "compteur",
+            "source": "depassements",
+            "libelle": "Dépassements de CO₂ à analyser",
+            "icone": "wind",
+            "filtre": {
+                "suivi": "À analyser"
+            },
+            "couleur": "orange"
+        },
+        {
+            "emplacement": "connect.supervision",
+            "type": "compteur",
+            "source": "depassements",
+            "libelle": "Dépassements de CO₂ en cours",
+            "icone": "wind",
+            "filtre": {
+                "etat": "active"
+            },
+            "couleur": "rouge"
+        },
+        {
+            "emplacement": "dashboard.tuiles",
+            "type": "compteur",
+            "source": "depassements",
+            "libelle": "Qualité de l'air : dépassements à analyser",
+            "icone": "wind",
+            "filtre": {
+                "suivi": "À analyser"
+            },
+            "couleur": "orange"
+        },
+        {
+            "emplacement": "connect.point",
+            "type": "liste_liee",
+            "source": "salles",
+            "champ_lien": "sonde_co2",
+            "libelle": "Salle surveillée par cette sonde",
+            "colonnes": [
+                "nom",
+                "batiment",
+                "co2",
+                "air"
+            ]
+        },
+        {
+            "emplacement": "connect.point",
+            "type": "liste_liee",
+            "source": "depassements",
+            "champ_lien": "sonde",
+            "libelle": "Dépassements enregistrés",
+            "colonnes": [
+                "debut",
+                "valeur",
+                "duree",
+                "suivi"
+            ]
+        }
+    ],
+    "pages": [
+        {
+            "cle": "salles",
+            "titre": "Qualité de l'air",
+            "icone": "wind",
+            "roles": [
+                "Gestionnaire",
+                "Admin",
+                "Visionneur"
+            ],
+            "vue": {
+                "type": "liste",
+                "source": "salles",
+                "colonnes": [
+                    "nom",
+                    "usage",
+                    "co2",
+                    "co2_max",
+                    "temperature",
+                    "air",
+                    "etat_sonde"
+                ],
+                "recherche": [
+                    "nom"
+                ],
+                "filtres": [
+                    "usage"
+                ],
+                "grouper_par": "batiment",
+                "tri": {
+                    "nom": "ASC"
+                },
+                "surligner": [
+                    {
+                        "si": {
+                            "champ": "etat_sonde",
+                            "operateur": "egal",
+                            "valeur": "alarme"
+                        },
+                        "couleur": "rouge",
+                        "libelle": "Sonde en alarme"
+                    },
+                    {
+                        "si": {
+                            "champ": "air",
+                            "operateur": "egal",
+                            "valeur": "À aérer"
+                        },
+                        "couleur": "rouge",
+                        "libelle": "Seuil d'alerte dépassé"
+                    },
+                    {
+                        "si": {
+                            "champ": "air",
+                            "operateur": "egal",
+                            "valeur": "À surveiller"
+                        },
+                        "couleur": "orange",
+                        "libelle": "Seuil de vigilance dépassé"
+                    }
+                ],
+                "actions": [
+                    "creer",
+                    "modifier",
+                    "supprimer",
+                    "exporter"
+                ]
+            }
+        },
+        {
+            "cle": "depassements",
+            "titre": "Dépassements CO₂",
+            "icone": "bell",
+            "roles": [
+                "Gestionnaire",
+                "Admin",
+                "Visionneur"
+            ],
+            "vue": {
+                "type": "liste",
+                "source": "depassements",
+                "colonnes": [
+                    "debut",
+                    "sonde",
+                    "valeur",
+                    "duree",
+                    "gravite",
+                    "etat",
+                    "suivi"
+                ],
+                "filtres": [
+                    "suivi",
+                    "etat",
+                    "gravite"
+                ],
+                "tri": {
+                    "debut": "DESC"
+                },
+                "champs_formulaire": [
+                    "suivi",
+                    "action"
+                ],
+                "surligner": [
+                    {
+                        "si": {
+                            "champ": "etat",
+                            "operateur": "egal",
+                            "valeur": "active"
+                        },
+                        "couleur": "rouge",
+                        "libelle": "Dépassement en cours"
+                    }
+                ],
+                "actions": [
+                    "modifier",
+                    "supprimer",
+                    "exporter"
+                ]
+            }
+        }
+    ],
+    "api_min": "1.4"
+}

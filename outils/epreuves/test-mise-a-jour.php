@@ -196,6 +196,42 @@ foreach (['2.0.6', '2.0.5'] as $v) {
 [$p2, $r2, $msg2] = $monter($fg);
 verifier('GitHub : la transition est proposée d\'abord, puis la suivante', $p1 === '2.0.5' && $r1 && $p2 === '2.0.6' && $r2 && $version() === '2.0.6',
     "proposées : $p1 puis $p2" . ($msg1 . $msg2 !== '' ? " ($msg1$msg2)" : ''), $ok, $ko);
+// b bis) un serveur STABLE se voit proposer une bêta (signalée comme telle) ;
+//        seul « canal": "stable » écrit dans config.json l'écarte.
+$enRetard();
+file_put_contents("$srv/version.json", json_encode(['version' => '2.0.4', 'canal' => 'Stable', 'php_min' => '8.1']));
+$CFG['mises_a_jour'] = ['source' => 'github', 'depot' => 'editeur/larka'];
+$m = new MajEpreuve($srv); $m->fichiers = $fg;
+$d = $m->verifier()['distante'] ?? null;
+$CFG['mises_a_jour']['canal'] = 'stable';
+$m = new MajEpreuve($srv); $m->fichiers = $fg;
+$e = $m->verifier();
+verifier('Serveur stable : la bêta est proposée, étiquetée « Beta » ; « canal: stable » l\'écarte',
+         ($d['canal'] ?? '') === 'Beta' && str_contains((string)($d['libelle'] ?? ''), 'Beta') && empty($e['distante']),
+         ($d['libelle'] ?? 'rien') . ' | stable : ' . ($e['distante']['libelle'] ?? 'rien'), $ok, $ko);
+// b ter) le choix du Super Admin (écran des mises à jour, data/maj/reglages.json) :
+//        décoché, la bêta n'est plus proposée — même celle déjà détectée ;
+//        « canal » écrit dans config.json l'emporte et verrouille le choix.
+$CFG['mises_a_jour'] = ['source' => 'github', 'depot' => 'editeur/larka'];
+$m = new MajEpreuve($srv); $m->fichiers = $fg;
+$avant = $m->verifier();                                   // bêta détectée et proposée
+$apres = $m->choisirBetas(false, 'superadmin:epreuve');    // décochée : oubliée aussitôt
+$m2 = new MajEpreuve($srv); $m2->fichiers = $fg;
+$rev = $m2->verifier();
+verifier('Super Admin : bêtas décochées → la bêta déjà détectée n\'est plus proposée, ni à la vérification suivante',
+         !empty($avant['disponible']) && empty($apres['disponible']) && $apres['betas'] === false && empty($rev['distante']),
+         json_encode([$avant['disponible'] ?? null, $apres['disponible'] ?? null, $rev['distante']['libelle'] ?? 'rien']), $ok, $ko);
+$m2->choisirBetas(true, 'superadmin:epreuve');
+$m3 = new MajEpreuve($srv); $m3->fichiers = $fg;
+$re = $m3->verifier();
+$CFG['mises_a_jour']['canal'] = 'stable';
+$m4 = new MajEpreuve($srv);
+try { $m4->choisirBetas(true, 'superadmin:epreuve'); $refus = false; } catch (RuntimeException $_) { $refus = true; }
+verifier('recochées → de nouveau proposées ; « canal » de config.json l\'emporte et verrouille le choix',
+         ($re['distante']['canal'] ?? '') === 'Beta' && $refus && $m4->etat()['canal_impose'] === true && $m4->etat()['betas'] === false,
+         ($re['distante']['libelle'] ?? 'rien') . ' | verrou : ' . ($refus ? 'oui' : 'non'), $ok, $ko);
+@unlink("$srv/data/maj/reglages.json");
+$CFG['mises_a_jour'] = ['source' => 'github', 'depot' => 'editeur/larka', 'canal' => 'beta'];
 // c) releases qui portent d'autres archives : la démonstration, jointe en premier
 $enRetard();
 $avecDemo = fn(array $r) => ['assets' => array_merge([['name' => 'LARKA_GMAO-' . substr($r['tag_name'], 1) . '-sauvegarde-demo-Larkaville.zip',

@@ -186,7 +186,7 @@ function cpro_get_token(): string {
 /**
  * Droit d'utiliser le proxy Chorus Pro.
  *
- * ⚠️ FIX SÉCURITÉ : chorus_call et chorus_token_test n'exigeaient qu'une
+ * FIX SÉCURITÉ : chorus_call et chorus_token_test n'exigeaient qu'une
  * session. N'importe quel compte — Demandeur compris — pouvait donc appeler
  * N'IMPORTE QUEL point d'API /cpro/ (dépôt et traitement de factures inclus)
  * avec le COMPTE TECHNIQUE de l'organisation. Et les règles de visibilité

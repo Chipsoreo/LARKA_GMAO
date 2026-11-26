@@ -34,7 +34,7 @@
  * (panneau latéral des plans, fiche équipement, fiche bien) ont été retirées
  * pour cette raison. Elles reviendront le jour où le cœur les appellera.
  *
- * ⚠️ LIMITE ASSUMÉE, LA MÊME QUE POUR TOUT LE CODE CLIENT
+ * LIMITE ASSUMÉE, LA MÊME QUE POUR TOUT LE CODE CLIENT
  * Rien n'EMPÊCHE techniquement un script d'extension d'ignorer son conteneur et
  * de toucher au reste de la page : le JavaScript d'une extension a les mêmes
  * pouvoirs que celui de Larka (voir docs/EXTENSIONS.md, « Ce qui reste non
@@ -93,6 +93,26 @@ final class ExtAncrages
             'libelle' => 'Ajouter une tuile au tableau de bord',
             'detail'  => 'Un encart supplémentaire sur la page d\'accueil.',
             'fournit' => [],
+        ],
+        // ── Connectivité des bâtiments (API 1.4) ─────────────────────────
+        // Les deux sont appelés par js/pages/connect-supervision.js et
+        // js/pages/connect.js : voir la règle d'en-tête, on n'inscrit ici que
+        // ce que le cœur rend vraiment.
+        'connect.supervision' => [
+            'depuis'  => '1.4',
+            'page'    => 'Bâtiments → Supervision',
+            'libelle' => 'Ajouter une tuile en tête de la supervision des bâtiments',
+            'detail'  => 'Une tuile chiffrée (compteur ou jauge) au-dessus des cartes de '
+                       . 'Larka Connect, à côté de la synthèse par bâtiment.',
+            'fournit' => [],
+        ],
+        'connect.point' => [
+            'depuis'  => '1.4',
+            'page'    => 'Bâtiments → Supervision → courbe d\'un point',
+            'libelle' => 'Ajouter un bloc dans la fiche d\'un point suivi',
+            'detail'  => 'Un encart sous la courbe d\'un point (sonde, compteur, consigne) : '
+                       . 'les fiches du module liées à ce point.',
+            'fournit' => ['pointId'],
         ],
     ];
 

@@ -34,12 +34,42 @@ if ($action === 'energie_compteurs') {
 // ── Relevés ───────────────────────────────────────────────────────────────────
 if ($action === 'energie_releves') {
     $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], ['carbone','energie'], $db);
+    // Plusieurs compteurs d'un coup (« compteur_ids=3,5,8 ») : l'écran Énergie
+    // et le bilan carbone lisaient les relevés compteur par compteur, l'un
+    // après l'autre — jusqu'à 36 allers-retours pour afficher une page.
+    if ($method === 'GET' && isset($_GET['compteur_ids'])) {
+        $ids = array_slice(array_values(array_unique(array_filter(
+            array_map('intval', explode(',', (string)$_GET['compteur_ids'])), static fn($i) => $i > 0))), 0, 500);
+        $parCompteur = [];
+        foreach ($ids as $i) $parCompteur[(string)$i] = $db->getEnergieReleves($i);
+        json_ok((object)$parCompteur);
+    }
     $cptId = intval($_GET['compteur_id'] ?? 0);
     if ($method === 'GET')    json_ok($db->getEnergieReleves($cptId));
     require_role($user, ['Admin','Gestionnaire']);
-    if ($method === 'POST')   json_ok(['id' => $db->addEnergieReleve(get_body())]);
-    if ($method === 'PUT')    { $db->updateEnergieReleve($id, get_body()); json_ok('OK'); }
+    // Saisie contrôlée (api/EnergieVerification.php) : date réelle, compteur existant,
+    // nombres lisibles, index qui ne baisse pas. Le serveur prenait tout tel quel.
+    if ($method === 'POST' || $method === 'PUT') {
+        require_once __DIR__ . '/../EnergieVerification.php';
+        [$saisie, $err] = EnergieVerification::normaliser($db, get_body());
+        if ($err !== null) json_error($err, 400);
+        if ($method === 'POST') json_ok(['id' => $db->addEnergieReleve($saisie)]);
+        if (!$id || !$db->fetchOne('SELECT Id FROM ReleverEnergie WHERE Id = :id', ['id' => $id])) json_error('Relevé introuvable.', 404);
+        $db->updateEnergieReleve($id, $saisie);
+        json_ok('OK');
+    }
     if ($method === 'DELETE') { $db->deleteEnergieReleve($id); json_ok('OK'); }
+}
+
+// ── Vérification des relevés ─────────────────────────────────────────────────
+// Relit les relevés de chaque compteur (enchaînement des index, consommations,
+// doublons, dates) : ce qu'il faut corriger, et ce qu'il faut regarder.
+if ($action === 'energie_verifier' && $method === 'GET') {
+    $user = require_auth(); require_lecture($user, ['Admin','Gestionnaire','Visionneur'], ['carbone','energie'], $db);
+    require_once __DIR__ . '/../EnergieVerification.php';
+    $db->getEnergieCompteurs();   // tables et colonnes du module à jour
+    $type = (string)($_GET['type'] ?? '');
+    json_ok(EnergieVerification::verifier($db, preg_match('/^[A-Za-z]{1,40}$/', $type) ? $type : null));
 }
 
 // ── Facteurs Carbone ─────────────────────────────────────────────────────────
@@ -212,7 +242,7 @@ if ($action === 'energie_sync_carbone_ademe') {
                 continue;
             }
 
-            // ⚠️ Un même identifiant Base Carbone porte PLUSIEURS lignes valides,
+            // Un même identifiant Base Carbone porte PLUSIEURS lignes valides,
             // une par frontière (« amont », « combustion », « amont + combustion »…),
             // dont les valeurs diffèrent d'un facteur 2 à 3. L'ancien code prenait
             // la première rencontrée : le facteur enregistré dépendait de l'ordre

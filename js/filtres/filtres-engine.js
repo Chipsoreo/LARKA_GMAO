@@ -117,7 +117,7 @@ const FiltresEngine = {
     const count = this.activeCount(page);
     const badge = count > 0 ? `<span style="background:var(--blue,#2563eb);color:#fff;border-radius:50%;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-left:4px">${count}</span>` : '';
     return `<button class="btn btn-ghost btn-sm" id="btnFiltresAvance" onclick="FiltresEngine.toggle('${page}')" style="white-space:nowrap;display:flex;align-items:center;gap:4px" title="Recherche avancée">
-      🔎 Recherche avancée${badge}
+      ${lk('search')} Recherche avancée${badge}
     </button>`;
   },
 
@@ -196,7 +196,7 @@ const FiltresEngine = {
     <div id="filtresPanel" style="display:${isOpen?'block':'none'};border-top:1px solid var(--gray-border);background:var(--gray-bg);padding:14px 20px;animation:fadeIn .15s ease">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--gray-text)">
-          🔎 Recherche avancée ${count > 0 ? `<span style="color:var(--blue)">(${count} filtre${count>1?'s':''} actif${count>1?'s':''})</span>` : ''}
+          ${lk('search')} Recherche avancée ${count > 0 ? `<span style="color:var(--blue)">(${count} filtre${count>1?'s':''} actif${count>1?'s':''})</span>` : ''}
         </span>
         <button class="btn btn-ghost btn-sm" onclick="FiltresEngine.resetAndRefresh('${page}')" style="font-size:11px;color:var(--red)">✕ Tout effacer</button>
       </div>

@@ -63,6 +63,11 @@ err()   { echo -e "${RED}[ERR]${NC}   $1"; exit 1; }
 source "$(cd "$(dirname "$0")" && pwd)/systeme.sh"
 SYS_OUI="${SYS_OUI:-false}"
 
+# Racine des sources (le dossier décompressé). ⚠️ Définie ICI : la vérification
+# des prérequis s'en sert bien avant le déploiement des fichiers ; définie plus
+# bas seulement, « set -u » arrêtait l'installation (« SCRIPT_DIR: unbound variable »).
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
 # ── Acceptation de la licence d'utilisation (miroir de start.sh) ─────────────
 # Couvre le lancement direct « sudo bash deploy/install.sh ». Via « start.sh prod »
 # le marqueur est déjà créé en amont : aucune double demande.
@@ -376,10 +381,11 @@ EXCLUSIONS=(
     # Windows : PHP posé par Larka.cmd ; démonstration (livrée dans demo/, ou
     # rangée à côté) : données fictives, sans usage sur un serveur en service.
     'php' 'demo' '*-demo-Larkaville*.zip'
+    # Projet de l'app iOS / Android : se construit sur un poste de développement.
+    'mobile'
 )
 
-# Copier les fichiers (depuis le répertoire du script)
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Copier les fichiers (depuis le répertoire du script : SCRIPT_DIR, défini en tête)
 if [[ -f "${SCRIPT_DIR}/index.html" ]]; then
     if command -v rsync >/dev/null 2>&1; then
         # ⚠️ Motifs ANCRÉS à la racine (« /outils »), comme le « ./outils » de tar
@@ -672,6 +678,7 @@ nginx_corps() {
     location ^~ /vendor/                { deny all; return 404; }
     location ^~ /outils/                { deny all; return 404; }
     location ^~ /Documentations/        { deny all; return 404; }
+    location ^~ /mobile/                { deny all; return 404; }
     location ^~ /extensions/            { deny all; return 404; }
     location ^~ /node_modules/          { deny all; return 404; }
     location ~* \.(larka|larka_thematique|phar)$ { deny all; return 404; }
@@ -679,9 +686,28 @@ nginx_corps() {
         deny all; return 404;
     }
     location = /api/diagnostic.php      { deny all; return 404; }
+    # Larka Connect : code et sources du collecteur des PC releveurs (téléchargé
+    # seulement par la route connect_releveur_paquet, déjà réglé, après connexion).
+    location ^~ /api/connect/           { deny all; return 404; }
 
     # ── Routes applicatives ──────────────────────────────────────────────────
     location /api/ { try_files $uri /api/index.php?$query_string; }
+
+    # Larka Connect — bornes de recharge (OCPP) en wss:// chiffré : Nginx
+    # termine le TLS et relaie vers le service OCPP local (larka-ocpp.service,
+    # port 9000 par défaut — à aligner si connect.ocpp.port est changé).
+    location ^~ /ocpp/ {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_buffering off;
+    }
     location = /oauth/microsoft { rewrite ^ /oauth/microsoft.php last; }
     location = /oauth/google    { rewrite ^ /oauth/google.php    last; }
     location /oauth/ { try_files $uri =404; }
@@ -863,7 +889,7 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 7. CRON (sauvegardes + rotation logs)
+# 7. CRON (sauvegardes, Larka Connect, rotation logs) + service OCPP
 # ═══════════════════════════════════════════════════════════════════════════════
 info "Configuration du cron..."
 _CERTBOT_CRON='0 3 * * * root certbot renew --quiet --post-hook "systemctl reload nginx"'
@@ -880,6 +906,12 @@ ${_CERTBOT_CRON}
 # organisation. État : php ${INSTALL_DIR}/api/outils/sauvegarde-auto.php --etat
 */10 * * * * www-data ${_PHP_BIN} ${INSTALL_DIR}/api/outils/sauvegarde-auto.php --silencieux >> ${INSTALL_DIR}/data/logs/sauvegardes.log 2>&1
 
+# Larka Connect : collecte des équipements raccordés (GTB, compteurs, capteurs…).
+# Chaque minute, seules les connexions DUES sont interrogées ; rien n'est fait
+# tant que le module est fermé (config.json : connect.actif).
+# État : php ${INSTALL_DIR}/api/outils/connect-collecte.php --etat
+* * * * * www-data ${_PHP_BIN} ${INSTALL_DIR}/api/outils/connect-collecte.php --silencieux >> ${INSTALL_DIR}/data/logs/connect.log 2>&1
+
 # Rotation des logs PHP
 0 4 * * 0 www-data find ${INSTALL_DIR}/data/logs -name '*.log' -size +50M -exec truncate -s 0 {} \;
 
@@ -888,6 +920,44 @@ ${_CERTBOT_CRON}
 EOCRON
 
 ok "Cron configuré."
+
+# Larka Connect — service OCPP permanent (bornes de recharge). Il tourne même
+# module fermé, sans écouter : activer OCPP dans la configuration suffit, il
+# relit config.json tout seul (pas de redémarrage à prévoir).
+cat > /etc/systemd/system/larka-ocpp.service <<EOOCPP
+# Généré par deploy/install.sh (Larka) — service OCPP de Larka Connect.
+# État : php ${INSTALL_DIR}/api/outils/connect-ocpp.php --etat
+[Unit]
+Description=Larka Connect — service OCPP (bornes de recharge) et LoRaWAN (passerelles radio)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${_PHP_BIN} ${INSTALL_DIR}/api/outils/connect-ocpp.php
+StandardOutput=append:${INSTALL_DIR}/data/logs/connect-ocpp.log
+StandardError=append:${INSTALL_DIR}/data/logs/connect-ocpp.log
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=${INSTALL_DIR}/data
+
+[Install]
+WantedBy=multi-user.target
+EOOCPP
+mkdir -p "${INSTALL_DIR}/data/logs" && chown www-data:www-data "${INSTALL_DIR}/data/logs" 2>/dev/null || true
+systemctl daemon-reload
+if systemctl enable --now larka-ocpp.service >/dev/null 2>&1; then
+    systemctl restart larka-ocpp.service >/dev/null 2>&1 || true
+    ok "Larka Connect : service OCPP installé (larka-ocpp.service)."
+else
+    warn "Service OCPP non démarré : sudo systemctl enable --now larka-ocpp.service"
+fi
 
 # PostgreSQL après une mise à jour du système : bases à réindexer ?
 sys_pg_collation_proposer "${INSTALL_DIR}"

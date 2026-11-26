@@ -1,0 +1,99 @@
+{
+  "identifiant": "acme.main-courante",
+  "format": "declaratif/1",
+  "nom": "Main courante technique",
+  "version": "1.0.0",
+  "auteur": "ACME <contact@acme.fr>",
+  "description": "Le bâtiment connecté : compteurs suivis avec leur consommation du jour et du mois, et une main courante tenue par les alarmes techniques de Larka Connect.",
+
+  "donnees": {
+    "compteurs": {
+      "libelle": "Compteur",
+      "champs": {
+        "designation": { "type": "texte", "libelle": "Désignation", "obligatoire": true },
+        "batiment":    { "type": "lien", "vers": "batiments", "libelle": "Bâtiment" },
+        "point":       { "type": "lien", "vers": "points_connect", "libelle": "Point de télérelève" },
+        "automate":    { "type": "lien", "vers": "connexions_connect", "libelle": "Équipement raccordé" },
+        "index":       { "type": "mesure", "de": "point", "libelle": "Index actuel" },
+        "releve_le":   { "type": "mesure", "de": "point", "grandeur": "horodatage", "libelle": "Lu le" },
+        "jour":        { "type": "mesure", "de": "point", "grandeur": "conso_jour", "libelle": "Aujourd'hui" },
+        "mois":        { "type": "mesure", "de": "point", "grandeur": "conso_mois", "libelle": "Ce mois-ci" },
+        "liaison":     { "type": "mesure", "de": "automate", "grandeur": "etat", "libelle": "Communication" },
+        "alarmes_bat": { "type": "mesure", "de": "batiment", "grandeur": "alarmes", "libelle": "Alarmes du bâtiment" },
+        "budget_mois": { "type": "decimal", "libelle": "Budget mensuel", "min": 0 },
+        "ecart":       { "type": "formule", "libelle": "Écart au budget", "format": "pourcent",
+                         "expression": "{{if(isEmpty(record.mois) || isEmpty(record.budget_mois) || record.budget_mois == 0, null, round((record.mois - record.budget_mois) / record.budget_mois * 100, 1))}}" }
+      }
+    },
+    "main_courante": {
+      "libelle": "Événement",
+      "libelle_pluriel": "Main courante",
+      "champs": {
+        "alarme":    { "type": "entier", "libelle": "N° d'alarme" },
+        "debut":     { "type": "horodatage", "libelle": "Début" },
+        "fin":       { "type": "horodatage", "libelle": "Fin" },
+        "duree":     { "type": "duree", "libelle": "Durée" },
+        "point":     { "type": "texte", "libelle": "Point" },
+        "batiment":  { "type": "lien", "vers": "batiments", "libelle": "Bâtiment" },
+        "gravite":   { "type": "choix", "libelle": "Gravité",
+                       "valeurs": ["critique", "majeure", "mineure", "info"],
+                       "couleurs": { "critique": "rouge", "majeure": "orange", "mineure": "jaune", "info": "gris" } },
+        "message":   { "type": "texte_long", "libelle": "Message" },
+        "demande":   { "type": "entier", "libelle": "Demande d'intervention" },
+        "acquittee": { "type": "booleen", "libelle": "Acquittée" },
+        "commentaire": { "type": "texte_long", "libelle": "Commentaire de l'astreinte" }
+      }
+    }
+  },
+
+  "alarmes": [
+    {
+      "jeu": "main_courante",
+      "si": { "gravites": ["critique", "majeure"] },
+      "champs": {
+        "alarme": "@alarme", "debut": "@debut", "fin": "@fin", "duree": "@duree",
+        "point": "@point_nom", "batiment": "@batiment", "gravite": "@gravite",
+        "message": "@message", "demande": "@demande", "acquittee": "@acquittee"
+      },
+      "historique_jours": 7
+    }
+  ],
+
+  "ancrages": [
+    { "emplacement": "connect.supervision", "type": "compteur", "source": "main_courante",
+      "libelle": "Événements non acquittés", "filtre": { "acquittee": 0 }, "couleur": "rouge" },
+    { "emplacement": "connect.supervision", "type": "jauge", "source": "compteurs",
+      "champ": "budget_mois", "agregat": "somme", "unite": "kWh", "libelle": "Budget énergie du mois" },
+    { "emplacement": "connect.point", "type": "liste_liee", "source": "compteurs",
+      "champ_lien": "point", "libelle": "Compteur suivi", "colonnes": ["designation", "jour", "mois", "ecart"] }
+  ],
+
+  "pages": [
+    {
+      "cle": "compteurs", "titre": "Compteurs suivis", "icone": "zap",
+      "roles": ["Gestionnaire", "Admin", "Visionneur"],
+      "vue": {
+        "type": "liste", "source": "compteurs",
+        "colonnes": ["designation", "batiment", "index", "releve_le", "jour", "mois", "ecart", "liaison"],
+        "totaux": ["jour", "mois"],
+        "grouper_par": "batiment",
+        "surligner": [
+          { "si": { "champ": "liaison", "operateur": "egal", "valeur": "defaut" }, "couleur": "rouge",
+            "libelle": "Communication en défaut" }
+        ]
+      }
+    },
+    {
+      "cle": "main_courante", "titre": "Main courante", "icone": "bell",
+      "roles": ["Gestionnaire", "Admin"],
+      "vue": {
+        "type": "liste", "source": "main_courante",
+        "colonnes": ["debut", "batiment", "point", "gravite", "duree", "acquittee", "demande"],
+        "tri": { "debut": "DESC" },
+        "filtres": ["gravite", "acquittee"],
+        "champs_formulaire": ["commentaire"],
+        "actions": ["modifier", "exporter"]
+      }
+    }
+  ]
+}

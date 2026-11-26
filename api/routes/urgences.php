@@ -36,7 +36,7 @@
 require_once __DIR__ . '/../UrgencesAcl.php';
 
 // ── Constantes locales ────────────────────────────────────────────────────────
-// ⚠️ FIX SÉCURITÉ (multi-tenant) : data/urgences était UN dossier commun à tous
+// FIX SÉCURITÉ (multi-tenant) : data/urgences était UN dossier commun à tous
 // les clients. Un gestionnaire pouvait lire ou supprimer le média d'un autre
 // client dont il connaissait le nom, et la sauvegarde d'un client embarquait les
 // médias de tous. Chaque client a désormais son dossier ; l'ancien emplacement

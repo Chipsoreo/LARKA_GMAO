@@ -1,15 +1,30 @@
 {
   "identifiant": "larka.prestataires",
   "format": "declaratif/1",
-  "nom": "Annuaire des prestataires",
-  "version": "1.0.0",
+  "nom": "Prestataires et habilitations",
+  "version": "1.1.1",
   "auteur": "Larka",
-  "description": "Carnet d'adresses des entreprises qui interviennent : coordonnées, domaines, assurance et évaluation.",
+  "description": "Les entreprises qui interviennent et les habilitations du personnel — le vôtre comme le leur : coordonnées, assurance, évaluation, échéances. Module d'exemple du format déclaratif : deux jeux de données, une image, trois langues, des réglages, des formules, des champs conditionnels, des listes liées aux fiches équipement et bien, des tuiles et une jauge au tableau de bord.",
+  "logo": "assets/logo.png",
   "reglages": {
+    "couleur_module": {
+      "type": "couleur",
+      "libelle": "Couleur du module",
+      "defaut": "#0d9488",
+      "applique": "couleur_accent",
+      "aide": "En-tête du tableau et filet latéral"
+    },
+    "prealerte_jours": {
+      "type": "entier",
+      "libelle": "Préalerte (jours)",
+      "defaut": 60,
+      "aide": "Une habilitation est signalée ce nombre de jours avant son échéance"
+    },
     "note_minimale": {
       "type": "entier",
       "libelle": "Note minimale acceptable",
-      "defaut": 3
+      "defaut": 3,
+      "aide": "En dessous, l'évaluation du prestataire est signalée « sous le seuil »"
     }
   },
   "langues": {
@@ -27,7 +42,39 @@
       "Coordonnées": "Contact details",
       "Administratif": "Administrative",
       "Appréciation": "Assessment",
-      "Assurance": "Insurance"
+      "Assurance": "Insurance",
+      "Habilitation": "Certification",
+      "Habilitations": "Certifications",
+      "Titulaire": "Holder",
+      "Intitulé": "Title",
+      "Catégorie": "Category",
+      "Organisme": "Issuing body",
+      "Contact organisme": "Issuer contact",
+      "Obtenue le": "Issued on",
+      "Validité": "Validity",
+      "Équipement concerné": "Related equipment",
+      "Valable jusqu'au": "Valid until",
+      "Jours restants": "Days left",
+      "Situation": "Status",
+      "Identification": "Identification",
+      "Portée": "Scope",
+      "Statut": "Status",
+      "Référencé": "Approved",
+      "En évaluation": "Under review",
+      "Écarté": "Excluded",
+      "Motif de l'écart": "Reason for exclusion",
+      "Interventions assurées": "Services provided",
+      "Astreinte 24 h / 24": "24/7 on-call",
+      "Contrat en cours": "Current contract",
+      "Employeur": "Employer",
+      "Coût de la formation": "Training cost",
+      "Indices": "Ratings",
+      "Appréciation chiffrée": "Rating check",
+      "Qualification": "Qualification",
+      "Habilitations électriques": "Electrical ratings",
+      "Matériel concerné": "Related tool",
+      "Personnel habilité à l'utiliser": "Staff certified to use it",
+      "Personnel habilité": "Certified staff"
     },
     "es": {
       "Prestataire": "Proveedor",
@@ -43,7 +90,39 @@
       "Coordonnées": "Datos de contacto",
       "Administratif": "Administrativo",
       "Appréciation": "Valoración",
-      "Assurance": "Seguro"
+      "Assurance": "Seguro",
+      "Habilitation": "Habilitación",
+      "Habilitations": "Habilitaciones",
+      "Titulaire": "Titular",
+      "Intitulé": "Denominación",
+      "Catégorie": "Categoría",
+      "Organisme": "Organismo",
+      "Contact organisme": "Contacto del organismo",
+      "Obtenue le": "Obtenida el",
+      "Validité": "Validez",
+      "Équipement concerné": "Equipo asociado",
+      "Valable jusqu'au": "Válida hasta",
+      "Jours restants": "Días restantes",
+      "Situation": "Situación",
+      "Identification": "Identificación",
+      "Portée": "Alcance",
+      "Statut": "Estado",
+      "Référencé": "Homologado",
+      "En évaluation": "En evaluación",
+      "Écarté": "Descartado",
+      "Motif de l'écart": "Motivo del descarte",
+      "Interventions assurées": "Servicios prestados",
+      "Astreinte 24 h / 24": "Guardia 24 h",
+      "Contrat en cours": "Contrato vigente",
+      "Employeur": "Empleador",
+      "Coût de la formation": "Coste de la formación",
+      "Indices": "Índices",
+      "Appréciation chiffrée": "Control de la valoración",
+      "Qualification": "Cualificación",
+      "Habilitations électriques": "Habilitaciones eléctricas",
+      "Matériel concerné": "Material asociado",
+      "Personnel habilité à l'utiliser": "Personal habilitado para usarlo",
+      "Personnel habilité": "Personal habilitado"
     },
     "de": {
       "Prestataire": "Dienstleister",
@@ -59,7 +138,39 @@
       "Coordonnées": "Kontaktdaten",
       "Administratif": "Verwaltung",
       "Appréciation": "Bewertung",
-      "Assurance": "Versicherung"
+      "Assurance": "Versicherung",
+      "Habilitation": "Befähigung",
+      "Habilitations": "Befähigungen",
+      "Titulaire": "Inhaber",
+      "Intitulé": "Bezeichnung",
+      "Catégorie": "Kategorie",
+      "Organisme": "Prüfstelle",
+      "Contact organisme": "Kontakt der Prüfstelle",
+      "Obtenue le": "Erteilt am",
+      "Validité": "Gültigkeit",
+      "Équipement concerné": "Betroffenes Gerät",
+      "Valable jusqu'au": "Gültig bis",
+      "Jours restants": "Verbleibende Tage",
+      "Situation": "Status",
+      "Identification": "Identifikation",
+      "Portée": "Geltungsbereich",
+      "Statut": "Status",
+      "Référencé": "Zugelassen",
+      "En évaluation": "In Prüfung",
+      "Écarté": "Ausgeschlossen",
+      "Motif de l'écart": "Ausschlussgrund",
+      "Interventions assurées": "Leistungen",
+      "Astreinte 24 h / 24": "24/7-Bereitschaft",
+      "Contrat en cours": "Laufender Vertrag",
+      "Employeur": "Arbeitgeber",
+      "Coût de la formation": "Schulungskosten",
+      "Indices": "Stufen",
+      "Appréciation chiffrée": "Bewertungsprüfung",
+      "Qualification": "Qualifikation",
+      "Habilitations électriques": "Elektrische Befähigungen",
+      "Matériel concerné": "Betroffenes Gerät (Inventar)",
+      "Personnel habilité à l'utiliser": "Befähigtes Personal",
+      "Personnel habilité": "Befähigtes Personal"
     }
   },
   "donnees": {
@@ -118,6 +229,27 @@
           "masque_liste": true,
           "largeur": "grand"
         },
+        "interventions": {
+          "type": "choix_multiple",
+          "libelle": "Interventions assurées",
+          "groupe": "Coordonnées",
+          "valeurs": [
+            "Préventif",
+            "Curatif",
+            "Contrôle réglementaire",
+            "Dépannage d'urgence",
+            "Travaux neufs"
+          ],
+          "masque_liste": true,
+          "largeur": "grand"
+        },
+        "astreinte": {
+          "type": "booleen",
+          "libelle": "Astreinte 24 h / 24",
+          "groupe": "Coordonnées",
+          "defaut": false,
+          "largeur": "petit"
+        },
         "siret": {
           "type": "texte",
           "libelle": "SIRET",
@@ -132,11 +264,48 @@
           "groupe": "Administratif",
           "largeur": "moyen"
         },
+        "contrat": {
+          "type": "lien",
+          "vers": "contrats",
+          "libelle": "Contrat en cours",
+          "groupe": "Administratif",
+          "masque_liste": true
+        },
+        "statut": {
+          "type": "choix",
+          "libelle": "Statut",
+          "groupe": "Appréciation",
+          "valeurs": [
+            "Référencé",
+            "En évaluation",
+            "Écarté"
+          ],
+          "defaut": "En évaluation",
+          "couleurs": {
+            "Référencé": "vert",
+            "En évaluation": "orange",
+            "Écarté": "rouge"
+          },
+          "largeur": "moyen"
+        },
         "note": {
           "type": "note",
           "libelle": "Évaluation",
           "groupe": "Appréciation",
           "largeur": "petit"
+        },
+        "motif_ecart": {
+          "type": "texte_long",
+          "libelle": "Motif de l'écart",
+          "max": 800,
+          "groupe": "Appréciation",
+          "masque_liste": true,
+          "visible_si": {
+            "champ": "statut",
+            "operateur": "egal",
+            "valeur": "Écarté"
+          },
+          "largeur": "pleine"
         },
         "remarques": {
           "type": "texte_long",
@@ -150,6 +319,163 @@
           "type": "formule",
           "libelle": "Assurance",
           "expression": "{{if(isEmpty(record.assurance), 'Non renseignée', if(isPast(record.assurance), 'Expirée', concat('Valide — ', diffDays(record.assurance, today), ' j')))}}"
+        },
+        "appreciation": {
+          "type": "formule",
+          "libelle": "Appréciation chiffrée",
+          "expression": "{{if(isEmpty(record.note), 'Non évalué', if(record.note < reglages.note_minimale, 'Sous le seuil', 'Satisfaisant'))}}"
+        }
+      }
+    },
+    "habilitations": {
+      "libelle": "Habilitation",
+      "libelle_pluriel": "Habilitations",
+      "champs": {
+        "titulaire": {
+          "type": "texte",
+          "libelle": "Titulaire",
+          "obligatoire": true,
+          "max": 80,
+          "groupe": "Identification",
+          "suggestions": true,
+          "suggestions_source": "personnes"
+        },
+        "employeur": {
+          "type": "texte",
+          "libelle": "Employeur",
+          "max": 120,
+          "groupe": "Identification",
+          "exemple": "Régie, ou le nom du prestataire",
+          "suggestions": true,
+          "suggestions_source": "fournisseurs"
+        },
+        "intitule": {
+          "type": "texte",
+          "libelle": "Intitulé",
+          "obligatoire": true,
+          "max": 120,
+          "groupe": "Identification"
+        },
+        "categorie": {
+          "type": "choix",
+          "libelle": "Catégorie",
+          "liste": "HabilitationCategorie",
+          "groupe": "Identification",
+          "libre": false,
+          "ajout_autorise": true,
+          "aide": "Modifiable dans Configuration → Listes ; une valeur peut être ajoutée à la saisie",
+          "valeurs_initiales": [
+            "Électrique",
+            "Levage",
+            "Travail en hauteur",
+            "Incendie",
+            "Premiers secours",
+            "Conduite d'engin",
+            "Fluides frigorigènes"
+          ]
+        },
+        "indices": {
+          "type": "choix_multiple",
+          "libelle": "Indices",
+          "groupe": "Identification",
+          "valeurs": [
+            "B0",
+            "B0V",
+            "H0",
+            "H0V",
+            "B1",
+            "B1V",
+            "B2",
+            "B2V",
+            "BR",
+            "BC",
+            "BE Essai",
+            "BE Mesurage",
+            "BE Vérification",
+            "H1",
+            "H1V",
+            "H2",
+            "H2V",
+            "HC",
+            "HE"
+          ],
+          "aide": "Habilitations électriques : les indices portés sur le titre (NF C 18-510)",
+          "visible_si": {
+            "champ": "categorie",
+            "operateur": "egal",
+            "valeur": "Électrique"
+          },
+          "masque_liste": true
+        },
+        "organisme": {
+          "type": "texte",
+          "libelle": "Organisme",
+          "max": 80,
+          "exemple": "Apave, Socotec…",
+          "groupe": "Validité",
+          "suggestions": true,
+          "suggestions_source": "fournisseurs"
+        },
+        "courriel": {
+          "type": "texte",
+          "libelle": "Contact organisme",
+          "format_saisie": "email",
+          "groupe": "Validité"
+        },
+        "obtenue_le": {
+          "type": "date",
+          "libelle": "Obtenue le",
+          "obligatoire": true,
+          "max_date": "today",
+          "defaut": "{{today}}",
+          "groupe": "Validité"
+        },
+        "validite": {
+          "type": "entier",
+          "libelle": "Validité",
+          "unite": "mois",
+          "min": 1,
+          "max": 240,
+          "defaut": 36,
+          "groupe": "Validité"
+        },
+        "cout": {
+          "type": "decimal",
+          "libelle": "Coût de la formation",
+          "min": 0,
+          "unite": "€",
+          "groupe": "Validité",
+          "masque_liste": true
+        },
+        "equipement": {
+          "type": "lien",
+          "vers": "equipements",
+          "libelle": "Équipement concerné",
+          "groupe": "Portée"
+        },
+        "bien": {
+          "type": "lien",
+          "vers": "biens",
+          "libelle": "Matériel concerné",
+          "groupe": "Portée",
+          "aide": "Un bien de l'inventaire dont l'usage exige l'habilitation : échafaudage, nacelle, autoportée…"
+        },
+        "expire_le": {
+          "type": "formule",
+          "libelle": "Valable jusqu'au",
+          "format": "date",
+          "expression": "{{addMonths(record.obtenue_le, record.validite)}}"
+        },
+        "jours_restants": {
+          "type": "formule",
+          "libelle": "Jours restants",
+          "format": "nombre",
+          "expression": "{{diffDays(addMonths(record.obtenue_le, record.validite), today)}}"
+        },
+        "situation": {
+          "type": "formule",
+          "libelle": "Situation",
+          "expression": "{{if(diffDays(addMonths(record.obtenue_le, record.validite), today) < 0, 'Expirée', if(diffDays(addMonths(record.obtenue_le, record.validite), today) <= reglages.prealerte_jours, 'À renouveler', 'Valide'))}}"
         }
       }
     }
@@ -159,8 +485,54 @@
       "emplacement": "dashboard.tuiles",
       "type": "compteur",
       "source": "prestataires",
-      "libelle": "Prestataires référencés",
+      "libelle": "Prestataires au carnet",
+      "icone": "users",
       "couleur": "#0d9488"
+    },
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "compteur",
+      "source": "habilitations",
+      "libelle": "Habilitations suivies",
+      "icone": "award",
+      "couleur": "#1b3a5c"
+    },
+    {
+      "emplacement": "dashboard.tuiles",
+      "type": "jauge",
+      "source": "habilitations",
+      "champ": "cout",
+      "agregat": "somme",
+      "unite": "€",
+      "libelle": "Formations : coût cumulé",
+      "icone": "graduation-cap",
+      "couleur": "#7c3aed"
+    },
+    {
+      "emplacement": "equipement.fiche",
+      "type": "liste_liee",
+      "source": "habilitations",
+      "champ_lien": "equipement",
+      "colonnes": [
+        "titulaire",
+        "intitule",
+        "expire_le",
+        "situation"
+      ],
+      "libelle": "Personnel habilité"
+    },
+    {
+      "emplacement": "bien.fiche",
+      "type": "liste_liee",
+      "source": "habilitations",
+      "champ_lien": "bien",
+      "colonnes": [
+        "titulaire",
+        "employeur",
+        "intitule",
+        "situation"
+      ],
+      "libelle": "Personnel habilité à l'utiliser"
     }
   ],
   "pages": [
@@ -180,8 +552,9 @@
           "raison_sociale",
           "domaine",
           "telephone",
-          "courriel",
+          "statut",
           "note",
+          "appreciation",
           "assurance_etat"
         ],
         "recherche": [
@@ -192,6 +565,9 @@
         "filtres": [
           {
             "champ": "domaine"
+          },
+          {
+            "champ": "statut"
           }
         ],
         "tri": {
@@ -200,6 +576,15 @@
         "grouper_par": "domaine",
         "par_page": 50,
         "surligner": [
+          {
+            "si": {
+              "champ": "statut",
+              "operateur": "egal",
+              "valeur": "Écarté"
+            },
+            "couleur": "gris",
+            "libelle": "Prestataire écarté"
+          },
           {
             "si": {
               "champ": "assurance",
@@ -278,6 +663,18 @@
                   "x": 1,
                   "y": 3,
                   "largeur": 8
+                },
+                {
+                  "champ": "interventions",
+                  "x": 1,
+                  "y": 4,
+                  "largeur": 6
+                },
+                {
+                  "champ": "astreinte",
+                  "x": 7,
+                  "y": 4,
+                  "largeur": 2
                 }
               ]
             },
@@ -298,16 +695,28 @@
                   "largeur": 8
                 },
                 {
-                  "champ": "note",
+                  "champ": "statut",
                   "x": 1,
                   "y": 2,
+                  "largeur": 8
+                },
+                {
+                  "champ": "note",
+                  "x": 1,
+                  "y": 3,
                   "largeur": 8,
                   "masquer_libelle": true
                 },
                 {
+                  "champ": "motif_ecart",
+                  "x": 1,
+                  "y": 4,
+                  "largeur": 8
+                },
+                {
                   "champ": "remarques",
                   "x": 1,
-                  "y": 3,
+                  "y": 5,
                   "largeur": 8,
                   "taille": "grande"
                 }
@@ -332,11 +741,224 @@
                   "x": 5,
                   "y": 1,
                   "largeur": 4
+                },
+                {
+                  "champ": "contrat",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 8
                 }
               ]
             }
           ]
         }
+      }
+    },
+    {
+      "cle": "habilitations",
+      "titre": "Habilitations",
+      "icone": "award",
+      "roles": [
+        "Gestionnaire",
+        "Admin",
+        "Visionneur"
+      ],
+      "vue": {
+        "type": "liste",
+        "source": "habilitations",
+        "colonnes": [
+          "titulaire",
+          "employeur",
+          "intitule",
+          "categorie",
+          "expire_le",
+          "situation"
+        ],
+        "recherche": [
+          "titulaire",
+          "employeur",
+          "intitule",
+          "organisme"
+        ],
+        "filtres": [
+          {
+            "champ": "categorie"
+          }
+        ],
+        "tri": {
+          "titulaire": "ASC"
+        },
+        "grouper_par": "categorie",
+        "surligner": [
+          {
+            "si": {
+              "champ": "jours_restants",
+              "operateur": "inferieur_a",
+              "valeur": 0
+            },
+            "couleur": "rouge",
+            "libelle": "Habilitation expirée"
+          },
+          {
+            "si": {
+              "champ": "jours_restants",
+              "operateur": "inferieur_a",
+              "valeur": 60
+            },
+            "couleur": "orange",
+            "libelle": "À renouveler"
+          }
+        ],
+        "actions": [
+          "creer",
+          "modifier",
+          "supprimer",
+          "exporter"
+        ],
+        "layout": {
+          "type": "grille",
+          "colonnes": 12,
+          "espacement": "large",
+          "marges": "normale",
+          "responsive": [
+            {
+              "sous": "tablette",
+              "colonnes": 6
+            },
+            {
+              "sous": "telephone",
+              "colonnes": 1
+            }
+          ],
+          "composants": [
+            {
+              "image": "assets/equipe.jpg",
+              "description": "Un technicien et sa carte d'habilitation validée",
+              "x": 1,
+              "y": 1,
+              "largeur": 4,
+              "hauteur": 2,
+              "cadrage": "couvrir",
+              "arrondi": "leger",
+              "hauteur_min_px": 180
+            },
+            {
+              "section": "Qui est habilité",
+              "style": "carte",
+              "couleur": "marine",
+              "x": 5,
+              "y": 1,
+              "largeur": 8,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "titulaire",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 6
+                },
+                {
+                  "champ": "employeur",
+                  "x": 7,
+                  "y": 1,
+                  "largeur": 6
+                },
+                {
+                  "champ": "intitule",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 7
+                },
+                {
+                  "champ": "categorie",
+                  "x": 8,
+                  "y": 2,
+                  "largeur": 5
+                },
+                {
+                  "champ": "indices",
+                  "x": 1,
+                  "y": 3,
+                  "largeur": 12
+                }
+              ]
+            },
+            {
+              "section": "Jusqu'à quand",
+              "style": "panneau",
+              "x": 5,
+              "y": 2,
+              "largeur": 8,
+              "colonnes": 12,
+              "composants": [
+                {
+                  "champ": "obtenue_le",
+                  "x": 1,
+                  "y": 1,
+                  "largeur": 4
+                },
+                {
+                  "champ": "validite",
+                  "x": 5,
+                  "y": 1,
+                  "largeur": 3,
+                  "alignement_h": "droite",
+                  "largeur_max_px": 120
+                },
+                {
+                  "champ": "cout",
+                  "x": 8,
+                  "y": 1,
+                  "largeur": 5,
+                  "alignement_h": "droite"
+                },
+                {
+                  "champ": "organisme",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 6
+                },
+                {
+                  "champ": "courriel",
+                  "x": 7,
+                  "y": 2,
+                  "largeur": 6
+                }
+              ]
+            },
+            {
+              "section": "Portée",
+              "style": "discret",
+              "x": 1,
+              "y": 3,
+              "largeur": 12,
+              "colonnes": 12,
+              "espacement": "serre",
+              "composants": [
+                {
+                  "texte": "Facultatif : l'habilitation peut viser un équipement précis, ou un matériel de l'inventaire.",
+                  "style": "aide",
+                  "largeur": 12
+                },
+                {
+                  "champ": "equipement",
+                  "x": 1,
+                  "y": 2,
+                  "largeur": 6
+                },
+                {
+                  "champ": "bien",
+                  "x": 7,
+                  "y": 2,
+                  "largeur": 6
+                }
+              ]
+            }
+          ]
+        },
+        "totaux": [
+          "cout"
+        ]
       }
     }
   ],

@@ -150,7 +150,37 @@ $out[] = '';
 $out[] = '| Cible | Désigne | Affiché |';
 $out[] = '|---|---|---|';
 foreach (ExtSchemaDeclaratif::CIBLES_LIEN as $n => $c) {
-    $out[] = sprintf('| `%s` | %s | %s |', $n, $c['libelle'], implode(', ', $c['affichage']));
+    $out[] = sprintf('| `%s` | %s | %s |', $n, $c['libelle'],
+        ($c['servi_par'] ?? '') === 'connect'
+            ? 'composé par le cœur (Larka Connect, § 9)' : implode(', ', $c['affichage']));
+}
+$out[] = '';
+
+// ── Connectivité des bâtiments ──────────────────────────────────────────────
+$out[] = '## Grandeurs d\'un champ `mesure`';
+$out[] = '';
+$out[] = '| Lien vers | Grandeur | Ce qu\'elle rend | Nature |';
+$out[] = '|---|---|---|---|';
+foreach (ExtSchemaDeclaratif::GRANDEURS_MESURE as $vers => $gs) {
+    foreach ($gs as $g => $d) {
+        $out[] = sprintf('| `%s` | `%s` | %s | %s |', $vers, $g, $d['libelle'], $d['nature']);
+    }
+}
+$out[] = '';
+$out[] = 'États rendus par une grandeur `etat` : '
+       . implode(' · ', array_map(fn($k, $l) => '`' . $k . '` (' . $l . ')',
+                 array_keys(ExtSchemaDeclaratif::ETATS_MESURE), ExtSchemaDeclaratif::ETATS_MESURE)) . '.';
+$out[] = '';
+$out[] = '## Attributs d\'une alarme technique';
+$out[] = '';
+$out[] = 'Ce qu\'une réception `alarmes` peut écrire, et dans quels champs (§ 9.4).';
+$out[] = '';
+$out[] = '| Attribut | Ce que c\'est | Champs acceptés | Valeurs |';
+$out[] = '|---|---|---|---|';
+foreach (ExtSchemaDeclaratif::ATTRIBUTS_ALARME as $a => $d) {
+    $out[] = sprintf('| `@%s` | %s | %s | %s |', $a, $d['libelle'],
+        implode(', ', array_map(fn($t) => '`' . $t . '`', $d['types'])),
+        isset($d['valeurs']) ? implode(', ', array_map(fn($v) => '`' . $v . '`', $d['valeurs'])) : '');
 }
 $out[] = '';
 

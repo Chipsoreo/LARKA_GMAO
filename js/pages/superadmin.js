@@ -33,19 +33,19 @@ async function renderSuperAdmin() {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <h2 style="margin:0;font-size:20px;color:var(--on-content)">🏢 Gestion Multi-Tenant</h2>
+      <h2 style="margin:0;font-size:20px;color:var(--on-content)">${lk('building-complex')} Gestion Multi-Tenant</h2>
       <div style="flex:1"></div>
       <button class="btn btn-primary" onclick="saShowAddTenant()" style="display:flex;align-items:center;gap:6px">
         <span style="font-size:16px">+</span> Nouveau tenant
       </button>
       <button class="btn" onclick="saRefresh(true)" style="display:flex;align-items:center;gap:6px" title="Rafraîchir en re-testant chaque base (lent)">
-        🔄 Rafraîchir
+        ${lk('refresh-cw')} Rafraîchir
       </button>
       <button class="btn" onclick="saShowSettings()" style="display:flex;align-items:center;gap:6px">
-        ⚙️ Paramètres
+        ${lk('settings')} Paramètres
       </button>
-      <button class="btn" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.verifier()" style="display:flex;align-items:center;gap:6px" title="Vérifier si une nouvelle version de Larka est disponible">
-        ⬆️ Mises à jour
+      <button class="btn" onclick="typeof LarkaMaj!=='undefined'&&LarkaMaj.reglages()" style="display:flex;align-items:center;gap:6px" title="Version installée, nouvelles versions, versions bêta, historique">
+        ${lk('arrow-up')} Mises à jour
       </button>
     </div>
     <div id="saBkBanniere" style="display:none"></div>
@@ -69,7 +69,7 @@ async function renderSuperAdminBranding() {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div style="margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <h2 style="margin:0;font-size:20px;color:var(--on-content)">🎨 Personnalisation de la connexion</h2>
+      <h2 style="margin:0;font-size:20px;color:var(--on-content)">${lk('palette')} Personnalisation de la connexion</h2>
     </div>
     <div class="card" style="max-width:760px;display:flex;flex-direction:column;gap:16px;padding:22px">
 
@@ -188,7 +188,7 @@ async function renderSuperAdminBranding() {
   // couleurs tout en bas ne devrait pas avoir à remonter pour enregistrer.
   // navigate() vide cette barre en quittant la page.
   if (typeof setPageActionBar === 'function') {
-    setPageActionBar('<button class="btn btn-primary" onclick="saBrandingSave()">💾 Enregistrer</button>');
+    setPageActionBar(('<button class="btn btn-primary" onclick="saBrandingSave()">' + lk('save') + ' Enregistrer</button>'));
   }
 }
 
@@ -279,7 +279,7 @@ async function saRefresh(fresh = false) {
         : (e.message || 'Erreur');
       grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--red)">'
         + '<div data-sa-err style="margin-bottom:12px"></div>'
-        + '<button class="btn btn-sm" onclick="saRefresh(true)">🔄 Réessayer</button>'
+        + ('<button class="btn btn-sm" onclick="saRefresh(true)">' + lk('refresh-cw') + ' Réessayer</button>')
         + '</div>';
       const errEl = grid.querySelector('[data-sa-err]');
       if (errEl) errEl.textContent = msg;
@@ -295,7 +295,7 @@ function saRenderGrid(tenants) {
   }
 
   grid.innerHTML = Object.values(tenants).map(t => {
-    const _st = { ok: ['🟢', 'Connecté'], missing: ['🟡', 'DB absente'], schema: ['🟡', 'Connecté, tables absentes'], unknown: ['⚪', 'Non vérifié'] }[t.db_status] || ['🔴', 'Erreur'];
+    const _st = { ok: [lk('circle', 'p vert'), 'Connecté'], missing: [lk('circle', 'p jaune'), 'DB absente'], schema: [lk('circle', 'p jaune'), 'Connecté, tables absentes'], unknown: [lk('circle', 'p gris'), 'Non vérifié'] }[t.db_status] || [lk('circle', 'p rouge'), 'Erreur'];
     const statusIcon = _st[0], statusLabel = _st[1];
     // Raison de l'erreur, sous le statut : « Erreur » seul ne disait pas quoi corriger.
     const statusDetail = t.db_erreur
@@ -303,7 +303,7 @@ function saRenderGrid(tenants) {
       : t.db_status === 'schema' ? `<div style="font-weight:400;font-size:11px;color:var(--gray-text);margin-top:3px">Ouvrez le tenant et enregistrez-le pour créer les tables.</div>` : '';
     // Base créée avant une mise à jour du système (collation) : index à reconstruire.
     const statusAvert = t.db_avertissement
-      ? `<div style="font-weight:400;font-size:11px;color:var(--orange,#b45309);margin-top:3px;line-height:1.35" title="${_escSa(t.db_avertissement)}">⚠️ Index à reconstruire après une mise à jour du système — sur le serveur : ./start.sh doctor --fix</div>`
+      ? `<div style="font-weight:400;font-size:11px;color:var(--orange,#b45309);margin-top:3px;line-height:1.35" title="${_escSa(t.db_avertissement)}">${lk('triangle-exclamation-point', 'warn')} Index à reconstruire après une mise à jour du système — sur le serveur : ./start.sh doctor --fix</div>`
       : '';
     const size = t.db_size ? (t.db_size / 1024 / 1024).toFixed(2) + ' Mo' : '—';
     const users = t.user_count !== null ? t.user_count : '—';
@@ -314,18 +314,18 @@ function saRenderGrid(tenants) {
 
     return `<div style="background:var(--card-bg);border:1px solid var(--gray-border);border-radius:12px;padding:20px;border-left:4px solid ${color}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        <div style="width:40px;height:40px;border-radius:10px;background:${color}22;display:flex;align-items:center;justify-content:center;font-size:18px">🏢</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:${color}22;display:flex;align-items:center;justify-content:center;font-size:18px">${lk('building-complex')}</div>
         <div style="flex:1">
           <div style="font-size:15px;font-weight:700;color:var(--navy)">${_escSa(t.nom)} ${actifBadge}</div>
           <div style="font-size:12px;color:var(--gray-text);margin-top:2px">Clé : <code style="background:var(--gray-bg);padding:1px 6px;border-radius:4px">${_escSa(t.key)}</code></div>
         </div>
         <div style="display:flex;gap:6px">
-          ${t.actif ? `<button class="btn btn-primary btn-sm" onclick="saEnterGmao('${_escSa(t.key)}')" title="Accéder à Larka de ce tenant" style="padding:6px 12px;font-size:12px">🚀 Accéder</button>` : `<button class="btn btn-sm" disabled title="Tenant inactif" style="padding:6px 12px;font-size:12px;opacity:.4;cursor:not-allowed">🚀 Inactif</button>`}
-          <button class="btn btn-sm" onclick="saShowEditTenant('${_escSa(t.key)}')" title="Modifier" style="padding:6px 10px">✏️</button>
-          <button class="btn btn-sm" onclick="saShowTenantModules('${_escSa(t.key)}')" title="Activer/désactiver les modules" style="padding:6px 10px">🧩</button>
-          <button class="btn btn-sm" onclick="saShowTenantUsers('${_escSa(t.key)}')" title="Gérer les comptes" style="padding:6px 10px">👥</button>
-          <button class="btn btn-sm" onclick="saPurgeTenantDb('${_escSa(t.key)}')" title="Vider la base (garde le tenant)" style="padding:6px 10px;color:var(--orange)">🧹</button>
-          ${t.key !== 'default' ? `<button class="btn btn-sm" onclick="saDeleteTenant('${_escSa(t.key)}')" title="Supprimer le tenant" style="padding:6px 10px;color:var(--red)">🗑️</button>` : ''}
+          ${t.actif ? `<button class="btn btn-primary btn-sm" onclick="saEnterGmao('${_escSa(t.key)}')" title="Accéder à Larka de ce tenant" style="padding:6px 12px;font-size:12px">${lk('rocket')} Accéder</button>` : `<button class="btn btn-sm" disabled title="Tenant inactif" style="padding:6px 12px;font-size:12px;opacity:.4;cursor:not-allowed">${lk('rocket')} Inactif</button>`}
+          <button class="btn btn-sm" onclick="saShowEditTenant('${_escSa(t.key)}')" title="Modifier" style="padding:6px 10px">${lk('pencil')}</button>
+          <button class="btn btn-sm" onclick="saShowTenantModules('${_escSa(t.key)}')" title="Activer/désactiver les modules" style="padding:6px 10px">${lk('puzzle')}</button>
+          <button class="btn btn-sm" onclick="saShowTenantUsers('${_escSa(t.key)}')" title="Gérer les comptes" style="padding:6px 10px">${lk('users')}</button>
+          <button class="btn btn-sm" onclick="saPurgeTenantDb('${_escSa(t.key)}')" title="Vider la base (garde le tenant)" style="padding:6px 10px;color:var(--orange)">${lk('brush-cleaning')}</button>
+          ${t.key !== 'default' ? `<button class="btn btn-sm" onclick="saDeleteTenant('${_escSa(t.key)}')" title="Supprimer le tenant" style="padding:6px 10px;color:var(--red)">${lk('trash')}</button>` : ''}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;font-size:12px">
@@ -416,8 +416,8 @@ async function _saChargerEtatSauvegardes() {
                       'prochaine : ' + _saDateCourte(w.prochaine)];
     let txt = morceaux.join(' · ');
     let couleur = '';
-    if (w.erreur) { txt += ' — ⚠️ dernier échec : ' + String(w.erreur).slice(0, 160); couleur = 'var(--red)'; }
-    else if (w.en_retard || !actif) { txt += ' — ⚠️ en retard'; couleur = 'var(--orange,#b45309)'; }
+    if (w.erreur) { txt += ' — dernier échec : ' + String(w.erreur).slice(0, 160); couleur = 'var(--red)'; }
+    else if (w.en_retard || !actif) { txt += ' — en retard'; couleur = 'var(--orange,#b45309)'; }
     el.textContent = txt;
     el.style.color = couleur;
   });
@@ -426,7 +426,7 @@ async function _saChargerEtatSauvegardes() {
   if (unActif && !actif) {
     ban.style.cssText = 'display:block;margin:0 0 16px;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.45;'
       + 'background:var(--chip-warn-bg,#fef3c7);color:var(--chip-warn-fg,#92400e);border:1px solid currentColor';
-    ban.textContent = '⚠️ Des sauvegardes automatiques sont activées, mais le planificateur '
+    ban.textContent = 'Des sauvegardes automatiques sont activées, mais le planificateur '
       + (e.dernier_passage ? 'n\'est pas passé depuis le ' + _saDateCourte(e.dernier_passage) : 'n\'a encore jamais tourné')
       + ' : aucune sauvegarde ne part. ' + SA_BK_DECLENCHEURS + '.';
   } else {
@@ -449,11 +449,11 @@ async function _saEtatSauvegardeTenant(key) {
     if (w && w.reglage?.actif) {
       lignes.push('Dernière : ' + (w.derniere ? _saDateCourte(w.derniere) : 'jamais')
         + ' · prochaine : ' + _saDateCourte(w.prochaine));
-      if (w.erreur) lignes.push('⚠️ Dernier échec : ' + String(w.erreur).slice(0, 220));
+      if (w.erreur) lignes.push('Dernier échec : ' + String(w.erreur).slice(0, 220));
     }
     lignes.push(_saPlanificateurActif(e.dernier_passage)
       ? '✓ Planificateur actif (dernier passage : ' + _saDateCourte(e.dernier_passage) + ').'
-      : '⚠️ Planificateur inactif' + (e.dernier_passage ? ' depuis le ' + _saDateCourte(e.dernier_passage) : '') + ' : ' + SA_BK_DECLENCHEURS + '.');
+      : 'Planificateur inactif' + (e.dernier_passage ? ' depuis le ' + _saDateCourte(e.dernier_passage) : '') + ' : ' + SA_BK_DECLENCHEURS + '.');
     el.textContent = lignes.join('\n');
     el.style.whiteSpace = 'pre-line';
     el.style.color = (w?.erreur || !_saPlanificateurActif(e.dernier_passage)) ? 'var(--orange,#b45309)' : 'var(--gray-text)';
@@ -478,7 +478,7 @@ function _saShowTenantForm(existing) {
   const t = existing || {};
   const db = t.base_de_donnees || {};
 
-  openModal(isEdit ? '✏️ Modifier le tenant' : '🏢 Nouveau tenant', `
+  openModal(isEdit ? 'Modifier le tenant' : 'Nouveau tenant', `
     <div class="form-grid" style="grid-template-columns:1fr 1fr">
       <div class="form-group">
         <label class="form-label">Clé unique *</label>
@@ -517,7 +517,7 @@ function _saShowTenantForm(existing) {
       </div>
     </div>
     <hr style="margin:16px 0;border:none;border-top:1px solid var(--gray-border)">
-    <h4 style="margin:0 0 12px;font-size:14px;color:var(--navy)">🗄️ Base de données</h4>
+    <h4 style="margin:0 0 12px;font-size:14px;color:var(--navy)">${lk('archive')} Base de données</h4>
     <div class="form-grid" style="grid-template-columns:1fr 1fr">
       <div class="form-group">
         <label class="form-label">Driver</label>
@@ -554,7 +554,7 @@ function _saShowTenantForm(existing) {
       </div>
     </div>
     <div style="margin-top:10px">
-      <button class="btn" onclick="saTestDb()" style="font-size:12px">🔌 Tester la connexion</button>
+      <button class="btn" onclick="saTestDb()" style="font-size:12px">${lk('plug')} Tester la connexion</button>
       <span id="saTestResult" style="margin-left:10px;font-size:12px"></span>
     </div>
 
@@ -568,7 +568,7 @@ function _saShowTenantForm(existing) {
       <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.5">
         <input type="checkbox" id="sa_db_force_drop" style="margin-top:2px">
         <span>
-          <strong style="color:var(--chip-warn-fg)">⚠️ Forcer la suppression et recréer</strong><br>
+          <strong style="color:var(--chip-warn-fg)">${lk('triangle-exclamation-point', 'warn')} Forcer la suppression et recréer</strong><br>
           <span style="color:var(--gray-text)">Si cette case est cochée, la base existante (si elle existe) sera
           <strong>supprimée définitivement</strong> avant d'être recréée à vide. Les connexions
           actives seront tuées au passage. <em>À utiliser uniquement pour repartir d'une base totalement propre.</em></span>
@@ -578,7 +578,7 @@ function _saShowTenantForm(existing) {
 
     <!-- ── Sauvegardes par tenant ──────────────────────────────────────────── -->
     <hr style="margin:16px 0;border:none;border-top:1px solid var(--gray-border)">
-    <h4 style="margin:0 0 8px;font-size:14px;color:var(--navy)">💾 Sauvegardes</h4>
+    <h4 style="margin:0 0 8px;font-size:14px;color:var(--navy)">${lk('save')} Sauvegardes</h4>
     <p style="font-size:12px;color:var(--gray-text);margin:0 0 12px">
       Chaque tenant a sa propre politique de sauvegarde : la base (instantané SQLite ou SQL PostgreSQL / MariaDB)
       et ses fichiers (plans, modules, médias), avec rotation. Larka lance lui-même les sauvegardes dues, toutes les
@@ -617,16 +617,16 @@ function _saShowTenantForm(existing) {
     ${isEdit ? `
     <div style="margin-top:12px;padding:12px;background:var(--gray-bg);border-radius:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       <button type="button" class="btn" onclick="saBackupNow('${_escSa(t.key)}')" style="font-size:12px">
-        💾 Sauvegarde manuelle…
+        ${lk('save')} Sauvegarde manuelle…
       </button>
       <button type="button" class="btn" onclick="saListBackups('${_escSa(t.key)}')" style="font-size:12px">
-        📋 Voir les sauvegardes
+        ${lk('clipboard-list')} Voir les sauvegardes
       </button>
       <button type="button" class="btn" onclick="saExportDb('${_escSa(t.key)}')" style="font-size:12px">
-        ⬇️ Export BDD complète
+        ${lk('arrow-down')} Export BDD complète
       </button>
       <button type="button" class="btn" onclick="saImportDb('${_escSa(t.key)}')" style="font-size:12px;color:var(--chip-warn-fg)">
-        ⬆️ Import BDD complète
+        ${lk('arrow-up')} Import BDD complète
       </button>
       ${t.sauvegarde?.derniere ? `<span style="margin-left:auto;font-size:11px;color:var(--gray-text)">
         Dernière sauvegarde : <strong>${_escSa(t.sauvegarde.derniere)}</strong>
@@ -636,7 +636,7 @@ function _saShowTenantForm(existing) {
 
     ${!isEdit ? `
     <hr style="margin:16px 0;border:none;border-top:1px solid var(--gray-border)">
-    <h4 style="margin:0 0 12px;font-size:14px;color:var(--navy)">👤 Compte gestionnaire</h4>
+    <h4 style="margin:0 0 12px;font-size:14px;color:var(--navy)">${lk('user')} Compte gestionnaire</h4>
     <p style="font-size:12px;color:var(--gray-text);margin:0 0 12px">Ce compte Gestionnaire sera créé dans la nouvelle base de données pour pouvoir administrer ce tenant.</p>
     <div class="form-grid" style="grid-template-columns:1fr 1fr">
       <div class="form-group">
@@ -729,7 +729,7 @@ function _saShowTenantForm(existing) {
     payload.force_drop = !!(forceDropEl && forceDropEl.checked);
     if (payload.force_drop) {
       const dbn = payload.db_dbname || payload.db_path || '(base ciblée)';
-      if (!confirm(`⚠️ La case "Forcer la suppression" est cochée.\n\nLa base « ${dbn} » sera SUPPRIMÉE puis recréée vide.\n\nContinuer ?`)) return;
+      if (!confirm(`La case "Forcer la suppression" est cochée.\n\nLa base « ${dbn} » sera SUPPRIMÉE puis recréée vide.\n\nContinuer ?`)) return;
     }
 
     try {
@@ -742,7 +742,7 @@ function _saShowTenantForm(existing) {
         toast(json.error, 'error');
         // Le refus reste affiché sous « Tester » (marche à suivre comprise).
         const r = document.getElementById('saTestResult');
-        if (r) { r.textContent = '❌ ' + json.error; r.style.color = 'var(--red)'; r.scrollIntoView({block: 'nearest'}); }
+        if (r) { r.textContent = '' + json.error; r.style.color = 'var(--red)'; r.scrollIntoView({block: 'nearest'}); }
         return;
       }
       // Enregistré mais incomplet (base non créée, tables, compte…) : le dire
@@ -802,13 +802,13 @@ async function saTestDb() {
     const dbn = document.getElementById('sa_db_dbname')?.value.trim()
              || document.getElementById('sa_db_path')?.value.trim()
              || '(base ciblée)';
-    if (!confirm(`⚠️ Confirmer la suppression de la base « ${dbn} » ?\n\nCette action est IRRÉVERSIBLE. Toutes les données seront perdues.`)) {
+    if (!confirm(`Confirmer la suppression de la base « ${dbn} » ?\n\nCette action est IRRÉVERSIBLE. Toutes les données seront perdues.`)) {
       forceDropEl.checked = false;  // décocher pour éviter une suppression au save
       return;
     }
   }
 
-  resultEl.textContent = '⏳ Test en cours…';
+  resultEl.textContent = 'Test en cours…';
   resultEl.style.color = 'var(--gray-text)';
 
   const driver = document.getElementById('sa_db_driver').value;
@@ -832,17 +832,17 @@ async function saTestDb() {
     });
     const json = await res.json();
     if (json.success && json.data?.status === 'ok') {
-      resultEl.textContent = '✅ ' + String(json.data.message).replace(/^[✅❌]\s*/u, '');
+      resultEl.textContent = '' + String(json.data.message).replace(/^[✅❌]\s*/u, '');
       resultEl.style.color = 'var(--chip-ok-fg)';
       // Si on vient de drop, on décoche : pas besoin de re-supprimer au save.
       // L'utilisateur peut toujours re-cocher s'il refait un test après modif.
       if (forceDrop && forceDropEl) forceDropEl.checked = false;
     } else {
-      resultEl.textContent = '❌ ' + String(json.data?.message || json.error).replace(/^[✅❌]\s*/u, '');
+      resultEl.textContent = '' + String(json.data?.message || json.error).replace(/^[✅❌]\s*/u, '');
       resultEl.style.color = 'var(--red)';
     }
   } catch(e) {
-    resultEl.textContent = '❌ Erreur réseau';
+    resultEl.textContent = 'Erreur réseau';
     resultEl.style.color = 'var(--red)';
   }
 }
@@ -869,7 +869,7 @@ async function saEnterGmao(key) {
 // configuration directement dans #mainContent (pas dans une modale).
 
 async function saDeleteTenant(key) {
-  const msg = `⚠️ Supprimer le tenant "${key}" ?\n\n`
+  const msg = `Supprimer le tenant "${key}" ?\n\n`
             + `Cette action est IRRÉVERSIBLE et va :\n`
             + `  • retirer la configuration du tenant\n`
             + `  • détruire sa base de données (fichier SQLite supprimé, ou toutes les tables DROP pour PG/MariaDB)\n`
@@ -920,7 +920,7 @@ async function saShowTenantUsers(key) {
     const actifBadge = u.Actif
       ? '<span style="color:var(--chip-ok-fg);font-weight:600">✓</span>'
       : '<span style="color:var(--red);font-weight:600">✗</span>';
-    const providerIcon = u.Provider === 'google' ? '🔵' : u.Provider === 'microsoft' ? '🟠' : '🔑';
+    const providerIcon = u.Provider === 'google' ? lk('circle', 'p bleu') : u.Provider === 'microsoft' ? lk('circle', 'p orange') : lk('key-round');
     return `<tr style="border-bottom:1px solid var(--gray-border)">
       <td style="padding:8px 12px">${actifBadge}</td>
       <td style="padding:8px 12px;font-weight:600">${_escSa(u.Prenom)} ${_escSa(u.Nom)}</td>
@@ -928,13 +928,13 @@ async function saShowTenantUsers(key) {
       <td style="padding:8px 12px"><span style="background:${rc}22;color:${rc};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600">${_escSa(u.Role)}</span></td>
       <td style="padding:8px 12px;font-size:12px">${providerIcon} ${_escSa(u.Provider||'local')}</td>
       <td style="padding:8px 12px;text-align:right">
-        <button class="btn btn-sm" onclick="saEditTenantUser('${_escSa(key)}',${u.Id})" style="padding:4px 8px;font-size:11px">✏️</button>
-        <button class="btn btn-sm" onclick="saDeleteTenantUser('${_escSa(key)}',${u.Id},'${_escSa(u.Login)}')" style="padding:4px 8px;font-size:11px;color:var(--red)">🗑️</button>
+        <button class="btn btn-sm" onclick="saEditTenantUser('${_escSa(key)}',${u.Id})" style="padding:4px 8px;font-size:11px">${lk('pencil')}</button>
+        <button class="btn btn-sm" onclick="saDeleteTenantUser('${_escSa(key)}',${u.Id},'${_escSa(u.Login)}')" style="padding:4px 8px;font-size:11px;color:var(--red)">${lk('trash')}</button>
       </td>
     </tr>`;
   }).join('');
 
-  openModal(`👥 Comptes — ${_escSa(tenantNom)}`, `
+  openModal(`Comptes — ${_escSa(tenantNom)}`, `
     <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
       <span style="font-size:13px;color:var(--gray-text)">${users.length} compte(s)</span>
       <div style="flex:1"></div>
@@ -978,7 +978,7 @@ function _saShowUserForm(tenantKey, existing) {
   const u = existing || {};
   const tenantNom = _saTenantsCache?.[tenantKey]?.nom || tenantKey;
 
-  openModal(isEdit ? `✏️ Modifier — ${_escSa(u.Login)}` : `👤 Nouveau compte — ${_escSa(tenantNom)}`, `
+  openModal(isEdit ? `Modifier — ${_escSa(u.Login)}` : `Nouveau compte — ${_escSa(tenantNom)}`, `
     <div class="form-grid" style="grid-template-columns:1fr 1fr">
       <div class="form-group">
         <label class="form-label">Nom *</label>
@@ -1089,11 +1089,11 @@ async function saShowSettings() {
     if (json.success) branding = json.data;
   } catch(_) {}
 
-  openModal('⚙️ Paramètres Super Admin', `
+  openModal('Paramètres Super Admin', `
     <div style="display:flex;flex-direction:column;gap:20px">
 
       <div>
-        <div class="section-label">👤 Mon profil Larka</div>
+        <div class="section-label">${lk('user')} Mon profil Larka</div>
         <p style="font-size:12px;color:var(--gray-text);margin:0 0 12px">
           Ces informations seront utilisées quand vous basculez sur un tenant (compte Demandeur créé automatiquement).
         </p>
@@ -1114,15 +1114,15 @@ async function saShowSettings() {
       </div>
 
       <div style="border-top:1px solid var(--gray-border);padding-top:16px">
-        <div class="section-label">🎨 Page de connexion</div>
+        <div class="section-label">${lk('palette')} Page de connexion</div>
         <p style="font-size:12px;color:var(--gray-text);margin:0">
           La personnalisation de l'écran de connexion a son propre onglet :
-          <strong>« 🎨 Personnalisation »</strong> dans le menu de gauche.
+          <strong>« ${lk('palette')} Personnalisation »</strong> dans le menu de gauche.
         </p>
       </div>
 
       <div style="border-top:1px solid var(--gray-border);padding-top:16px">
-        <div class="section-label">👥 Comptes Super Admin locaux</div>
+        <div class="section-label">${lk('users')} Comptes Super Admin locaux</div>
         <p style="font-size:12px;color:var(--gray-text);margin:0 0 12px">
           Plusieurs comptes peuvent se connecter au panneau Super Admin avec un login/mot de passe.
         </p>
@@ -1131,12 +1131,12 @@ async function saShowSettings() {
           + Ajouter un compte Super Admin
         </button>
         <div id="saAccountsPrimaryNote" style="display:none;margin-top:8px;font-size:12px;color:var(--gray-text);font-style:italic">
-          🔒 Seul le super administrateur principal peut ajouter ou supprimer des comptes Super Admin.
+          ${lk('lock')} Seul le super administrateur principal peut ajouter ou supprimer des comptes Super Admin.
         </div>
       </div>
 
       <div style="border-top:1px solid var(--gray-border);padding-top:16px">
-        <div class="section-label">🔑 Connexion Microsoft (Super Admin)</div>
+        <div class="section-label">${lk('key-round')} Connexion Microsoft (Super Admin)</div>
         <p style="font-size:12px;color:var(--gray-text);margin:0 0 12px">
           Les emails ci-dessous sont autorisés à se connecter au panneau Super Admin via Microsoft OAuth.
           L'email principal du super admin est toujours autorisé.
@@ -1146,7 +1146,7 @@ async function saShowSettings() {
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px" data-sa-email-row>
               <input class="form-control" type="email" value="${escHtml(e)}" style="flex:1;font-size:13px"
                 onchange="this.dataset.val=this.value">
-              <button class="icon-btn delete" onclick="this.parentElement.remove()" title="Retirer">🗑️</button>
+              <button class="icon-btn delete" onclick="this.parentElement.remove()" title="Retirer">${lk('trash')}</button>
             </div>
           `).join('')}
         </div>
@@ -1156,7 +1156,7 @@ async function saShowSettings() {
       </div>
 
       <div style="border-top:1px solid var(--gray-border);padding-top:16px">
-        <div class="section-label">🔒 Mot de passe local</div>
+        <div class="section-label">${lk('lock')} Mot de passe local</div>
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label">Ancien mot de passe</label>
@@ -1448,7 +1448,7 @@ function saAddEmailRow() {
   row.setAttribute('data-sa-email-row', '');
   row.innerHTML = `
     <input class="form-control" type="email" placeholder="email@entreprise.fr" style="flex:1;font-size:13px">
-    <button class="icon-btn delete" onclick="this.parentElement.remove()" title="Retirer">🗑️</button>
+    <button class="icon-btn delete" onclick="this.parentElement.remove()" title="Retirer">${lk('trash')}</button>
   `;
   list.appendChild(row);
   row.querySelector('input').focus();
@@ -1529,20 +1529,20 @@ async function saLoadAccounts() {
     list.innerHTML = accounts.map(a => `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:var(--gray-bg);border-radius:8px">
         <div style="width:28px;height:28px;border-radius:8px;background:${a.is_primary?'linear-gradient(135deg,#f59e0b,#d97706)':'linear-gradient(135deg,#6366f1,#4f46e5)'};display:flex;align-items:center;justify-content:center;font-size:14px;color:white">
-          ${a.is_primary ? '👑' : '🛡️'}
+          ${a.is_primary ? lk('crown') : lk('shield')}
         </div>
         <div style="flex:1">
           <div style="font-size:13px;font-weight:600">${escHtml(a.login)}</div>
           <div style="font-size:11px;color:var(--gray-text)">${a.email ? escHtml(a.email) : 'Pas d\'email'} ${a.is_primary ? '— Compte principal' : ''}</div>
         </div>
-        ${(!a.is_primary && isPrimary) ? `<button class="icon-btn delete" onclick="saRemoveAccount(${jsArg(a.login)})" title="Supprimer ce compte" style="font-size:12px">🗑️</button>` : ''}
+        ${(!a.is_primary && isPrimary) ? `<button class="icon-btn delete" onclick="saRemoveAccount(${jsArg(a.login)})" title="Supprimer ce compte" style="font-size:12px">${lk('trash')}</button>` : ''}
       </div>
     `).join('');
   } catch(e) { list.innerHTML = '<div style="color:var(--red);font-size:12px">Erreur réseau.</div>'; }
 }
 
 function saAddAccountModal() {
-  openModal('➕ Ajouter un compte Super Admin', `
+  openModal('Ajouter un compte Super Admin', `
     <div class="form-grid" style="grid-template-columns:1fr">
       <div class="form-group">
         <label class="form-label">Login *</label>
@@ -1610,7 +1610,7 @@ function saBackupNow(tenantKey) {
   const defaultDir = tenant?.sauvegarde?.dossier || 'data/backups';
   const defaultCompress = tenant?.sauvegarde?.compresser !== false;
 
-  openModal('💾 Sauvegarde manuelle', `
+  openModal('Sauvegarde manuelle', `
     <p style="font-size:13px;color:var(--gray-text);margin:0 0 14px">
       Tenant : <strong>${_escSa(tenant?.nom || tenantKey)}</strong>
     </p>
@@ -1631,7 +1631,7 @@ function saBackupNow(tenantKey) {
     const compresser = !!document.getElementById('saBkManualCompress')?.checked;
     const statusEl = document.getElementById('saBkManualStatus');
     if (statusEl) {
-      statusEl.textContent = '⏳ Sauvegarde en cours…';
+      statusEl.textContent = 'Sauvegarde en cours…';
       statusEl.style.color = 'var(--gray-text)';
     }
     try {
@@ -1643,18 +1643,18 @@ function saBackupNow(tenantKey) {
       if (!json.success) throw new Error(json.error);
       const d = json.data || {};
       const sizeKo = d.taille ? (d.taille / 1024).toFixed(1) + ' Ko' : '';
-      toast(`✅ Sauvegarde créée : ${d.fichier} (${sizeKo})`, 'success');
+      toast(`Sauvegarde créée : ${d.fichier} (${sizeKo})`, 'success');
       closeModal();
       await saRefresh();
     } catch(e) {
       if (statusEl) {
-        statusEl.textContent = '❌ ' + e.message;
+        statusEl.textContent = '' + e.message;
         statusEl.style.color = 'var(--red)';
       } else {
         toast(e.message, 'error');
       }
     }
-  }, '💾 Lancer la sauvegarde');
+  }, 'Lancer la sauvegarde');
 }
 
 /**
@@ -1679,7 +1679,7 @@ async function saListBackups(tenantKey) {
       </tr>`;
     }).join('');
 
-    openModal(`📋 Sauvegardes — ${_escSa(tenant?.nom || tenantKey)}`, `
+    openModal(`Sauvegardes — ${_escSa(tenant?.nom || tenantKey)}`, `
       <div style="font-size:12px;color:var(--gray-text);margin-bottom:10px">
         Dossier : <code style="background:var(--gray-bg);padding:2px 6px;border-radius:4px">${_escSa(dossier)}</code>
         ${derniere ? `<br>Dernière opération : <strong>${_escSa(derniere)}</strong>` : ''}
@@ -1712,15 +1712,15 @@ async function saListBackups(tenantKey) {
 function saExportDb(tenantKey) {
   const tenant = _saTenantsCache?.[tenantKey];
   const driver = tenant?.base_de_donnees?.driver || 'sqlite';
-  openModal('⬇️ Export BDD complète', `
+  openModal('Export BDD complète', `
     <p style="font-size:13px;color:var(--gray-text);margin:0 0 14px">
       Tenant : <strong>${_escSa(tenant?.nom || tenantKey)}</strong><br>
       Driver : <code>${_escSa(driver.toUpperCase())}</code>
     </p>
     <div style="padding:10px;background:var(--blue-pale);border-radius:8px;font-size:12px;color:var(--navy);margin-bottom:12px">
       ${driver === 'sqlite'
-        ? '📦 Le fichier SQLite complet sera téléchargé.'
-        : '📦 Un dump SQL (structure + données) sera généré à la volée.'}
+        ? (lk('package') + ' Le fichier SQLite complet sera téléchargé.')
+        : (lk('package') + ' Un dump SQL (structure + données) sera généré à la volée.')}
     </div>
     <div class="form-group">
       <label class="form-label" style="display:flex;align-items:center;gap:8px">
@@ -1740,7 +1740,7 @@ function saExportDb(tenantKey) {
     a.remove();
     closeModal();
     toast('Téléchargement lancé.', 'success');
-  }, '⬇️ Télécharger');
+  }, 'Télécharger');
 }
 
 /**
@@ -1749,9 +1749,9 @@ function saExportDb(tenantKey) {
 function saImportDb(tenantKey) {
   const tenant = _saTenantsCache?.[tenantKey];
   const driver = tenant?.base_de_donnees?.driver || 'sqlite';
-  openModal('⬆️ Import BDD complète', `
+  openModal('Import BDD complète', `
     <div style="padding:12px;background:var(--chip-warn-bg);border:1px solid var(--chip-warn-bd);border-radius:8px;font-size:13px;color:var(--chip-warn-fg);margin-bottom:14px">
-      ⚠️ <strong>Action destructive.</strong> La base actuelle du tenant
+      ${lk('triangle-exclamation-point', 'warn')} <strong>Action destructive.</strong> La base actuelle du tenant
       <strong>${_escSa(tenant?.nom || tenantKey)}</strong> sera <strong>remplacée</strong>.
       Une sauvegarde de sûreté est automatiquement créée avant l'import.
     </div>
@@ -1782,7 +1782,7 @@ function saImportDb(tenantKey) {
     fd.append('fichier', fileInput.files[0]);
 
     if (statusEl) {
-      statusEl.textContent = '⏳ Import en cours (sauvegarde de sûreté d\'abord)…';
+      statusEl.textContent = 'Import en cours (sauvegarde de sûreté d\'abord)…';
       statusEl.style.color = 'var(--gray-text)';
     }
     try {
@@ -1796,21 +1796,21 @@ function saImportDb(tenantKey) {
       // Résumé détaillé pour permettre de voir ce qui s'est vraiment passé
       let lignes = [];
       lignes.push(d.message || 'Import réussi.');
-      if (d.sauvegarde_avant)   lignes.push('💾 Sauvegarde de sûreté : ' + d.sauvegarde_avant);
-      if (d.comptes_preserves?.length) lignes.push('🔐 Comptes conservés : ' + d.comptes_preserves.join(', '));
-      if (d.registre_sync)      lignes.push('🔄 Registre : ' + d.registre_sync);
+      if (d.sauvegarde_avant)   lignes.push('Sauvegarde de sûreté : ' + d.sauvegarde_avant);
+      if (d.comptes_preserves?.length) lignes.push('Comptes conservés : ' + d.comptes_preserves.join(', '));
+      if (d.registre_sync)      lignes.push('Registre : ' + d.registre_sync);
       if (d.debug) {
         if (d.debug.snapshot_avant)  lignes.push('• Snapshot avant : ' + JSON.stringify(d.debug.snapshot_avant));
         if (d.debug.vidage_apres)    lignes.push('• Vidage après : ' + JSON.stringify(d.debug.vidage_apres));
         if (d.debug.reinjection)     lignes.push('• Réinjection : ' + JSON.stringify(d.debug.reinjection));
         if (d.debug.registre_sync)   lignes.push('• Registre : ' + d.debug.registre_sync);
       }
-      if (d.avertissements?.length) lignes.push('⚠️ ' + d.avertissements.length + ' avertissement(s) SQL.');
+      if (d.avertissements?.length) lignes.push('' + d.avertissements.length + ' avertissement(s) SQL.');
 
       // Afficher un modal de résumé plutôt qu'un simple toast
       closeModal();
       setTimeout(() => {
-        openModal('✅ Import terminé', `
+        openModal('Import terminé', `
           <div style="font-size:13px;line-height:1.7">
             ${lignes.map(l => `<div style="padding:6px 10px;background:var(--gray-bg);border-radius:6px;margin-bottom:6px;font-family:ui-monospace,monospace;font-size:12px">${_escSa(l)}</div>`).join('')}
           </div>
@@ -1819,44 +1819,49 @@ function saImportDb(tenantKey) {
       await saRefresh();
     } catch(e) {
       if (statusEl) {
-        statusEl.textContent = '❌ ' + e.message;
+        statusEl.textContent = '' + e.message;
         statusEl.style.color = 'var(--red)';
       } else {
         toast(e.message, 'error');
       }
     }
-  }, '⬆️ Importer (destructif)');
+  }, 'Importer (destructif)');
 }
 
 // ── Gestion des modules d'un tenant ─────────────────────────────────────────
 const _SA_MODULES = [
-  { group: 'Principal',     items: [{ key:'dashboard', icon:'📊', label:'Tableau de bord' }] },
+  { group: 'Principal',     items: [{ key:'dashboard', icon:lk('chart-column'), label:'Tableau de bord' }] },
   { group: 'Inventaire',    items: [
-      { key:'biens',       icon:'🏢', label:'Biens' },
-      { key:'equipements', icon:'⚙️', label:'Équipements' },
-      { key:'stock',       icon:'📦', label:'Stock' },
+      { key:'biens',       icon:lk('building-complex'), label:'Biens' },
+      { key:'equipements', icon:lk('settings'), label:'Équipements' },
+      { key:'stock',       icon:lk('package'), label:'Stock' },
   ]},
-  { group: 'Plans',         items: [{ key:'plans', icon:'🗺️', label:'Plans' }] },
+  { group: 'Bâtiments',     items: [
+      { key:'plans',   icon:lk('map'), label:'Plans' },
+      { key:'connect', icon:lk('satellite-dish'), label:'Larka Connect (équipements raccordés)' },
+  ]},
   { group: 'Maintenance',   items: [
-      { key:'interventions', icon:'🔧', label:'Interventions' },
-      { key:'contrats',      icon:'📋', label:'Contrats' },
+      { key:'interventions', icon:lk('wrench'), label:'Interventions' },
+      { key:'contrats',      icon:lk('clipboard-list'), label:'Contrats' },
+      { key:'preventif',     icon:lk('calendar-days'), label:'Préventif' },
+      { key:'controles',     icon:lk('circle-check', 'ok'), label:'Contrôle réglementaire' },
   ]},
   { group: 'Gestion',       items: [
-      { key:'gestion_materiel', icon:'💰', label:'Gestion matériel' },
-      { key:'historique',   icon:'🗃️', label:'Historique' },
-      { key:'demandes',     icon:'📝', label:'Demandes' },
+      { key:'gestion_materiel', icon:lk('wallet'), label:'Gestion matériel' },
+      { key:'historique',   icon:lk('archive'), label:'Historique' },
+      { key:'demandes',     icon:lk('file-pen-line'), label:'Demandes' },
   ]},
   { group: 'Fluides',       items: [
-      { key:'energie',          icon:'⚡', label:'Énergie' },
-      { key:'carbone',          icon:'🌿', label:'Bilan Carbone' },
-      { key:'mobilite_carbone', icon:'🚗', label:'Mobilité carbone' },
+      { key:'energie',          icon:lk('zap'), label:'Énergie' },
+      { key:'carbone',          icon:lk('leaf'), label:'Bilan Carbone' },
+      { key:'mobilite_carbone', icon:lk('car'), label:'Mobilité carbone' },
   ]},
-  { group: 'Archives',      items: [{ key:'archives', icon:'🗄️', label:'Archives' }] },
-  { group: 'Analyse',       items: [{ key:'statsAvancees', icon:'📈', label:'Stats avancées' }] },
-  { group: 'Administration', items: [{ key:'journal', icon:'📜', label:'Journal d\'activité' }] },
+  { group: 'Archives',      items: [{ key:'archives', icon:lk('archive'), label:'Archives' }] },
+  { group: 'Analyse',       items: [{ key:'statsAvancees', icon:lk('trending-up'), label:'Stats avancées' }] },
+  { group: 'Administration', items: [{ key:'journal', icon:lk('scroll-text'), label:'Journal d\'activité' }] },
   { group: 'République',    items: [
-      { key:'legifrance', icon:'📜', label:'Légifrance' },
-      { key:'chorus',     icon:'🏛️', label:'Chorus Pro' },
+      { key:'legifrance', icon:lk('scroll-text'), label:'Légifrance' },
+      { key:'chorus',     icon:lk('landmark'), label:'Chorus Pro' },
   ]},
 ];
 
@@ -1873,7 +1878,7 @@ async function saShowTenantModules(tenantKey) {
 
   // 2. Construire l'UI
   let html = '<div style="font-size:13px;color:var(--gray-text);margin-bottom:14px">Cochez les modules à <strong>activer</strong> pour ce tenant. Les modules décochés seront masqués pour tous les utilisateurs.</div>';
-  html += '<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn btn-sm btn-secondary" onclick="_saModulesAll(true)">✅ Tout activer</button><button class="btn btn-sm btn-secondary" onclick="_saModulesAll(false)">❌ Tout désactiver</button></div>';
+  html += ('<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn btn-sm btn-secondary" onclick="_saModulesAll(true)">' + lk('circle-check', 'ok') + ' Tout activer</button><button class="btn btn-sm btn-secondary" onclick="_saModulesAll(false)">' + lk('circle-x', 'ko') + ' Tout désactiver</button></div>');
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">';
   _SA_MODULES.forEach(g => {
     html += '<div style="border:1px solid var(--gray-border);border-radius:8px;padding:10px;background:var(--white)">';
@@ -1890,7 +1895,7 @@ async function saShowTenantModules(tenantKey) {
   html += '</div>';
 
 
-  openModal('🧩 Modules du tenant', html, async () => {
+  openModal('Modules du tenant', html, async () => {
     const cbs = document.querySelectorAll('.sa-module-cb');
     const newDisabled = [];
     cbs.forEach(cb => { if (!cb.checked) newDisabled.push(cb.dataset.key); });
@@ -1907,7 +1912,7 @@ async function saShowTenantModules(tenantKey) {
     } catch (e) {
       toast('Erreur : ' + e.message, 'error');
     }
-  }, '💾 Enregistrer');
+  }, 'Enregistrer');
 }
 
 /**
@@ -1930,7 +1935,7 @@ function _saModulesAll(enable) {
 
 // ── Purger la BDD d'un tenant (vider sans supprimer le tenant) ───────────────
 async function saPurgeTenantDb(tenantKey) {
-  const msg = '⚠️ ATTENTION ⚠️\n\n'
+  const msg = 'ATTENTION\n\n'
     + 'Vider TOUTES les données de la BDD du tenant "' + tenantKey + '" ?\n\n'
     + '→ Toutes les tables seront vidées (biens, équipements, interventions, etc.)\n'
     + '→ Tous les comptes utilisateurs locaux seront supprimés\n'

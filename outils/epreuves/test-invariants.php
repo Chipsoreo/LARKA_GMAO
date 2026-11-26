@@ -258,9 +258,16 @@ invariant('Toute capacité du catalogue est atteignable',
             $champs['sugg' . $i] = ['type' => 'texte', 'suggestions' => true,
                                     'suggestions_source' => $src];
         }
+        // Une mesure, et un registre qui reçoit les alarmes techniques : la
+        // capacité « connect.alarmes » ne naît que de là.
+        $champs['mesure'] = ['type' => 'mesure', 'de' => 'lien'
+            . array_search('points_connect', array_keys(ExtSchemaDeclaratif::CIBLES_LIEN), true)];
         $tout = [
             'format'  => ExtSchemaDeclaratif::FORMAT,
-            'donnees' => ['jeu' => ['libelle' => 'Jeu', 'champs' => $champs]],
+            'donnees' => ['jeu' => ['libelle' => 'Jeu', 'champs' => $champs],
+                          'alertes' => ['libelle' => 'Alerte', 'champs' => [
+                              'alarme' => ['type' => 'entier']]]],
+            'alarmes' => [['jeu' => 'alertes', 'champs' => ['alarme' => '@alarme']]],
             'pages'   => [['cle' => 'p', 'titre' => 'P',
                            'vue' => ['type' => 'liste', 'source' => 'jeu']]],
             'ancrages' => [['emplacement' => 'dashboard.tuiles', 'type' => 'compteur',

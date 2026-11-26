@@ -152,6 +152,33 @@ final class ExtManifeste
                 . '(version installée : ' . LARKA_VERSION . ').');
         }
 
+        // ── Version de l'API d'extensions ────────────────────────────────────
+        //
+        // CE CONTRÔLE PASSE AVANT CELUI DES CAPACITÉS, et ce n'est pas un
+        // détail d'ordre. Une extension écrite pour une API plus récente
+        // déclare forcément des capacités que cette version ignore : sans ce
+        // contrôle, l'administrateur reçoit « capacité inconnue, faute de
+        // frappe ? » alors que son manifeste est parfaitement correct et que
+        // le vrai problème est un Larka à mettre à jour. Le diagnostic doit
+        // désigner la cause, pas le premier symptôme rencontré.
+        $apiMin = $m['api_min'] ?? null;
+        if ($apiMin !== null) {
+            if (!is_string($apiMin) || !preg_match('/^\d{1,3}\.\d{1,3}$/', $apiMin)) {
+                throw new RuntimeException('Champ « api_min » invalide (attendu : 1.1).');
+            }
+            if (version_compare($apiMin, ExtCapacites::VERSION_API, '>')) {
+                throw new RuntimeException(
+                    'Cette extension exige l\'API d\'extensions ' . $apiMin
+                    . ', or ce serveur fournit la version ' . ExtCapacites::VERSION_API . '. '
+                    . 'Mettez Larka à jour, ou installez une version de l\'extension prévue '
+                    . 'pour votre installation.');
+            }
+        }
+        // (Placé AVANT la validation du schéma : un module écrit pour une API
+        // plus récente emploie aussi du VOCABULAIRE que cette version ignore —
+        // un type de champ, un ancrage. Validé d'abord, il échouait sur « type
+        // inconnu » ; le vrai diagnostic est « mettez Larka à jour ».)
+
         // ── Module déclaratif ? ──────────────────────────────────────────────
         //
         // ── Le format déclaratif est désormais le SEUL ───────────────────
@@ -188,7 +215,7 @@ final class ExtManifeste
                                 'dp_suggestions', 'dp_ajouter_valeur'];
             $m['hooks']      = [];
             $m['client']     = [];
-            // ⚠️ Ne PAS vider $m['ancrages'] : le schéma vient de les valider.
+            // Ne PAS vider $m['ancrages'] : le schéma vient de les valider.
             // Cette ligne existait quand un module de données ne pouvait pas
             // s'ancrer ; laissée en place, elle effaçait silencieusement les
             // primitives d'ancrage et le module perdait ses tuiles et ses
@@ -198,7 +225,7 @@ final class ExtManifeste
             // échouer sur « page.cle invalide », alors qu'il n'a simplement
             // rien à afficher.
             if (!empty($m['pages'])) {
-                // ⚠️ TOUTES LES PAGES, PAS SEULEMENT LA PREMIÈRE.
+                // TOUTES LES PAGES, PAS SEULEMENT LA PREMIÈRE.
                 //
                 // Le manifeste ne retenait que « pages[0] ». Un module pouvait
                 // donc déclarer deux écrans — un formulaire court pour le
@@ -216,29 +243,6 @@ final class ExtManifeste
                 ];
                 $m['page']      = $resume($m['pages'][0]);
                 $m['pages_menu'] = array_map($resume, $m['pages']);
-            }
-        }
-
-        // ── Version de l'API d'extensions ────────────────────────────────────
-        //
-        // CE CONTRÔLE PASSE AVANT CELUI DES CAPACITÉS, et ce n'est pas un
-        // détail d'ordre. Une extension écrite pour une API plus récente
-        // déclare forcément des capacités que cette version ignore : sans ce
-        // contrôle, l'administrateur reçoit « capacité inconnue, faute de
-        // frappe ? » alors que son manifeste est parfaitement correct et que
-        // le vrai problème est un Larka à mettre à jour. Le diagnostic doit
-        // désigner la cause, pas le premier symptôme rencontré.
-        $apiMin = $m['api_min'] ?? null;
-        if ($apiMin !== null) {
-            if (!is_string($apiMin) || !preg_match('/^\d{1,3}\.\d{1,3}$/', $apiMin)) {
-                throw new RuntimeException('Champ « api_min » invalide (attendu : 1.1).');
-            }
-            if (version_compare($apiMin, ExtCapacites::VERSION_API, '>')) {
-                throw new RuntimeException(
-                    'Cette extension exige l\'API d\'extensions ' . $apiMin
-                    . ', or ce serveur fournit la version ' . ExtCapacites::VERSION_API . '. '
-                    . 'Mettez Larka à jour, ou installez une version de l\'extension prévue '
-                    . 'pour votre installation.');
             }
         }
 

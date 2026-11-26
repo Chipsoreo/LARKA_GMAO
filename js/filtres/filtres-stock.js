@@ -14,7 +14,7 @@
 FiltresEngine.register('stock', {
   fields: [
     { key: 'Categorie',    label: 'Catégorie',     type: 'select', options: () => _fl('CategorieStock') },
-    { key: '_alerte',      label: 'Alerte stock',   type: 'chips',  options: [{ value: '1', label: '⚠️ En alerte' }] },
+    { key: '_alerte',      label: 'Alerte stock',   type: 'chips',  options: [{ value: '1', label: 'En alerte' }] },
     { key: 'Marque',       label: 'Marque',        type: 'text',   placeholder: 'Marque…' },
     { key: 'Fournisseur',  label: 'Fournisseur',   type: 'text',   placeholder: 'Fournisseur…' },
     { key: 'Emplacement',  label: 'Emplacement',   type: 'text',   placeholder: 'Emplacement…' },

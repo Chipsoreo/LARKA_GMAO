@@ -260,11 +260,22 @@ const LarkaExtensions = (() => {
       role === 'Gestionnaire' || role === 'Admin' || (e.page.roles || []).includes(role)));
     if (!visibles.length) return;
 
+    // ⚠️ LA PRÉFÉRENCE « MASQUER » ÉTAIT IGNORÉE POUR LES MODULES.
+    // La case se décochait dans Interface → Onglets, l'enregistrement la
+    // retenait, et l'entrée restait dans la barre. On la respecte, et l'on
+    // signale l'entrée masquée au panneau pour qu'il garde sa case.
+    let visibilite = {};
+    try { visibilite = (typeof getUserNavVisibility === 'function') ? getUserNavVisibility() : {}; } catch (_) { /* tout afficher */ }
+    if (typeof App !== 'undefined') {
+      App._navMasquees = (App._navMasquees || []).filter(m => !m.ext);
+    }
+
     const titre = document.createElement('div');
     titre.className = 'nav-section-title';
     titre.dataset.extNav = '1';
+    titre.dataset.section = 'Modules communautaires';
     titre.style.marginTop = '8px';
-    titre.textContent = 'Modules communautaires';
+    titre.textContent = (typeof getSectionLabel === 'function') ? getSectionLabel('Modules communautaires') : 'Modules communautaires';
     nav.appendChild(titre);
 
     // Une entrée par PAGE, pas par module. Un module à deux écrans n'en
@@ -296,6 +307,13 @@ const LarkaExtensions = (() => {
         item.title = `${e.nom} — module communautaire`;
         item.innerHTML = `<span class="icon">${iconeModule(e)}</span>`
           + `<span class="nav-label">${echapper(pg.titre)}</span>`;
+        item.dataset.label = pg.titre;
+        if (visibilite[cle] === false) {
+          if (typeof App !== 'undefined' && App._navMasquees && !App._navMasquees.some(m => m.page === cle)) {
+            App._navMasquees.push({ page: cle, label: pg.titre, icon: iconeModule(e), section: 'Modules communautaires', ext: true });
+          }
+          return;
+        }
         item.addEventListener('click', () => navigate(cle));
         // Dernier filet : si une entrée de cette page survit malgré le
         // nettoyage, on ne la double pas.
@@ -303,6 +321,14 @@ const LarkaExtensions = (() => {
         placer(nav, item, cle);
       });
     });
+
+    // Toutes masquées ou rangées ailleurs : pas de titre orphelin.
+    const suivant = titre.nextElementSibling;
+    if (!suivant || suivant.classList.contains('nav-section-title')) { titre.remove(); return; }
+    // Section regroupée en liste déroulante (Interface → Onglets) ?
+    if (typeof navRegrouperSectionDom === 'function') {
+      try { navRegrouperSectionDom(titre); } catch (_) { /* reste en titre simple */ }
+    }
   }
 
   /**
@@ -326,8 +352,15 @@ const LarkaExtensions = (() => {
 
     if (section) {
       const titres = [...nav.querySelectorAll('.nav-section-title')];
-      const titre = titres.find(t => t.textContent.trim() === section);
+      const titre = titres.find(t => (t.dataset.section || '').trim() === section)
+                 || titres.find(t => (t.dataset.libelle || t.textContent).trim() === section);
       if (titre) {
+        // Rangée dans une section déroulante : elle en devient une entrée.
+        if (titre.classList.contains('nav-parent')) {
+          item.classList.add('nav-enfant');
+          item.dataset.navSection = titre.dataset.section || section;
+          item.classList.toggle('nav-replie', titre.classList.contains('repliee'));
+        }
         // Dernier frère de cette section : juste avant le titre suivant.
         let curseur = titre;
         while (curseur.nextElementSibling
@@ -354,18 +387,18 @@ const LarkaExtensions = (() => {
    * module : le dossier installé vit hors racine web, une balise <img> pointant
    * vers lui n'aurait rien chargé.
    *
-   * Le cœur écrit ses icônes en emoji ; les modules les déclarent par un nom
-   * (contrainte du schéma : minuscules et tirets, pas d'emoji arbitraire). La
-   * table ci-dessous fait le pont. Un nom absent retombe sur la pièce de
-   * puzzle — un module reste identifiable, il n'a simplement pas d'icône à lui.
+   * Les modules déclarent leur icône par un nom (contrainte du schéma :
+   * minuscules et tirets). La table ci-dessous le rattache à une icône Lucide
+   * (lk(), css/lucide.css). Un nom absent retombe sur la pièce de puzzle — un
+   * module reste identifiable, il n'a simplement pas d'icône à lui.
    */
   const _ICONES = {
-    key:'🔑', lock:'🔒', shield:'🛡️', 'shield-check':'🛡️', award:'🎖️',
-    palette:'🎨', users:'👥', user:'👤', file:'📄', folder:'📁', tag:'🏷️',
-    calendar:'📅', clock:'🕐', chart:'📊', map:'🗺️', pin:'📍', tool:'🔧',
-    truck:'🚚', box:'📦', bell:'🔔', star:'⭐', flag:'🚩', book:'📕',
-    graduation:'🎓', building:'🏢', leaf:'🌿', bolt:'⚡', droplet:'💧',
-    fire:'🔥', wrench:'🔧', clipboard:'📋', puzzle:'🧩',
+    key: 'key-round', lock: 'lock', shield: 'shield', 'shield-check': 'shield-check', award: 'award',
+    palette: 'palette', users: 'users', user: 'user', file: 'file', folder: 'folder', tag: 'tag',
+    calendar: 'calendar', clock: 'clock', chart: 'chart-column', map: 'map', pin: 'map-pin', tool: 'wrench',
+    truck: 'truck', box: 'package', bell: 'bell', star: 'star', flag: 'flag', book: 'book',
+    graduation: 'graduation-cap', building: 'building', leaf: 'leaf', bolt: 'zap', droplet: 'droplet',
+    fire: 'flame', wrench: 'wrench', clipboard: 'clipboard', puzzle: 'puzzle',
   };
   function iconeModule(e) {
     // « logo » est DÉJÀ une URL complète, composée par le serveur avec son
@@ -377,7 +410,14 @@ const LarkaExtensions = (() => {
       return `<img src="${e.logo}" alt="" style="width:18px;height:18px;`
            + `object-fit:contain;vertical-align:-3px" loading="lazy">`;
     }
-    return _ICONES[String(e.page?.icone || '').toLowerCase()] || '🧩';
+    return lk(_ICONES[String(e.page?.icone || '').toLowerCase()] || 'puzzle');
+  }
+
+  // Pictogramme Lucide du module (celui de sa page), sans jamais passer par
+  // son logo image : pour les pastilles teintées des tuiles, où un PNG détonne.
+  function iconeLucide(e, defaut) {
+    const nom = _ICONES[String(e?.page?.icone || '').toLowerCase()];
+    return lk(nom || defaut || 'puzzle');
   }
 
   function echapper(s) {
@@ -746,9 +786,10 @@ const LarkaExtensions = (() => {
 
     // ── Catalogue de base, PRIORITAIRE sur le français écrit en dur ──────
     //
-    // lang/fr.json liste tout ce qui est traduisible, avec le texte d'origine
-    // en clé et en valeur. Il permet de corriger un libellé sans toucher au
-    // code, et sert de modèle à un traducteur.
+    // lang/traductions.json (fichier de traduction unique) liste tout ce qui
+    // est traduisible, le texte d'origine en clé. Sa colonne « fr » permet de
+    // corriger un libellé sans toucher au code ; _catalogue en est tiré
+    // (clé → texte français à afficher).
     //
     // Il est FACULTATIF : supprimé, l'interface retombe sur le français des
     // écrans. Une traduction perdue ne doit pas casser le produit.
@@ -769,7 +810,10 @@ const LarkaExtensions = (() => {
     }
     if (Object.keys(dict).length === 0) return;
 
-    const cible = racine || document.body;
+    traduireNoeuds(racine || document.body, dict);
+  }
+
+  function traduireNoeuds(cible, dict) {
     const marcheur = document.createTreeWalker(cible, window.NodeFilter.SHOW_TEXT, {
       acceptNode(n) {
         // Ni script, ni style : y toucher casserait la page.
@@ -811,16 +855,6 @@ const LarkaExtensions = (() => {
       if (trad === undefined) {
         const bas = dictBas[cle.toLowerCase()];
         if (bas !== undefined) trad = casse(cle, bas);
-      }
-      // Titre précédé d'un emoji : « 📝 Dernières demandes ». On traduit le
-      // texte et on garde le symbole — le remplacer par un dictionnaire séparé
-      // obligerait à répéter chaque libellé avec et sans son emoji.
-      if (trad === undefined) {
-        const m = cle.match(/^([\u{1F300}-\u{1FAFF}\u{2190}-\u{27BF}\u{FE0F}\s]+)(.+)$/u);
-        if (m) {
-          const t2 = dict[m[2]] !== undefined ? dict[m[2]] : dictBas[m[2].toLowerCase()];
-          if (t2 !== undefined) trad = m[1] + casse(m[2], t2);
-        }
       }
       // Compteur : « 3610 demandes », « 70 biens en stock ». Le nombre change,
       // le mot reste : on traduit le mot, on garde le nombre — en minuscule
@@ -881,14 +915,17 @@ const LarkaExtensions = (() => {
   }
 
   /** Modules d'habillage installés, pour que l'utilisateur puisse choisir. */
-  /** Catalogue de libellés de base (lang/fr.json), s'il est présent. */
+  /** Catalogue de libellés de base (clé → français, depuis lang/traductions.json), s'il est présent. */
   let _catalogue = null;
   async function chargerCatalogue() {
     try {
-      const r = await fetch('lang/fr.json', { credentials: 'same-origin' });
+      const r = await fetch('lang/traductions.json', { credentials: 'same-origin' });
       if (!r.ok) return null;
       const j = await r.json();
-      _catalogue = j && j.libelles ? j.libelles : null;
+      if (j && j.libelles) {
+        _catalogue = {};
+        Object.entries(j.libelles).forEach(([k, e]) => { _catalogue[k] = (e && e.fr) || k; });
+      } else _catalogue = null;
     } catch (e) {
       // Fichier absent ou illisible : on garde le français des écrans.
       _catalogue = null;
@@ -1010,7 +1047,7 @@ const LarkaExtensions = (() => {
         // Le libellé de l'onglet voyage avec le conteneur : la page qui accueille
         // l'ancrage sait ainsi comment nommer l'onglet sans connaître le module.
         if (a.type === 'formulaire') {
-          boite.dataset.ongletLibelle = `${a.icone || '🧩'} ${a.libelle || ext.nom}`;
+          boite.dataset.ongletLibelle = String(a.libelle || ext.nom || '');
         }
         hote.appendChild(boite);
 
@@ -1023,6 +1060,9 @@ const LarkaExtensions = (() => {
 
   return {
     initialiser,
+    // Icône d'un module (logo, ou icône de sa page) : tuiles sans icône déclarée.
+    iconeModule,
+    iconeLucide,
     // Dessine une page d'un module dans un conteneur donné. Sert à l'amorçage :
     // un module ne publie son formulaire qu'en dessinant sa page.
     rendrePage: (identifiant, pageCle, hote) => {

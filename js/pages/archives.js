@@ -77,11 +77,11 @@ async function _renderArchivesPage(c) {
   <div class="card" style="padding:0;margin-bottom:16px">
     <div style="padding:16px 20px 0;border-bottom:1px solid var(--gray-border)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:12px">
-        ${tabBtn('dossiers',  '🗂️', 'Dossiers')}
-        ${tabBtn('boites',    '📦', 'Boîtes')}
-        ${tabBtn('bordereaux','📄', 'Bordereaux')}
-        ${tabBtn('demandes',  '📬', 'Demandes')}
-        ${tabBtn('recherche', '🔍', 'Recherche avancée')}
+        ${tabBtn('dossiers',  lk('folders'), 'Dossiers')}
+        ${tabBtn('boites',    lk('package'), 'Boîtes')}
+        ${tabBtn('bordereaux',lk('file-text'), 'Bordereaux')}
+        ${tabBtn('demandes',  lk('mailbox'), 'Demandes')}
+        ${tabBtn('recherche', lk('search'), 'Recherche avancée')}
       </div>
     </div>
     <div id="archivesOngletContent">
@@ -109,18 +109,18 @@ async function _renderDossiers() {
   <div style="padding:16px 20px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <div style="flex:1;max-width:400px;position:relative">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--gray-text)">🔍</span>
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--gray-text)">${lk('search')}</span>
         <input class="form-control" type="text" placeholder="Rechercher un dossier…"
           style="padding-left:32px" value="${_esc_a(App.searchTerm||'')}"
           oninput="App.handleSearch(this.value)">
       </div>
       <button class="btn btn-primary" onclick="openModalNouveauDossier()">+ Nouveau dossier</button>
-      <button class="btn" onclick="switchArchivesOnglet('recherche')" style="background:#f0f9ff;color:var(--blue);border:1px solid #bae6fd">🔍 Recherche avancée</button>
+      <button class="btn" onclick="switchArchivesOnglet('recherche')" style="background:#f0f9ff;color:var(--blue);border:1px solid #bae6fd">${lk('search')} Recherche avancée</button>
     </div>
 
     ${filtered.length === 0 ? `
     <div style="text-align:center;padding:60px 20px;color:var(--gray-text)">
-      <div style="font-size:48px;margin-bottom:12px">🗂️</div>
+      <div style="font-size:48px;margin-bottom:12px">${lk('folders')}</div>
       <div style="font-size:16px;font-weight:600">Aucun dossier archivé</div>
       <div style="font-size:13px;margin-top:4px">Créez votre premier dossier avec le bouton ci-dessus</div>
     </div>` : `
@@ -144,7 +144,7 @@ async function _renderDossiers() {
           <tr>
             <td><strong>${_esc_a(d.NumeroDossier||'—')}</strong></td>
             <td>${_esc_a(d.NomPrenom||'—')}</td>
-            <td>${d.NumeroBoite ? `<span style="background:#f0f9ff;padding:2px 8px;border-radius:4px;font-size:12px">📦 ${_esc_a(d.NumeroBoite)}</span>` : '—'}</td>
+            <td>${d.NumeroBoite ? `<span style="background:#f0f9ff;padding:2px 8px;border-radius:4px;font-size:12px">${lk('package')} ${_esc_a(d.NumeroBoite)}</span>` : '—'}</td>
             <td>${_esc_a(d.Service||'—')}</td>
             <td>${_esc_a(d.Commune||'—')}</td>
             <td>${_esc_a(d.Annee||'—')}</td>
@@ -153,8 +153,8 @@ async function _renderDossiers() {
             <td><span style="font-size:11px;background:${d.SortFinal==='Destruction'?'#fee2e2':'#f0fdf4'};padding:2px 6px;border-radius:4px">${_esc_a(d.SortFinal||'—')}</span></td>
             <td>${badgeStatutArch(d.Statut)}</td>
             <td style="white-space:nowrap">
-              <button class="btn btn-sm" onclick="openModalEditDossier(${d.Id})" title="Modifier">✏️ Modifier</button>
-              ${canEdit() ? `<button class="btn btn-sm btn-danger" onclick="supprimerDossier(${d.Id})" title="Supprimer">🗑️ Supprimer</button>` : ''}
+              <button class="btn btn-sm" onclick="openModalEditDossier(${d.Id})" title="Modifier">${lk('pencil')} Modifier</button>
+              ${canEdit() ? `<button class="btn btn-sm btn-danger" onclick="supprimerDossier(${d.Id})" title="Supprimer">${lk('trash')} Supprimer</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -179,7 +179,7 @@ async function _renderBoites() {
   <div style="padding:16px 20px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
       <div style="flex:1;max-width:400px;position:relative">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--gray-text)">🔍</span>
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--gray-text)">${lk('search')}</span>
         <input class="form-control" type="text" placeholder="Rechercher une boîte…"
           style="padding-left:32px" value="${_esc_a(App.searchTerm||'')}"
           oninput="App.handleSearch(this.value)">
@@ -189,7 +189,7 @@ async function _renderBoites() {
 
     ${filtered.length === 0 ? `
     <div style="text-align:center;padding:60px 20px;color:var(--gray-text)">
-      <div style="font-size:48px;margin-bottom:12px">📦</div>
+      <div style="font-size:48px;margin-bottom:12px">${lk('package')}</div>
       <div style="font-size:16px;font-weight:600">Aucune boîte enregistrée</div>
     </div>` : `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px">
@@ -199,22 +199,22 @@ async function _renderBoites() {
         <!-- En-tête boîte -->
         <div style="background:linear-gradient(135deg,#1565c0,#1976d2);color:white;padding:12px 14px;display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div style="font-size:16px;font-weight:700">📦 ${_esc_a(b.NumeroBoite)}</div>
+            <div style="font-size:16px;font-weight:700">${lk('package')} ${_esc_a(b.NumeroBoite)}</div>
             <div style="font-size:11px;opacity:.85;margin-top:2px">${_esc_a(b.Service||'—')}</div>
           </div>
           <div style="display:flex;gap:6px">
             <button class="btn btn-sm" onclick="openFicheBoite(${b.Id})" title="Voir la fiche officielle"
-              style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.4);font-size:11px;padding:5px 10px">📋 Fiche</button>
+              style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.4);font-size:11px;padding:5px 10px">${lk('clipboard-list')} Fiche</button>
             <button class="btn btn-sm" onclick="openModalEditBoite(${b.Id})" title="Modifier"
-              style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.4);font-size:11px;padding:5px 10px">✏️ Modifier</button>
+              style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.4);font-size:11px;padding:5px 10px">${lk('pencil')} Modifier</button>
             ${canEdit() ? `<button class="btn btn-sm btn-danger" onclick="supprimerBoite(${b.Id})" title="Supprimer"
-              style="background:rgba(220,38,38,.5);color:white;border:1px solid rgba(220,38,38,.6);font-size:11px;padding:5px 10px">🗑️ Suppr.</button>` : ''}
+              style="background:rgba(220,38,38,.5);color:white;border:1px solid rgba(220,38,38,.6);font-size:11px;padding:5px 10px">${lk('trash')} Suppr.</button>` : ''}
           </div>
         </div>
 
         <!-- Corps boîte -->
         <div style="padding:12px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          ${b.AgentResponsable ? `<div style="grid-column:span 2"><span style="color:var(--gray-text)">👤 Agent :</span> <strong>${_esc_a(b.AgentResponsable)}</strong></div>` : ''}
+          ${b.AgentResponsable ? `<div style="grid-column:span 2"><span style="color:var(--gray-text)">${lk('user')} Agent :</span> <strong>${_esc_a(b.AgentResponsable)}</strong></div>` : ''}
           ${b.NumeroVersement  ? `<div><span style="color:var(--gray-text)">N° versement :</span> ${_esc_a(b.NumeroVersement)}</div>` : ''}
           ${b.DateVersement    ? `<div><span style="color:var(--gray-text)">Date versement :</span> ${fmtDateFr(b.DateVersement)}</div>` : ''}
           ${b.DatesExtremes    ? `<div><span style="color:var(--gray-text)">Dates extrêmes :</span> ${_esc_a(b.DatesExtremes)}</div>` : ''}
@@ -227,7 +227,7 @@ async function _renderBoites() {
           ${b.Periode          ? `<div><span style="color:var(--gray-text)">Période :</span> ${_esc_a(b.Periode)}</div>` : ''}
           ${b.Description      ? `<div style="grid-column:span 2;color:var(--gray-text);font-style:italic;border-top:1px solid var(--gray-border);padding-top:6px;margin-top:2px">${_esc_a(b.Description.substring(0,120))}${b.Description.length>120?'…':''}</div>` : ''}
         </div>
-        ${b.CodeBarre ? `<div style="padding:4px 12px 10px;font-size:11px;color:var(--gray-text)">🔖 ${_esc_a(b.CodeBarre)}</div>` : ''}
+        ${b.CodeBarre ? `<div style="padding:4px 12px 10px;font-size:11px;color:var(--gray-text)">${lk('bookmark')} ${_esc_a(b.CodeBarre)}</div>` : ''}
       </div>`).join('')}
     </div>
     <div style="font-size:12px;color:var(--gray-text);margin-top:12px">${filtered.length} boîte(s)</div>
@@ -257,8 +257,8 @@ async function _renderBordereaux() {
               <td>${_esc_a(b.Service||'—')}</td>
               <td>${_renderStatutBordereau(b.Statut)}</td>
               <td>${_renderLocBordereau(b.Localisation)}</td>
-              <td>${b.NomFichier ? `<button class="btn btn-sm" onclick="ArchivesApi.downloadBordereau(${b.Id},${jsArg(b.NomFichier)})" style="font-size:11px">📥 ${_esc_a(b.NomFichier)}</button>` : '—'}</td>
-              <td>${canEdit() ? `<button class="btn btn-sm btn-danger" onclick="supprimerBordereau(${b.Id})">🗑️ Supprimer</button>` : ''}</td>
+              <td>${b.NomFichier ? `<button class="btn btn-sm" onclick="ArchivesApi.downloadBordereau(${b.Id},${jsArg(b.NomFichier)})" style="font-size:11px">${lk('download')} ${_esc_a(b.NomFichier)}</button>` : '—'}</td>
+              <td>${canEdit() ? `<button class="btn btn-sm btn-danger" onclick="supprimerBordereau(${b.Id})">${lk('trash')} Supprimer</button>` : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -273,14 +273,14 @@ async function _renderBordereaux() {
 
     <div style="margin-bottom:24px">
       <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:8px">
-        <span style="background:#eff6ff;padding:4px 10px;border-radius:20px">📋 Bordereaux de versement (${versements.length})</span>
+        <span style="background:#eff6ff;padding:4px 10px;border-radius:20px">${lk('clipboard-list')} Bordereaux de versement (${versements.length})</span>
       </div>
       ${renderListe(versements,'Versement')}
     </div>
 
     <div>
       <div style="font-size:13px;font-weight:700;color:#e11d48;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-        <span style="background:#fff5f5;padding:4px 10px;border-radius:20px">🗑️ Bordereaux d'élimination (${eliminations.length})</span>
+        <span style="background:#fff5f5;padding:4px 10px;border-radius:20px">${lk('trash')} Bordereaux d'élimination (${eliminations.length})</span>
       </div>
       ${renderListe(eliminations,'Élimination')}
     </div>
@@ -298,7 +298,7 @@ async function _renderDemandesArchive() {
   const traitees = demArchives.filter(d => ['Traité','Refusé'].includes(d.Statut));
 
   const STATUT_COLORS = { Demandeur:'orange', 'En cours':'blue', Traité:'teal', Refusé:'red' };
-  const PRESTA_LABELS = { Archivage:'📦 Archivage', Desarchivage:'🗂️ Désarchivage' };
+  const PRESTA_LABELS = { Archivage:(lk('package') + ' Archivage'), Desarchivage:(lk('folders') + ' Désarchivage') };
 
   const renderCard = (d) => {
     let archInfo = null;
@@ -318,23 +318,23 @@ async function _renderDemandesArchive() {
             <span style="font-size:11px;color:var(--gray-text)">${fmtDt(d.DateCreation)}</span>
           </div>
           <div style="font-size:13px;margin-bottom:4px">
-            <strong>👤 ${escHtml(d.NomDeclarant||'—')}</strong>
-            ${d.EmailDemandeur ? `<span style="color:var(--gray-text)"> — 📧 ${escHtml(d.EmailDemandeur||'')}</span>` : ''}
-            ${d.TelDemandeur   ? `<span style="color:var(--gray-text)"> — 📱 ${escHtml(d.TelDemandeur||'')}</span>` : ''}
+            <strong>${lk('user')} ${escHtml(d.NomDeclarant||'—')}</strong>
+            ${d.EmailDemandeur ? `<span style="color:var(--gray-text)"> — ${lk('mail')} ${escHtml(d.EmailDemandeur||'')}</span>` : ''}
+            ${d.TelDemandeur   ? `<span style="color:var(--gray-text)"> — ${lk('smartphone')} ${escHtml(d.TelDemandeur||'')}</span>` : ''}
           </div>
-          ${d.Batiment || d.Bureau ? `<div style="font-size:12px;color:var(--gray-text)">🏢 ${_esc_a([d.Batiment,d.Bureau].filter(Boolean).join(' • '))}</div>` : ''}
+          ${d.Batiment || d.Bureau ? `<div style="font-size:12px;color:var(--gray-text)">${lk('building-complex')} ${_esc_a([d.Batiment,d.Bureau].filter(Boolean).join(' • '))}</div>` : ''}
           ${archInfo ? `<div style="margin-top:8px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap;color:var(--gray-text)">
-            ${archInfo.dateSolde   ? `<span>📅 Solde : ${new Date(archInfo.dateSolde).toLocaleDateString('fr-FR')}</span>` : ''}
-            ${archInfo.numeroDossierArch ? `<span>📁 ${_esc_a(archInfo.numeroDossierArch)}</span>` : ''}
-            ${archInfo.nbDossiers  ? `<span>📦 ${_esc_a(archInfo.nbDossiers)} dossiers</span>` : ''}
-            ${archInfo.serviceArchive ? `<span>🏢 ${_esc_a(archInfo.serviceArchive)}</span>` : ''}
+            ${archInfo.dateSolde   ? `<span>${lk('calendar')} Solde : ${new Date(archInfo.dateSolde).toLocaleDateString('fr-FR')}</span>` : ''}
+            ${archInfo.numeroDossierArch ? `<span>${lk('folder')} ${_esc_a(archInfo.numeroDossierArch)}</span>` : ''}
+            ${archInfo.nbDossiers  ? `<span>${lk('package')} ${_esc_a(archInfo.nbDossiers)} dossiers</span>` : ''}
+            ${archInfo.serviceArchive ? `<span>${lk('building-complex')} ${_esc_a(archInfo.serviceArchive)}</span>` : ''}
           </div>` : ''}
           ${d.Description ? `<div style="font-size:12px;color:var(--gray-text);margin-top:6px;font-style:italic">${_esc_a(d.Description.substring(0,100))}${d.Description.length>100?'…':''}</div>` : ''}
-          ${d.CommentaireAdmin ? `<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-radius:6px;font-size:12px">💬 ${_esc_a(d.CommentaireAdmin.substring(0,120))}</div>` : ''}
+          ${d.CommentaireAdmin ? `<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-radius:6px;font-size:12px">${lk('message-circle')} ${_esc_a(d.CommentaireAdmin.substring(0,120))}</div>` : ''}
         </div>
         ${isManager && !['Traité','Refusé'].includes(d.Statut) ? `
         <div style="flex-shrink:0">
-          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();traiterDemandeArchive_byId(${d.Id})">✏️ Traiter</button>
+          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();traiterDemandeArchive_byId(${d.Id})">${lk('pencil')} Traiter</button>
         </div>` : ''}
       </div>
     </div>`;
@@ -344,7 +344,7 @@ async function _renderDemandesArchive() {
   <div style="padding:16px 20px">
     ${enCours.length === 0 && traitees.length === 0 ? `
     <div style="text-align:center;padding:60px 20px;color:var(--gray-text)">
-      <div style="font-size:48px;margin-bottom:12px">📬</div>
+      <div style="font-size:48px;margin-bottom:12px">${lk('mailbox')}</div>
       <div style="font-size:16px;font-weight:600">Aucune demande d'archive</div>
       <div style="font-size:13px;margin-top:4px">Les demandes soumises via le formulaire "Archive" apparaîtront ici</div>
     </div>` : `
@@ -352,7 +352,7 @@ async function _renderDemandesArchive() {
     ${enCours.length > 0 ? `
     <div style="margin-bottom:24px">
       <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:12px;display:flex;align-items:center;gap:8px">
-        <span style="background:#fff7ed;padding:4px 10px;border-radius:20px;border:1px solid #fed7aa">📬 En attente de traitement (${enCours.length})</span>
+        <span style="background:#fff7ed;padding:4px 10px;border-radius:20px;border:1px solid #fed7aa">${lk('mailbox')} En attente de traitement (${enCours.length})</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px">
         ${enCours.map(renderCard).join('')}
@@ -362,7 +362,7 @@ async function _renderDemandesArchive() {
     ${traitees.length > 0 ? `
     <div>
       <div style="font-size:13px;font-weight:700;color:var(--gray-text);margin-bottom:12px;display:flex;align-items:center;gap:8px">
-        <span style="background:var(--gray-bg);padding:4px 10px;border-radius:20px">✅ Traitées / Refusées (${traitees.length})</span>
+        <span style="background:var(--gray-bg);padding:4px 10px;border-radius:20px">${lk('circle-check', 'ok')} Traitées / Refusées (${traitees.length})</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;opacity:.8">
         ${traitees.map(renderCard).join('')}
@@ -387,9 +387,9 @@ async function voirDetailDemandeArchive(id) {
   let archInfo = null;
   try { archInfo = d.ArchiveData ? JSON.parse(d.ArchiveData) : null; } catch(e) {}
   const isManager = canEdit();
-  const PRESTA_LABELS = { Archivage:'📦 Archivage de dossiers', Desarchivage:'🗂️ Désarchivage d\'un dossier' };
+  const PRESTA_LABELS = { Archivage:(lk('package') + ' Archivage de dossiers'), Desarchivage:(lk('folders') + ' Désarchivage d\'un dossier') };
 
-  openModal(`🗄️ Demande archive — ${escHtml(d.NomDeclarant||'—')}`, `
+  openModal(`Demande archive — ${escHtml(d.NomDeclarant||'—')}`, `
   <div style="display:flex;flex-direction:column;gap:14px;font-size:13px">
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <span class="badge badge-${{Demandeur:'orange','En cours':'blue',Traité:'teal',Refusé:'red'}[d.Statut]||'gray'}">${escHtml(d.Statut||'')}</span>
@@ -397,16 +397,16 @@ async function voirDetailDemandeArchive(id) {
     </div>
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px">
-      <strong>👤 ${escHtml(d.NomDeclarant||'—')}</strong><br>
-      📧 ${escHtml(d.EmailDemandeur||'—')} &nbsp;|&nbsp; 📱 ${escHtml(d.TelDemandeur||'—')}
-      ${d.Batiment||d.Bureau ? `<br>🏢 ${_esc_a([d.Batiment,d.Bureau].filter(Boolean).join(' • '))}` : ''}
+      <strong>${lk('user')} ${escHtml(d.NomDeclarant||'—')}</strong><br>
+      ${lk('mail')} ${escHtml(d.EmailDemandeur||'—')} &nbsp;|&nbsp; ${lk('smartphone')} ${escHtml(d.TelDemandeur||'—')}
+      ${d.Batiment||d.Bureau ? `<br>${lk('building-complex')} ${_esc_a([d.Batiment,d.Bureau].filter(Boolean).join(' • '))}` : ''}
     </div>
 
     ${d.Description ? `<div><strong>Description :</strong><br>${_esc_a(d.Description)}</div>` : ''}
 
     ${archInfo ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px">
-      <div style="font-weight:700;color:#15803d;margin-bottom:8px">📋 Détails</div>
+      <div style="font-weight:700;color:#15803d;margin-bottom:8px">${lk('clipboard-list')} Détails</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         ${archInfo.dateSolde ? `<div><strong>Date de solde :</strong> ${new Date(archInfo.dateSolde).toLocaleDateString('fr-FR')}</div>` : ''}
         ${archInfo.numeroDossierArch ? `<div><strong>N° dossier :</strong> ${_esc_a(archInfo.numeroDossierArch)}</div>` : ''}
@@ -420,10 +420,10 @@ async function voirDetailDemandeArchive(id) {
     </div>` : ''}
 
     <div><strong>Créée le :</strong> ${fmtDateFr(d.DateCreation)}</div>
-    ${d.CommentaireAdmin ? `<div style="background:#f0fdf4;border-radius:8px;padding:12px"><strong>💬 Réponse :</strong><br>${_esc_a(d.CommentaireAdmin)}</div>` : ''}
+    ${d.CommentaireAdmin ? `<div style="background:#f0fdf4;border-radius:8px;padding:12px"><strong>${lk('message-circle')} Réponse :</strong><br>${_esc_a(d.CommentaireAdmin)}</div>` : ''}
 
     <div style="display:flex;gap:8px">
-      ${isManager && !['Traité','Refusé'].includes(d.Statut) ? `<button class="btn btn-primary btn-sm" onclick="closeModal();traiterDemandeArchive_byId(${d.Id})">✏️ Traiter</button>` : ''}
+      ${isManager && !['Traité','Refusé'].includes(d.Statut) ? `<button class="btn btn-primary btn-sm" onclick="closeModal();traiterDemandeArchive_byId(${d.Id})">${lk('pencil')} Traiter</button>` : ''}
     </div>
   </div>`, null, null, 'Fermer');
 }
@@ -455,7 +455,7 @@ function _renderRecherche() {
   if (r !== null) {
     if (r.length === 0) {
       resultatsHtml = `<div style="text-align:center;padding:40px;color:var(--gray-text)">
-        <div style="font-size:32px;margin-bottom:8px">🔍</div>
+        <div style="font-size:32px;margin-bottom:8px">${lk('search')}</div>
         <div>Aucun résultat pour ces critères</div>
       </div>`;
     } else {
@@ -485,7 +485,7 @@ function _renderRecherche() {
                 <td>${_esc_a(d.SortFinal||'—')}</td>
                 <td>${_esc_a(d.Emplacement||'—')}</td>
                 <td>${badgeStatutArch(d.Statut)}</td>
-                <td><button class="btn btn-sm" onclick="openModalEditDossier(${d.Id})">✏️ Modifier</button></td>
+                <td><button class="btn btn-sm" onclick="openModalEditDossier(${d.Id})">${lk('pencil')} Modifier</button></td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -497,7 +497,7 @@ function _renderRecherche() {
   return `
   <div style="padding:16px 20px">
     <div style="background:linear-gradient(135deg,#1565c0,#1976d2);color:white;padding:14px 18px;border-radius:10px;margin-bottom:20px">
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">🔍 Recherche avancée de dossiers</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${lk('search')} Recherche avancée de dossiers</div>
       <div style="font-size:12px;opacity:.85">Renseignez un ou plusieurs critères pour retrouver un dossier spécifique</div>
     </div>
 
@@ -518,12 +518,12 @@ function _renderRecherche() {
       ${inp('dua',           'DUA',               'text', 'Ex: 10 ans')}
       ${inp('description',   'Description',       'text', '')}
       ${inp('emplacement',   'Emplacement',       'text', 'Ex: Salle 3, étagère B')}
-      ${inp('codeBarre',     '🔖 Code barre',     'text', '')}
+      ${inp('codeBarre',     (lk('bookmark') + ' Code barre'),     'text', '')}
       ${sel('statut',        'Statut',             [...STATUT_DOSSIER])}
     </div>
 
     <div style="display:flex;gap:10px;margin-bottom:8px">
-      <button class="btn btn-primary" onclick="lancerRechercheArchives()">🔍 Lancer la recherche</button>
+      <button class="btn btn-primary" onclick="lancerRechercheArchives()">${lk('search')} Lancer la recherche</button>
       <button class="btn" onclick="reinitialiserRechercheArchives()">↺ Réinitialiser</button>
     </div>
 
@@ -541,7 +541,7 @@ async function lancerRechercheArchives() {
   ArchivesState.recherche = filtres;
 
   const btn = document.querySelector('[onclick="lancerRechercheArchives()"]');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Recherche…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Recherche…'; }
 
   try {
     const results = await ArchivesApi.rechercher(filtres);
@@ -582,7 +582,7 @@ function _formDossier(d = {}) {
   return `
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px">
     <div style="grid-column:span 2;background:var(--blue-pale);border-radius:8px;padding:12px;font-size:12px;color:var(--navy)">
-      ℹ️ Tous les champs marqués <span class="req">*</span> sont obligatoires
+      ${lk('info')} Tous les champs marqués <span class="req">*</span> sont obligatoires
     </div>
 
     ${inp('fd_numeroDossier', 'N° de dossier', d.NumeroDossier, 'text', true, 'Ex: DOS-2024-001')}
@@ -610,7 +610,7 @@ function _formDossier(d = {}) {
       <textarea class="form-control" id="fd_description" rows="2">${_esc_a(d.Description||'')}</textarea>
     </div>
     <div class="form-group">
-      <label class="form-label">🔖 Code barre (optionnel)</label>
+      <label class="form-label">${lk('bookmark')} Code barre (optionnel)</label>
       <input class="form-control" id="fd_codeBarre" value="${_esc_a(d.CodeBarre||'')}" placeholder="Scanner ou saisir">
     </div>
     <div class="form-group">
@@ -651,7 +651,7 @@ function _collectDossierData() {
 }
 
 function openModalNouveauDossier() {
-  openModal('🗂️ Nouveau dossier archivé', _formDossier(), async () => {
+  openModal('Nouveau dossier archivé', _formDossier(), async () => {
     const data = _collectDossierData();
     if (!data.numeroDossier) { toast('Le N° de dossier est obligatoire', 'error'); return; }
     if (!data.dateSolde)     { toast('La date de solde est obligatoire', 'error'); return; }
@@ -665,7 +665,7 @@ async function openModalEditDossier(id) {
   const all = await ArchivesApi.getAllDossiers();
   const d = all.find(x => x.Id === id);
   if (!d) return;
-  openModal('✏️ Modifier le dossier', _formDossier(d), async () => {
+  openModal('Modifier le dossier', _formDossier(d), async () => {
     const data = _collectDossierData();
     if (!data.numeroDossier) { toast('Le N° de dossier est obligatoire', 'error'); return; }
     if (!data.dateSolde)     { toast('La date de solde est obligatoire', 'error'); return; }
@@ -713,7 +713,7 @@ async function openFicheBoite(id) {
         <td style="border:1px solid #ccc;padding:4px 8px;font-size:11px;color:${d.SortFinal==='Destruction'?'#dc2626':'#15803d'};font-weight:600">${_esc_a(d.SortFinal||b.SortFinal||'—')}</td>
       </tr>`).join('');
 
-  openModal(`📋 Fiche boîte — ${escHtml(b.NumeroBoite||'')}`, `
+  openModal(`Fiche boîte — ${escHtml(b.NumeroBoite||'')}`, `
   <div id="ficheBoiteContent" style="font-family:'Segoe UI',Arial,sans-serif;max-width:820px">
 
     <!-- Titre général -->
@@ -725,7 +725,7 @@ async function openFicheBoite(id) {
     <div style="border:1px solid #1565c0;border-top:none;margin-bottom:18px">
 
       <div style="background:#dbeafe;padding:6px 14px;font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #93c5fd">
-        📤 Partie réservée au service versant
+        ${lk('upload')} Partie réservée au service versant
       </div>
       <table style="width:100%;border-collapse:collapse">
         ${ligne('Nom du service',                   b.Service)}
@@ -735,7 +735,7 @@ async function openFicheBoite(id) {
       </table>
 
       <div style="background:#bfdbfe;padding:6px 14px;font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #93c5fd;border-bottom:1px solid #93c5fd">
-        🗄️ Partie réservée au service d'archivage
+        ${lk('archive')} Partie réservée au service d'archivage
       </div>
       <table style="width:100%;border-collapse:collapse">
         ${ligne('Numéro du versement',              b.NumeroVersement || b.NumeroBoite)}
@@ -746,7 +746,7 @@ async function openFicheBoite(id) {
 
       <!-- Tableau descriptif sommaire -->
       <div style="background:#dbeafe;padding:6px 14px;font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #93c5fd;border-bottom:1px solid #93c5fd">
-        📋 N° d'articles — Descriptif sommaire et dates extrêmes des principales catégories de documents versés
+        ${lk('clipboard-list')} N° d'articles — Descriptif sommaire et dates extrêmes des principales catégories de documents versés
       </div>
       <div style="padding:10px 14px;font-size:12px;min-height:60px;white-space:pre-line;color:#222;border-bottom:1px solid #d1d5db">
         ${b.Description ? _esc_a(b.Description) : '<span style="color:#888;font-style:italic">— Non renseigné —</span>'}
@@ -757,7 +757,7 @@ async function openFicheBoite(id) {
     <div style="border:1px solid #0891b2;border-radius:6px;overflow:hidden">
 
       <div style="background:#0891b2;color:white;padding:8px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
-        📦 FEUILLE 2 — DÉTAIL DU CONTENU
+        ${lk('package')} FEUILLE 2 — DÉTAIL DU CONTENU
       </div>
 
       <div style="padding:6px 10px;background:#f0f9ff;border-bottom:1px solid #bae6fd;display:flex;gap:20px;font-size:12px">
@@ -790,7 +790,7 @@ async function openFicheBoite(id) {
 
     <!-- Bouton impression -->
     <div style="text-align:right;margin-top:14px">
-      <button class="btn btn-primary btn-sm" onclick="printFicheBoite()" style="font-size:12px">🖨️ Imprimer la fiche</button>
+      <button class="btn btn-primary btn-sm" onclick="printFicheBoite()" style="font-size:12px">${lk('printer')} Imprimer la fiche</button>
     </div>
   </div>`, null, null, 'Fermer', '880px');
 }
@@ -835,7 +835,7 @@ function _formBoite(b = {}) {
 
       <!-- Partie service versant -->
       <div style="background:#1565c0;color:white;padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.5px">
-        📤 PARTIE RÉSERVÉE AU SERVICE VERSANT
+        ${lk('upload')} PARTIE RÉSERVÉE AU SERVICE VERSANT
       </div>
       <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;background:var(--gray-bg)">
         ${inp('fb_service',         'Nom du service',                  b.Service,          'text', true,  'Ex: Direction des finances')}
@@ -846,7 +846,7 @@ function _formBoite(b = {}) {
 
       <!-- Partie service archivage -->
       <div style="background:#0d47a1;color:white;padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.5px">
-        🗄️ PARTIE RÉSERVÉE AU SERVICE D'ARCHIVAGE
+        ${lk('archive')} PARTIE RÉSERVÉE AU SERVICE D'ARCHIVAGE
       </div>
       <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;background:var(--blue-pale)">
         ${inp('fb_numeroBoite',     'N° de boîte (référence)',         b.NumeroBoite,      'text', true,  'Ex: BOX-001')}
@@ -859,7 +859,7 @@ function _formBoite(b = {}) {
 
       <!-- Tableau : N° d'articles / Descriptif sommaire -->
       <div style="background:#1565c0;color:white;padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.5px">
-        📋 TABLEAU — DESCRIPTIF SOMMAIRE DES DOCUMENTS VERSÉS
+        ${lk('clipboard-list')} TABLEAU — DESCRIPTIF SOMMAIRE DES DOCUMENTS VERSÉS
       </div>
       <div style="padding:14px;background:var(--gray-bg)">
         <div style="font-size:11px;color:var(--navy);margin-bottom:8px;font-style:italic">
@@ -877,7 +877,7 @@ function _formBoite(b = {}) {
     <!-- ════ FEUILLE 2 ════ -->
     <div style="border:2px solid #0891b2;border-radius:10px;overflow:hidden">
       <div style="background:#0891b2;color:white;padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.5px">
-        📦 FEUILLE 2 — DÉTAIL DU CONTENU PAR BOÎTE / REGISTRE
+        ${lk('package')} FEUILLE 2 — DÉTAIL DU CONTENU PAR BOÎTE / REGISTRE
       </div>
       <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;background:var(--gray-bg)">
         ${inp('fb_dua',           'DUA (Durée d\'Utilité Administrative)', b.DUA, 'text', false, 'Ex: 10 ans')}
@@ -887,7 +887,7 @@ function _formBoite(b = {}) {
         ${sel('fb_sortFinal',     'Sort final',          SORT_FINAL_OPTIONS, b.SortFinal)}
         ${sel('fb_statut',        'Statut', ['Active','Pleine','Archivée','Détruite'], b.Statut||'Active')}
         <div class="form-group" style="grid-column:span 2">
-          <label class="form-label">🔖 Code barre (optionnel)</label>
+          <label class="form-label">${lk('bookmark')} Code barre (optionnel)</label>
           <input class="form-control" id="fb_codeBarre" value="${_esc_a(b.CodeBarre||'')}" placeholder="Scanner ou saisir">
         </div>
       </div>
@@ -921,7 +921,7 @@ function _collectBoiteData() {
 }
 
 function openModalNouvelleBoite() {
-  openModal('📦 Nouvelle boîte d\'archives', _formBoite(), async () => {
+  openModal('Nouvelle boîte d\'archives', _formBoite(), async () => {
     const data = _collectBoiteData();
     if (!data.numeroBoite) { toast('Le N° de boîte est obligatoire', 'error'); return; }
     await ArchivesApi.createBoite(data);
@@ -934,7 +934,7 @@ async function openModalEditBoite(id) {
   const all = await ArchivesApi.getAllBoites();
   const b = all.find(x => x.Id === id);
   if (!b) return;
-  openModal('✏️ Modifier la boîte', _formBoite(b), async () => {
+  openModal('Modifier la boîte', _formBoite(b), async () => {
     const data = _collectBoiteData();
     if (!data.numeroBoite) { toast('Le N° de boîte est obligatoire', 'error'); return; }
     await ArchivesApi.updateBoite(id, data);
@@ -956,9 +956,9 @@ async function supprimerBoite(id) {
 function openModalNouveauBordereau(type) {
   const isElim = type === 'Elimination';
   ArchivesApi.getAllBoites().then(boites => {
-  const boiteOpts = boites.map(b => `<option value="${b.Id}">${escHtml(b.NumeroBoite||'')}${b.Service ? ' — '+b.Service : ''}</option>`).join('');
+  const boiteOpts = boites.map(b => `<option value="${b.Id}">${escHtml(b.NumeroBoite||'')}${escHtml(b.Service ? ' — '+b.Service : '')}</option>`).join('');
   openModal(
-    isElim ? '🗑️ Nouveau bordereau d\'élimination' : '📋 Nouveau bordereau de versement',
+    isElim ? 'Nouveau bordereau d\'élimination' : 'Nouveau bordereau de versement',
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px">
       <div class="form-group">
         <label class="form-label">N° de bordereau <span class="req">*</span></label>
@@ -975,27 +975,27 @@ function openModalNouveauBordereau(type) {
       <div class="form-group">
         <label class="form-label">Statut <span class="req">*</span></label>
         <select class="form-control" id="fbo_statut">
-          <option value="Attente Archivage">⏳ Attente Archivage</option>
-          <option value="Desarchivage">📤 Désarchivage</option>
-          <option value="Archive">✅ Archivé</option>
+          <option value="Attente Archivage">Attente Archivage</option>
+          <option value="Desarchivage">Désarchivage</option>
+          <option value="Archive">Archivé</option>
         </select>
       </div>
       <div class="form-group span-2">
-        <label class="form-label">📍 Localisation de la boîte</label>
+        <label class="form-label">${lk('map-pin')} Localisation de la boîte</label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--gray-border);border-radius:6px;padding:8px 10px" id="lbl_loc_nous" onclick="selectBordereauLoc('nous')">
-            <input type="radio" name="fbo_loc" value="nous" style="accent-color:var(--blue)"> <span style="font-size:12px;font-weight:600">🏢 Nous</span>
+            <input type="radio" name="fbo_loc" value="nous" style="accent-color:var(--blue)"> <span style="font-size:12px;font-weight:600">${lk('building-complex')} Nous</span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--gray-border);border-radius:6px;padding:8px 10px" id="lbl_loc_presta" onclick="selectBordereauLoc('presta')">
-            <input type="radio" name="fbo_loc" value="presta" style="accent-color:var(--blue)"> <span style="font-size:12px;font-weight:600">🏭 Presta</span>
+            <input type="radio" name="fbo_loc" value="presta" style="accent-color:var(--blue)"> <span style="font-size:12px;font-weight:600">${lk('factory')} Presta</span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--gray-border);border-radius:6px;padding:8px 10px" id="lbl_loc_boite" onclick="selectBordereauLoc('boite')">
-            <input type="radio" name="fbo_loc" value="boite" style="accent-color:var(--blue)"> <span style="font-size:12px;font-weight:600">📦 Dans la boîte</span>
+            <input type="radio" name="fbo_loc" value="boite" style="accent-color:var(--blue)"> <span style="font-size:12px;font-weight:600">${lk('package')} Dans la boîte</span>
           </label>
         </div>
       </div>
       <div class="form-group span-2">
-        <label class="form-label">📦 Boîte associée</label>
+        <label class="form-label">${lk('package')} Boîte associée</label>
         <select class="form-control" id="fbo_boiteId">
           <option value="">— Aucune boîte liée —</option>
           ${boiteOpts}
@@ -1006,7 +1006,7 @@ function openModalNouveauBordereau(type) {
         <textarea class="form-control" id="fbo_description" rows="2" placeholder="Contenu du bordereau…"></textarea>
       </div>
       <div class="form-group span-2">
-        <label class="form-label">📎 Fichier joint (PDF, Word, Excel…)</label>
+        <label class="form-label">${lk('paperclip')} Fichier joint (PDF, Word, Excel…)</label>
         <input type="file" id="fbo_fichier" accept=".pdf,.doc,.docx,.xls,.xlsx,.odt,.ods"
           style="font-size:13px;padding:6px 10px;border:1px solid var(--gray-border);border-radius:6px;width:100%">
         <div style="font-size:11px;color:var(--gray-text);margin-top:4px">Formats acceptés : PDF, Word, Excel — max 20 Mo</div>
@@ -1076,11 +1076,11 @@ function _renderStatutBordereau(s) {
     'Archive':           'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0',
   };
   const style = MAP[s] || 'background:var(--gray-bg);color:var(--gray-text)';
-  const labels = { 'Attente Archivage':'⏳ Attente Archivage', 'Desarchivage':'📤 Désarchivage', 'Archive':'✅ Archivé' };
+  const labels = { 'Attente Archivage':(lk('hourglass') + ' Attente Archivage'), 'Desarchivage':(lk('upload') + ' Désarchivage'), 'Archive':(lk('circle-check', 'ok') + ' Archivé') };
   return `<span style="font-size:11px;padding:2px 8px;border-radius:4px;${style}">${labels[s]||s||'—'}</span>`;
 }
 
 function _renderLocBordereau(loc) {
-  const MAP = { 'nous':'🏢 Nous', 'presta':'🏭 Presta', 'boite':'📦 Boîte' };
-  return loc ? `<span style="font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;padding:2px 7px;border-radius:4px">${MAP[loc]||loc}</span>` : '—';
+  const MAP = { 'nous':(lk('building-complex') + ' Nous'), 'presta':(lk('factory') + ' Presta'), 'boite':(lk('package') + ' Boîte') };
+  return loc ? `<span style="font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;padding:2px 7px;border-radius:4px">${MAP[loc]||escHtml(loc)}</span>` : '—';
 }

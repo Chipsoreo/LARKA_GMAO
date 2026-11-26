@@ -105,13 +105,15 @@ if ($action === 'utilisateurs') {
             }
         }
         $db->updateUtilisateur($id, $body);
+        // Sa propre fiche, mot de passe compris : cette session reste ouverte (les autres tombent).
+        if ((int)$id === (int)($user['Id'] ?? 0)) session_noter_mot_de_passe($db);
         json_ok('OK');
     }
     if ($method==='DELETE') {
         if ($id === $user['Id']) json_error('Impossible de supprimer son propre compte.');
         // Retirer du registre centralisé
         if ($id && class_exists('TenantResolver', false) && TenantResolver::isMultiTenant()) {
-            // ⚠️ FIX PERFS : lookup indexé (idx_utilisateurs_login) au lieu de
+            // FIX PERFS : lookup indexé (idx_utilisateurs_login) au lieu de
             // charger toute la table Utilisateurs pour retrouver un seul compte.
             // findLocalUtilisateurById ne renvoie que les comptes provider='local',
             // ce qui correspond exactement à la condition voulue ici.
@@ -134,6 +136,21 @@ if ($action === 'historique' && $method === 'GET') {
 // ── Demandes d'intervention ───────────────────────────────────────────────────
 if ($action === 'demandes') {
     $user = require_auth();
+    // Aperçu du tableau de bord : les N premières demandes ouvertes de chaque
+    // onglet (Technique / Archive), dans l'ordre de la liste complète. Le
+    // tableau de bord téléchargeait toute la liste (2,8 Mo sur la démo) pour
+    // en afficher douze.
+    if ($method === 'GET' && isset($_GET['apercu'])) {
+        $n = max(1, min(50, (int)$_GET['apercu']));
+        $tech = []; $arch = [];
+        foreach ($db->getAllDemandes($user) as $d) {
+            if (in_array($d['Statut'] ?? null, ['Traité', 'Refusé'], true)) continue;
+            if (($d['TypeLocalisation'] ?? null) === 'Archive') { if (count($arch) < $n) $arch[] = $d; }
+            elseif (count($tech) < $n) $tech[] = $d;
+            if (count($tech) >= $n && count($arch) >= $n) break;
+        }
+        json_ok(array_merge($tech, $arch));
+    }
     if ($method === 'GET')  json_ok($db->getAllDemandes($user));
     if ($method === 'POST') {
         $demandeId = $db->addDemande(get_body(), $user);
@@ -148,7 +165,7 @@ if ($action === 'demandes') {
                     $nomDemandeur = trim(($user['Prenom'] ?? '') . ' ' . ($user['Nom'] ?? '')) ?: $user['Login'];
 
                     // Titre et corps configurables avec placeholder {demandeur}
-                    $titre = defined('PUSH_NOTIF_DEMANDE_TITRE') ? PUSH_NOTIF_DEMANDE_TITRE : '📝 Nouvelle demande';
+                    $titre = defined('PUSH_NOTIF_DEMANDE_TITRE') ? PUSH_NOTIF_DEMANDE_TITRE : 'Nouvelle demande';
                     $corps = defined('PUSH_NOTIF_DEMANDE_CORPS') ? PUSH_NOTIF_DEMANDE_CORPS : '{demandeur} a soumis une demande d\'intervention.';
                     $titre = str_replace('{demandeur}', $nomDemandeur, $titre);
                     $corps = str_replace('{demandeur}', $nomDemandeur, $corps);
@@ -168,7 +185,7 @@ if ($action === 'demandes') {
 
                     $payload = json_encode($notifData, JSON_UNESCAPED_UNICODE);
                     $wp = new WebPush(VAPID_PRIVATE_PEM, VAPID_PUBLIC_KEY, VAPID_SUBJECT);
-                    // ⚠️ FIX PERFS : envoi parallèle (cf. WebPush::sendBatch)
+                    // FIX PERFS : envoi parallèle (cf. WebPush::sendBatch)
                     $batchSubs = array_map(fn($s) => [
                         'endpoint' => $s['Endpoint'],
                         'keys'     => ['p256dh' => $s['P256dh'], 'auth' => $s['Auth']],
@@ -194,7 +211,7 @@ if ($action === 'demandes') {
         $body = get_body();
         // Relance utilisateur (pas besoin d'être admin)
         //
-        // ⚠️ LA RELANCE N'ÉTAIT SOUMISE À AUCUNE CONDITION.
+        // LA RELANCE N'ÉTAIT SOUMISE À AUCUNE CONDITION.
         // N'importe quel compte, visionneur compris, pouvait passer n'importe
         // quelle demande à « Relancé » en changeant l'identifiant — y compris
         // une demande close (Traité / Refusé), qui revenait alors dans la liste
@@ -232,7 +249,7 @@ if ($action === 'demandes_count' && $method === 'GET') {
     $user = require_auth();
 
     /**
-     * ⚠️ LA ROUTE ÉTAIT FERMÉE AUX DEMANDEURS.
+     * LA ROUTE ÉTAIT FERMÉE AUX DEMANDEURS.
      *
      * Ils n'obtenaient donc aucun compteur, et la cloche restait muette sur le
      * seul sujet qui les concerne : la réponse à LEUR demande. Pendant ce
@@ -345,7 +362,13 @@ if ($action === 'notes_info') {
 if ($action === 'configuration') {
     $user = require_auth();
     if ($method==='GET')  { require_role($user, ['Admin','Gestionnaire']); json_ok($db->getAllConfig()); }
-    if ($method==='POST') { require_role($user, ['Admin','Gestionnaire']); $b=get_body(); $db->setConfig($b['cle'], $b['valeur']); json_ok('OK'); }
+    if ($method==='POST') {
+        require_role($user, ['Admin','Gestionnaire']); $b=get_body();
+        // Les clés « securite_… » ont leur propre route, qui exige une identité
+        // confirmée (ex. durée de la confirmation d'identité : api/IdentiteConfirmee.php).
+        if (str_starts_with(strtolower((string)($b['cle'] ?? '')), 'securite_')) json_error('Ce réglage se change depuis son propre écran.', 403);
+        $db->setConfig($b['cle'], $b['valeur']); json_ok('OK');
+    }
 }
 
 // ── Vérification config publique (pour les demandeurs) ──────────────────────
@@ -376,7 +399,7 @@ if ($action === 'config_check' && $method === 'GET') {
     $row = $db->fetchOne("SELECT Valeur FROM Configuration WHERE Cle = :cle", ['cle' => $key]);
     $value = $row['Valeur'] ?? '';
 
-    // ⚠️ SÉCURITÉ : `urgences_config` contient désormais des catégories qui
+    // SÉCURITÉ : `urgences_config` contient désormais des catégories qui
     // peuvent être marquées « Gestionnaires uniquement » (visibilite =
     // 'gestionnaires'), avec procédure détaillée, photos et vidéos. On les
     // retire ICI, côté serveur : le contenu réservé ne doit jamais transiter
@@ -393,6 +416,23 @@ if ($action === 'config_check' && $method === 'GET') {
     }
 
     json_ok(['key' => $key, 'value' => $value]);
+}
+
+// ── Icônes Lucide choisies dans la bibliothèque complète (api/IconesLucide.php) ──
+// GET : leur dessin (CSS), pour tous les utilisateurs connectés — une icône posée
+// sur un plan doit s'afficher chez un demandeur aussi. POST {nom} : en ajouter
+// une (gestionnaires : ce sont eux qui éditent plans et procédures d'urgence).
+if ($action === 'icones_choisies') {
+    $user = require_auth();
+    require_once __DIR__ . '/../IconesLucide.php';
+    if ($method === 'GET') {
+        $noms = IconesLucide::choisies($db);
+        json_ok(['noms' => $noms, 'css' => IconesLucide::css($noms)]);
+    }
+    require_role($user, ['Admin', 'Gestionnaire']);
+    if ($method !== 'POST') json_error('Méthode non supportée.', 405);
+    try { json_ok(['nom' => (string)(get_body()['nom'] ?? ''), 'css' => IconesLucide::ajouter($db, (string)(get_body()['nom'] ?? ''))]); }
+    catch (\InvalidArgumentException $e) { json_error($e->getMessage(), 400); }
 }
 
 // ── Sauvegardes automatiques : état, sauvegarde immédiate ─────────────────────
@@ -539,7 +579,7 @@ if ($action === 'config_serveur') {
 
         // ── Clés réservées au Super Administrateur ───────────────────────────
         //
-        // ⚠️ LA ROUTE ACCEPTAIT N'IMPORTE QUELLE SECTION ET N'IMPORTE QUELLE CLÉ.
+        // LA ROUTE ACCEPTAIT N'IMPORTE QUELLE SECTION ET N'IMPORTE QUELLE CLÉ.
         // En mono-tenant, un Gestionnaire pouvait ainsi repointer le registre
         // super admin (superadmin_db) vers une base neuve — donc au mot de passe
         // par défaut — puis ouvrir « allow_remote_setup » et créer SES identifiants
@@ -549,6 +589,15 @@ if ($action === 'config_serveur') {
         $reserveSA = static function (string $section, string $cle, $valeur): ?string {
             if ($section === 'superadmin_db') return 'registre super admin';
             if ($section === 'securite' && in_array($cle, ['allow_remote_setup', 'trusted_proxies', 'debug_errors'], true)) return "securite.$cle";
+            // Larka Connect : les dossiers où des fichiers CSV peuvent être lus.
+            // Les élargir revient à rendre lisible un dossier du serveur.
+            if ("$section.$cle" === 'connect.csv_racines') return 'connect.csv_racines (dossiers lisibles par Larka Connect)';
+            // LoRaWAN : les passerelles admises depuis Internet. Par défaut, seules
+            // celles du réseau privé sont écoutées ; en ouvrir d'autres se décide
+            // sur le serveur. (Un tableau « lorawan » entier ne doit pas la porter.)
+            if ("$section.$cle" === 'connect.lorawan' && is_array($valeur) && array_key_exists('passerelles', $valeur)) {
+                return 'connect.lorawan.passerelles (passerelles LoRaWAN admises depuis Internet)';
+            }
             if (in_array("$section.$cle", ['base_de_donnees.path', 'logs.dossier', 'sauvegardes.dossier', 'oauth_relay.url'], true)) {
                 // Chemin : accepté seulement s'il reste sous data/ (ou vide).
                 $v = is_string($valeur) ? trim($valeur) : '';
@@ -577,20 +626,33 @@ if ($action === 'config_serveur') {
                 $norm = static fn($v) => is_string($v) ? trim($v) : json_encode($v);
                 if ($norm($actuelle) === $norm($valeur)
                     || (is_bool($actuelle) && in_array($valeur, [$actuelle ? 'true' : 'false', $actuelle], true))) continue;
-                $warnings[] = "🔒 $motif : réservé au Super Administrateur — modification ignorée.";
+                $warnings[] = "⚠ $motif : réservé au Super Administrateur — modification ignorée.";
                 if (class_exists('SecurityLog')) {
                     SecurityLog::audit('access_denied', ['action' => 'config_serveur', 'reason' => 'cle_reservee_sa:' . $section . '.' . $cle, 'http_code' => 403]);
                 }
                 continue;
             }
             if (isset($item['sous_section']) && !$isSuperAdmin && $section === 'superadmin_db') continue;
+            // Une sous-section porte le nom d'une clé : « securite » + sous-section
+            // « allow_remote_setup » remplaçait la clé réservée par un tableau (vrai
+            // pour PHP). La sous-section est donc vérifiée comme une clé.
+            if (isset($item['sous_section']) && !$isSuperAdmin && is_string($item['sous_section'])
+                && "$section.{$item['sous_section']}.$cle" === 'connect.lorawan.passerelles') {
+                $warnings[] = '⚠ connect.lorawan.passerelles : réservé au Super Administrateur — modification ignorée.';
+                continue;
+            }
+            if (isset($item['sous_section']) && !$isSuperAdmin && is_string($item['sous_section'])
+                && ($motif = $reserveSA($section, $item['sous_section'], $valeur)) !== null) {
+                $warnings[] = "⚠ $motif : réservé au Super Administrateur — modification ignorée.";
+                continue;
+            }
 
             // Ne pas écraser les secrets masqués (uniquement pour les scalaires)
             if (!is_array($valeur) && str_contains((string)$valeur, '••••')) continue;
 
             // CSP : champ vide = CSP par défaut du code (la clé est retirée) ; une
             // CSP qui bloquerait l'interface n'est pas enregistrée (cf. api/Csp.php).
-            // ⚠️ L'écran envoyait « default-src 'self' » quand le champ était vide :
+            // L'écran envoyait « default-src 'self' » quand le champ était vide :
             // enregistrer n'importe quel réglage cassait toute l'interface.
             if ($section === 'securite_http' && $cle === 'csp') {
                 $csp = is_string($valeur) ? trim($valeur) : '';
@@ -600,7 +662,7 @@ if ($action === 'config_serveur') {
                 }
                 require_once __DIR__ . '/../Csp.php';
                 if (($raison = LarkaCsp::raisonRefus($csp)) !== null || preg_match('/[\r\n]/', $csp)) {
-                    $warnings[] = "⚠️  Content-Security-Policy non enregistrée : " . ($raison ?? 'retour à la ligne interdit')
+                    $warnings[] = "⚠ Content-Security-Policy non enregistrée : " . ($raison ?? 'retour à la ligne interdit')
                                 . ". La CSP par défaut reste appliquée.";
                     continue;
                 }
@@ -612,7 +674,7 @@ if ($action === 'config_serveur') {
                 // Géré par l'environnement système (export/systemd/conteneur) :
                 // l'application ne peut pas l'éditer → on ignore avec un avertissement.
                 if (EnvFile::isManagedByOsEnv($envName)) {
-                    $warnings[] = "🔒 $envName est défini par une variable d'environnement système — modification ignorée (gérez-la côté serveur).";
+                    $warnings[] = "⚠ $envName est défini par une variable d'environnement système — modification ignorée (gérez-la côté serveur).";
                     continue;
                 }
                 $sval = (string)$valeur;
@@ -666,7 +728,7 @@ if ($action === 'config_serveur') {
             if (!extension_loaded($ext)) {
                 // Extension manquante → erreur bloquante
                 $dbError  = "Extension PHP $ext non chargée.";
-                $warnings[] = "⚠️  Extension PHP $ext non chargée — activez-la dans php.ini.";
+                $warnings[] = "⚠ Extension PHP $ext non chargée — activez-la dans php.ini.";
                 $warnings[] = "→  Dans php.ini, décommentez : extension=php_{$ext}.dll (Windows) ou extension=$ext (Linux)";
                 $warnings[] = "→  Sauvegarde refusée : corrigez la configuration avant d'enregistrer.";
             } else {
@@ -676,11 +738,11 @@ if ($action === 'config_serveur') {
                     // Serveur inaccessible → erreur bloquante
                     $dbError = "Serveur $newDriver inaccessible sur $dbHost:$dbPort.";
                     if ($newDriver === 'pgsql') {
-                        $warnings[] = "⚠️  Impossible de joindre PostgreSQL sur $dbHost:$dbPort ($errstr).";
+                        $warnings[] = "⚠ Impossible de joindre PostgreSQL sur $dbHost:$dbPort ($errstr).";
                         $warnings[] = "→  PostgreSQL n'est probablement pas installé ou démarré.";
                         $warnings[] = "→  Téléchargez-le : https://www.postgresql.org/download/";
                     } else {
-                        $warnings[] = "⚠️  Impossible de joindre MariaDB/MySQL sur $dbHost:$dbPort ($errstr).";
+                        $warnings[] = "⚠ Impossible de joindre MariaDB/MySQL sur $dbHost:$dbPort ($errstr).";
                         $warnings[] = "→  Le serveur n'est probablement pas installé ou démarré.";
                     }
                     $warnings[] = "→  Sauvegarde refusée : le serveur doit être accessible avant d'enregistrer.";
@@ -701,7 +763,7 @@ if ($action === 'config_serveur') {
                     } catch (PDOException $pdoEx) {
                         // Connexion PDO échouée → erreur bloquante
                         $dbError    = "Connexion $newDriver échouée : " . $pdoEx->getMessage();
-                        $warnings[] = "⚠️  Connexion $newDriver échouée : " . $pdoEx->getMessage();
+                        $warnings[] = "⚠ Connexion $newDriver échouée : " . $pdoEx->getMessage();
                         $warnings[] = "→  Vérifiez user, password et le nom de la base.";
                         $warnings[] = "→  Sauvegarde refusée : corrigez les identifiants avant d'enregistrer.";
                     }
@@ -765,7 +827,7 @@ if ($action === 'config_serveur') {
                 json_error("Impossible d'enregistrer les secrets dans le fichier .env : " . $e->getMessage()
                     . " Vérifiez les droits du dossier (le fichier .env doit être inscriptible par le serveur web).", 500);
             }
-            $warnings[] = "🔐 Secrets enregistrés dans .env. Un redémarrage du service peut être nécessaire pour les recharger.";
+            $warnings[] = "Secrets enregistrés dans .env. Un redémarrage du service peut être nécessaire pour les recharger.";
         }
 
         // ── Écriture config.json (non sensible uniquement) ───────────────────
@@ -1049,7 +1111,7 @@ if ($action === 'smtp_test') {
     $sent = gmao_send_mail($email,
         'Larka — Test SMTP',
         '<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px">
-            <h2 style="color:#2563eb">✅ Test SMTP réussi !</h2>
+            <h2 style="color:#2563eb">Test SMTP réussi !</h2>
             <p>Si vous lisez cet email, la configuration SMTP fonctionne correctement.</p>
             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0">
             <p style="color:#6b7280;font-size:12px">— GMAO</p>
@@ -1108,7 +1170,7 @@ if ($action === 'feedback_send') {
 
     if (!SMTP_HOST) json_error('SMTP non configuré (Configuration → Serveur).');
 
-    $typeLabel = ['probleme'=>'🐛 Problème', 'suggestion'=>'💡 Suggestion'][$type] ?? '📨 Message';
+    $typeLabel = ['probleme'=>'Problème', 'suggestion'=>'Suggestion'][$type] ?? 'Message';
     $userLabel = htmlspecialchars(($user['Prenom'] ?? '') . ' ' . ($user['Nom'] ?? ''), ENT_QUOTES, 'UTF-8');
     $userMail  = htmlspecialchars($user['Login'] ?? $user['Email'] ?? '', ENT_QUOTES, 'UTF-8');
     $userRole  = htmlspecialchars($user['Role'] ?? '', ENT_QUOTES, 'UTF-8');

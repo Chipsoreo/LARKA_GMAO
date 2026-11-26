@@ -1,0 +1,122 @@
+LARKA — COLLECTEUR DU PC RELEVEUR
+=================================
+
+Pour les appareils que le serveur Larka ne joint pas (« hors réseau ») :
+  - en HOTSPOT : l'appareil diffuse son propre Wi-Fi (onduleur, enregistreur…).
+    Ce PC s'y connecte quand vous lancez releveur.cmd, relève, revient sur
+    son réseau ;
+  - en DIRECT : on branche ce PC sur l'appareil par un câble RJ45. Le PC relève
+    quand vous lancez releveur.cmd, même sans réseau.
+Rien ne se lance tout seul : pas de tâche planifiée, pas de démarrage auto.
+Les valeurs partent vers Larka avec leur heure de lecture, tout de suite ou dès
+que le PC retrouve le réseau. Ce dossier est déjà réglé pour CE PC (config.json :
+adresse de Larka et jeton). Gardez-le pour vous : il ouvre les relevés.
+
+SÉCURITÉ
+  - Décompressez-le dans VOTRE dossier (Documents), jamais dans un dossier
+    partagé ou public : releveur.cmd exécute ce qu'il contient, et
+    mission.json garde les clés Wi-Fi des hotspots.
+  - PC perdu ou dossier copié : dans Larka (Connexions → 📶 Hotspots),
+    retéléchargez le collecteur ou supprimez le PC — l'ancien jeton cesse
+    aussitôt de fonctionner.
+  - Larka doit être en https : le collecteur vérifie le certificat et ne suit
+    jamais une redirection (le jeton ne part pas ailleurs).
+
+WINDOWS
+  1. Décompressez ce dossier où vous voulez (par exemple Documents\Larka-releveur).
+  2. Double-cliquez releveur.cmd, réseau habituel connecté. La première fois :
+     installation de PHP dans ce dossier si besoin, création des profils Wi-Fi
+     des hotspots, puis un premier relevé.
+  3. Ensuite, pour relever : double-cliquez releveur.cmd. C'est tout ;
+     rien ne tourne en arrière-plan.
+  Une ancienne version avait posé des tâches « Larka releveur… » dans le
+  Planificateur de tâches : elles sont supprimées au premier lancement de
+  celle-ci (ou par « releveur.cmd retirer »).
+
+LINUX (NetworkManager)
+  ./releveur.sh configurer      puis, pour relever : ./releveur.sh collecter
+  Les profils Wi-Fi n'ont jamais la route par défaut : Internet et le réseau
+  habituel restent où ils sont.
+
+APPAREIL BRANCHÉ EN DIRECT (câble RJ45)
+  Branchez le câble, puis double-cliquez releveur.cmd. Débranché, l'appareil
+  est simplement passé : ni erreur, ni alarme, rien dans le journal.
+  Le PC doit avoir une adresse dans le réseau de l'appareil. UNE FOIS, avec un
+  compte administrateur :
+    Paramètres réseau → Modifier les options d'adaptateur → Ethernet →
+    Propriétés → Protocole Internet version 4 (TCP/IPv4) → Propriétés →
+    onglet « Configuration alternative » → « Configuration IP spécifiée par
+    l'utilisateur » :
+      Adresse IP  : même réseau que l'appareil, autre numéro
+                    (appareil en 192.168.1.10 → PC en 192.168.1.250 ;
+                     la fiche de l'appareil dans Larka donne la bonne)
+      Masque      : 255.255.255.0
+      Passerelle  : VIDE
+  Effet : sur le réseau habituel, rien ne change (adresse donnée par le
+  réseau) ; branché sur l'appareil, le PC prend cette adresse en une minute
+  environ et, sans passerelle, garde Internet par le Wi-Fi.
+  « releveur.cmd collecter --bavard » dit si le PC n'est pas dans le bon réseau.
+
+PENDANT UN RELEVÉ EN HOTSPOT (une minute environ)
+  Une carte Wi-Fi ne se connecte qu'à un réseau à la fois : le PC quitte son
+  Wi-Fi habituel le temps du relevé, puis le reprend. Si le PC est en câble
+  Ethernet, ou s'il a une seconde carte Wi-Fi libre, le relevé se fait sur la
+  carte libre et le réseau habituel n'est jamais coupé.
+  Les profils portent le nom du hotspot (« PE6-80fd5534 »), comme dans la liste
+  des réseaux de Windows. Ils sont en « connexion manuelle » : le PC ne les
+  rejoint jamais de lui-même en dehors d'un relevé.
+  Retour : le réseau d'origine, identifié avant de partir (même quand la
+  localisation de Windows est coupée, comme souvent sur un PC d'entreprise) ;
+  sinon le PC quitte le hotspot et Windows rejoint son réseau préféré ; sinon
+  les autres profils Wi-Fi du PC. Faute de mieux, le collecteur demande de se
+  reconnecter à la main (les relevés attendent sur le PC). Chaque essai est
+  noté dans releveur.log ; « releveur etat » montre ce que le PC voit du Wi-Fi.
+
+COMMANDES
+  releveur collecter          un relevé maintenant (hotspots et appareils en direct)
+  releveur collecter --direct-seulement   seulement les appareils branchés en direct
+  releveur tester             lit et affiche les valeurs, n'envoie rien
+  releveur explorer           ce que l'appareil expose (pages web, adresses JSON,
+                              registres Modbus qui ressemblent à 230 V / 50 Hz,
+                              automate BACnet et la liste de ses points) :
+                              pour savoir quoi saisir dans Larka sans documentation.
+                              Lecture seule. Rapport : exploration-<appareil>.txt
+                              (--appareil=nom si plusieurs, --hote=IP pour forcer)
+                              Le rapport part aussi à Larka : 🔎 dans « Hors réseau »
+                              propose les réglages et les points. Un appareil déclaré
+                              « À détecter » est regardé ainsi à chaque relevé demandé.
+  releveur materiel           ports série et clés radio USB branchés sur ce PC
+                              (compteurs d'eau, de chaleur, de gaz en wM-Bus : IMST
+                              iM871A, Amber AMB8465, CUL). Une clé déclarée dans Larka
+                              (« branchée sur un PC releveur ») est écoutée à chaque
+                              relevé, comme un appareil en câble direct.
+                              Linux : le compte doit être du groupe « dialout ».
+  releveur envoyer            envoie les relevés en attente
+  releveur etat               réglages, relevés en attente, et ce que le PC voit
+                              du Wi-Fi (réseau repris après un relevé, profils)
+  releveur retirer            enlève les profils Wi-Fi (et d'anciennes tâches)
+  releveur confiance          épingle le certificat HTTPS de Larka (réseau interne)
+  --sans-wifi                 ne change pas de Wi-Fi (déjà sur le hotspot)
+  --larka=https://…           autre adresse de Larka (gardée dans config.json)
+
+CERTIFICAT DE LARKA (réseau interne, cadenas barré dans le navigateur)
+  Le collecteur vérifie toujours le certificat HTTPS de Larka. Un certificat
+  interne ou auto-signé est accepté s'il est ÉPINGLÉ : le collecteur téléchargé
+  depuis Larka connaît déjà son empreinte. Sinon (ou après un renouvellement) :
+    releveur confiance
+  affiche le certificat et son empreinte SHA-256 — comparez-la avec celle du
+  navigateur (cadenas → certificat → détails) — puis l'épingle si vous
+  confirmez. Le premier réglage (double-clic) le propose de lui-même.
+
+« AUCUNE CARTE WI-FI TROUVÉE »
+  Windows 11 ne montre le Wi-Fi aux programmes que si la localisation est
+  autorisée : Paramètres → Confidentialité et sécurité → Localisation →
+  « Services de localisation » et « Autoriser les applications de bureau à
+  accéder à votre position ». (Le collecteur essaie aussi sans, par PowerShell.)
+  « releveur etat » montre les cartes Wi-Fi vues.
+
+SI LARKA NE RÉPOND PAS
+  Les relevés attendent dans en-attente.json et partent au relevé suivant.
+  Journal : releveur.log.
+  Le jeton est refusé : quelqu'un a retéléchargé le collecteur depuis Larka
+  (un nouveau jeton remplace l'ancien) — utilisez le nouveau dossier.

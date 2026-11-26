@@ -61,6 +61,27 @@
         "_": "[PHASE 2] Présence + agenda sur les plans. Exige microsoft_oauth.actif. 1) Azure > API permissions : Presence.Read.All et Calendars.Read.Shared en DÉLÉGUÉ, puis « Grant admin consent ». 2) actif:true ici. 3) IMPORTANT : chaque utilisateur doit se DÉCONNECTER/RECONNECTER via Microsoft — les scopes ne sont demandés que si ce flag est vrai AU MOMENT du login.",
         "actif": false
     },
+    "connect": {
+        "_": "Larka Connect : raccordement des équipements du bâtiment (GTB/GTC en BACnet/IP, Modbus TCP, API REST, exports CSV ; capteurs MQTT ; bornes de recharge OCPP 1.6). Usage INTERNE : Larka interroge des équipements du réseau de l'entreprise, rien n'est ouvert vers l'extérieur. La collecte est faite par le serveur, jamais par le navigateur : tâche cron chaque minute (deploy/install.sh), minuterie larka-connect.timer (./start.sh autostart), planificateur de ./start.sh start, ou lanceur Windows. Les connexions, points, alarmes et relevés se règlent dans l'application (Bâtiments → Connexions). Fermé par organisation depuis le Super Admin (modules).",
+        "_reglages": "Autres clés : retention_jours (400, historique des mesures), valeur_periodique_minutes (15, une valeur stable est quand même historisée à ce rythme), budget_secondes (50, durée maximale d'un passage de collecte), csv_racines ([\"data/connect/imports\"], SEULS dossiers où les exports CSV peuvent être lus — un partage réseau monté, par exemple /mnt/gtb-exports, doit y être ajouté).",
+        "_ocpp": "Bornes de recharge : service permanent (larka-ocpp.service, ou lancé par start.sh / le lanceur Windows) qui relit ce fichier toutes les 10 s. hote 0.0.0.0 et port 9000 par défaut. Derrière Nginx (wss:// chiffré, recommandé) : hote 127.0.0.1 et adresse_publique \"wss://gmao.example.com/ocpp\" ; l'adresse à saisir dans chaque borne est alors affichée dans sa fiche.",
+        "_lorawan": "Capteurs radio LoRaWAN sans serveur réseau extérieur : les passerelles du bâtiment envoient leurs trames à Larka (« Semtech UDP packet forwarder », port 1700), dans le même service que l'OCPP. EU868, LoRaWAN 1.0.x, classe A. passerelles : liste d'EUI de passerelles admises — vide (défaut) = toute passerelle d'un réseau privé ; une passerelle jointe par Internet n'est écoutée que si elle y figure (réglage réservé au Super Admin). puissance : dBm des réponses (join, accusés), 14 par défaut.",
+        "_radio_usb": "Compteurs radio wM-Bus (eau, chaleur, gaz) : une clé USB réceptrice (IMST iM871A, Amber AMB8465, CUL) branchée sur le serveur ou sur un PC releveur. Le port est trouvé tout seul ; sous Linux, l'utilisateur du service doit appartenir au groupe dialout.",
+        "actif": false,
+        "ocpp": {
+            "actif": false,
+            "hote": "0.0.0.0",
+            "port": 9000,
+            "adresse_publique": ""
+        },
+        "lorawan": {
+            "actif": false,
+            "hote": "0.0.0.0",
+            "port": 1700,
+            "passerelles": [],
+            "puissance": 14
+        }
+    },
     "assistant": {
         "_": "Assistant IA. Clé API -> .env : GMAO_ASSISTANT_API_KEY. fournisseur : anthropic | openai | mistral | gemini | copilot (distants) · ollama | lmstudio | local (OpenAI-compatible, ex. llama.cpp). model vide = le plus rapide/économique du fournisseur (claude-haiku-4-5, gpt-4o-mini, mistral-small-latest, gemini-3.1-flash-lite, ministral-3:3b). Autres clés : api_url, timeout_seconds (240 local / 90 distant), max_tokens (1024) et max_tokens_local (512), num_ctx (8192, Ollama), keep_alive (-1), pre_recherche (auto | on | off), prechauffage (true), reflexion_locale (auto | off | on), gemini_reflexion (auto | minimal | low | off), cache_prompt (true, Anthropic), max_resultats (6 local / 12 distant), temperature (0.2), top_p (0.9).",
         "_mode": "mode : fiable (défaut) | agent. « fiable » : le moteur Larka comprend la question, cherche et rédige la réponse lui-même — même question, même réponse, quel que soit le modèle (0,6B, 1B, 3B, 7B… local ou distant), et même sans modèle joignable. « agent » : l'ancien fonctionnement, le modèle choisit ses outils et rédige (la réponse dépend alors du modèle).",
@@ -94,7 +115,7 @@
     },
     "_4_non_listees": "Existent aussi, laissées à leur défaut : acces.domaine_email_autorise (restreint les comptes OAuth à un domaine), cors (inutile en mono-domaine, le défaut suit allowed_origin), session (cookie_secure auto-détecté, samesite Strict), documents (4 par catégorie, 25 Mo, pdf/png/jpeg/webp), urgences (photo_max_mo 15, video_max_mo 150 — plafonds des médias des procédures d'urgence ; pensez aussi a upload_max_filesize/post_max_size), oauth_relay (installation sans domaine public). Détail : api/config.php.",
     "mises_a_jour": {
-        "_": "Détection automatique des nouvelles versions (installation TOUJOURS validée par l'administrateur ; data/, config.json et .env jamais touchés). source : github (défaut, dépôt « depot ») | manifeste (url_manifeste HTTPS vers un latest.json). canal : beta | stable. frequence_heures (12). La signature Ed25519 de l'éditeur est TOUJOURS exigée, avec la clé livrée dans le code (api/CleEditeur.php) : « cle_publique » n'est plus lue ici. Dépôt privé : jeton -> .env : GMAO_MAJ_GITHUB_TOKEN.",
+        "_": "Détection automatique des nouvelles versions (installation TOUJOURS validée par l'administrateur ; data/, config.json et .env jamais touchés). source : github (défaut, dépôt « depot ») | manifeste (url_manifeste HTTPS vers un latest.json). canal : absent = versions stables ET bêtas proposées (une bêta est signalée comme telle) | stable = bêtas écartées. frequence_heures (12). La signature Ed25519 de l'éditeur est TOUJOURS exigée, avec la clé livrée dans le code (api/CleEditeur.php) : « cle_publique » n'est plus lue ici. Dépôt privé : jeton -> .env : GMAO_MAJ_GITHUB_TOKEN.",
         "actif": true,
         "depot": "Chipsoreo/LARKA_GMAO"
     },

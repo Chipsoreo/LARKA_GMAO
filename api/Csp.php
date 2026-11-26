@@ -8,7 +8,7 @@
  * par le serveur PHP intégré). Sous nginx, la page reçoit la CSP écrite dans
  * deploy/nginx.conf.
  *
- * ⚠️ UNE CSP PERSONNALISÉE POUVAIT RENDRE L'INTERFACE INUTILISABLE, SANS RETOUR.
+ * UNE CSP PERSONNALISÉE POUVAIT RENDRE L'INTERFACE INUTILISABLE, SANS RETOUR.
  * L'écran Configuration → Serveur enregistrait « default-src 'self' » dès que
  * son champ CSP était vide (le cas normal) : il suffisait d'y enregistrer
  * autre chose — activer les modules, par exemple. Tant que cette valeur ne

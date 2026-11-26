@@ -2,7 +2,7 @@
   "identifiant": "larka.cles",
   "format": "declaratif/1",
   "nom": "Gestion des clés",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "auteur": "Larka",
   "description": "Répertoire des clés et badges d'un patrimoine : qui détient quoi, où, et depuis quand.",
   "logo": "assets/logo.png",
@@ -151,6 +151,7 @@
       "type": "compteur",
       "source": "cles",
       "libelle": "Clés attribuées",
+      "icone": "key-round",
       "filtre": {
         "statut": "Attribuée"
       },
@@ -164,7 +165,7 @@
       "champ_lat": "lat",
       "champ_lng": "lng",
       "etiquette": "numero",
-      "icone": "🔑",
+      "icone": "key-round",
       "libelle": "Clés sur ce plan"
     },
     {

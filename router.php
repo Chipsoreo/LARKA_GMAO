@@ -86,6 +86,7 @@ $blockedPrefixes = [
     'outils/',
     'Documentations/',
     'demo/',          // démonstration : une base complète, même fictive
+    'mobile/',        // projet de l'app iOS / Android (sources, projets natifs)
     // ⚠️ SOUS WINDOWS, CE SERVEUR EST LE SERVEUR DE PRODUCTION.
     // Larka.cmd lance Larka avec lui, depuis le dossier de l'application : tout
     // ce qu'il contient devient joignable, sauf refus explicite. Les refus de
@@ -93,6 +94,7 @@ $blockedPrefixes = [
     // node_modules/) ; s'y ajoutent le PHP que Larka.cmd installe dans php/
     // (php.ini, certificats) et les scripts de développement (scripts/).
     'deploy/',
+    'api/connect/',     // code de Larka Connect et sources du collecteur des PC releveurs : jamais servis tels quels
     'logs/',
     'backups/',
     'vendor/',
@@ -231,11 +233,115 @@ function poser_csp_page(): void {
     header('Referrer-Policy: no-referrer');
 }
 
+/**
+ * Page de l'application : jamais mise en cache sans revalidation (c'est elle
+ * qui porte les « ?v= » des ressources), compressée si le navigateur l'accepte.
+ */
+function servir_page(): void {
+    poser_csp_page();
+    header('Cache-Control: no-cache');
+    if (accepte_gzip()) ob_start('ob_gzhandler');
+    include __DIR__ . '/index.html';
+}
+
+function accepte_gzip(): bool {
+    return str_contains(strtolower((string)($_SERVER['HTTP_ACCEPT_ENCODING'] ?? '')), 'gzip')
+        && function_exists('gzencode')
+        && !ini_get('zlib.output_compression');
+}
+
+/**
+ * Fichier statique servi par PHP plutôt que par le serveur intégré.
+ *
+ * LE SERVEUR INTÉGRÉ NE POSE NI CACHE, NI VALIDATEUR, NI COMPRESSION.
+ * Sans Cache-Control, sans ETag ni Last-Modified, le navigateur ne pouvait
+ * rien garder : chaque rechargement retéléchargeait les ~4 Mo de scripts et de
+ * styles, non compressés — et sous Windows, ce serveur est le serveur de
+ * production. On les sert donc ici :
+ *   • ressource versionnée (« ?v= », posé par outils/bump-version.php) :
+ *     gardée un an, sans revalidation — le numéro change à chaque livraison ;
+ *   • polices : gardées 30 jours ;
+ *   • le reste : revalidé à chaque usage (304 sans corps s'il n'a pas changé) ;
+ *   • texte (JS, CSS, JSON, SVG…) : compressé en gzip, la version compressée
+ *     étant gardée dans data/cache/statique/ pour ne la calculer qu'une fois.
+ * Un type inconnu de cette table est rendu au serveur intégré, comme avant.
+ */
+function servir_statique(string $cible, string $uri): bool {
+    $types = [
+        'js' => 'text/javascript; charset=utf-8', 'mjs' => 'text/javascript; charset=utf-8',
+        'css' => 'text/css; charset=utf-8', 'json' => 'application/json; charset=utf-8',
+        'webmanifest' => 'application/manifest+json; charset=utf-8', 'map' => 'application/json; charset=utf-8',
+        'svg' => 'image/svg+xml', 'txt' => 'text/plain; charset=utf-8', 'wasm' => 'application/wasm',
+        'png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif',
+        'webp' => 'image/webp', 'ico' => 'image/x-icon',
+        'woff2' => 'font/woff2', 'woff' => 'font/woff', 'ttf' => 'font/ttf', 'otf' => 'font/otf',
+    ];
+    $ext = strtolower(pathinfo($cible, PATHINFO_EXTENSION));
+    if (!isset($types[$ext])) return false;
+    $taille = @filesize($cible);
+    $date   = @filemtime($cible);
+    if ($taille === false || $date === false) return false;
+
+    $compressible = in_array($ext, ['js', 'mjs', 'css', 'json', 'webmanifest', 'map', 'svg', 'txt', 'wasm'], true);
+    $versionne = isset($_GET['v']) && $_GET['v'] !== '';
+    $etag = '"' . dechex($date) . '-' . dechex($taille) . '"';
+
+    header_remove('X-Powered-By');
+    header('Content-Type: ' . $types[$ext]);
+    header('X-Content-Type-Options: nosniff');
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $date) . ' GMT');
+    header('ETag: ' . $etag);
+    if ($compressible) header('Vary: Accept-Encoding');
+    if ($versionne)                                        header('Cache-Control: public, max-age=31536000, immutable');
+    elseif (in_array($ext, ['woff2', 'woff', 'ttf', 'otf'], true)) header('Cache-Control: public, max-age=2592000');
+    else                                                   header('Cache-Control: no-cache');
+
+    $inm = (string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '');
+    $ims = (string)($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? '');
+    if (($inm !== '' && in_array($etag, array_map(static fn($e) => trim(preg_replace('/^W\//', '', trim($e))), explode(',', $inm)), true))
+        || ($inm === '' && $ims !== '' && ($t = strtotime($ims)) !== false && $t >= $date)) {
+        http_response_code(304);
+        return true;
+    }
+
+    $corps = null;
+    if ($compressible && $taille > 1024 && accepte_gzip()) {
+        $corps = statique_gzip($cible, $uri, $date, $taille);
+        if ($corps !== null) header('Content-Encoding: gzip');
+    }
+    $longueur = $corps !== null ? strlen($corps) : $taille;
+    header('Content-Length: ' . $longueur);
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') return true;
+    if ($corps !== null) echo $corps; else readfile($cible);
+    return true;
+}
+
+/** Version gzip d'un fichier, calculée une fois puis relue depuis data/cache/statique/. */
+function statique_gzip(string $cible, string $uri, int $date, int $taille): ?string {
+    $dossier = __DIR__ . '/data/cache/statique';
+    $cle     = sha1(strtolower($uri));
+    $fichier = $dossier . '/' . $cle . '-' . dechex($date) . '-' . dechex($taille) . '.gz';
+    if (is_file($fichier)) {
+        $gz = @file_get_contents($fichier);
+        if ($gz !== false && $gz !== '') return $gz;
+    }
+    $brut = @file_get_contents($cible);
+    if ($brut === false) return null;
+    $gz = gzencode($brut, 6);
+    if ($gz === false) return null;
+    if (is_dir($dossier) || @mkdir($dossier, 0755, true)) {
+        // Les versions précédentes du même fichier ne servent plus.
+        foreach (glob($dossier . '/' . $cle . '-*.gz') ?: [] as $ancien) @unlink($ancien);
+        $tmp = $fichier . '.' . bin2hex(random_bytes(4)) . '.tmp';
+        if (@file_put_contents($tmp, $gz) !== false && !@rename($tmp, $fichier)) @unlink($tmp);
+    }
+    return $gz;
+}
+
 // index.html demandé explicitement : servi par le routeur (et non en fichier
 // statique brut) pour recevoir les mêmes en-têtes que la page d'accueil.
 if ($uriMin === 'index.html') {
-    poser_csp_page();
-    include __DIR__ . '/index.html';
+    servir_page();
     exit;
 }
 
@@ -258,6 +364,7 @@ if ($uri !== '' && file_exists(__DIR__ . '/' . $uri) && !is_dir(__DIR__ . '/' . 
         || !str_starts_with($_cible, $_racine . DIRECTORY_SEPARATOR)) {
         deny_request(404, 'Introuvable');
     }
+    if (servir_statique($_cible, $uri)) exit;
     return false;
 }
 
@@ -267,5 +374,4 @@ if (str_starts_with($uri, 'api/')) {
 }
 
 // SPA → index.html
-poser_csp_page();
-include __DIR__ . '/index.html';
+servir_page();

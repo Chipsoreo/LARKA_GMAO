@@ -61,13 +61,13 @@ function _renderIA(c) {
     <div style="max-width:900px;margin:0 auto">
       <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--gray-border);padding-bottom:0;overflow-x:auto">
         <button class="ia-tab ${tab==='biens'?'active':''}" onclick="IA_State.tab='biens';_renderIA(document.getElementById('mainContent'))">
-          📦 Mes biens <span class="ia-badge-tab">${IA_State.biens.length}</span>
+          ${lk('package')} Mes biens <span class="ia-badge-tab">${IA_State.biens.length}</span>
         </button>
         <button class="ia-tab ${tab==='declarer'?'active':''}" onclick="IA_State.tab='declarer';IA_State.searchResult=null;_renderIA(document.getElementById('mainContent'))">
-          ➕ Déclarer
+          ${lk('plus')} Déclarer
         </button>
         <button class="ia-tab ${tab==='historique'?'active':''}" onclick="IA_State.tab='historique';_renderIA(document.getElementById('mainContent'))">
-          📋 Déclarations ${nbEnAttente ? '<span class="ia-badge-tab orange">'+nbEnAttente+'</span>' : ''}
+          ${lk('clipboard-list')} Déclarations ${nbEnAttente ? '<span class="ia-badge-tab orange">'+nbEnAttente+'</span>' : ''}
         </button>
       </div>
       <div id="ia_content"></div>
@@ -113,7 +113,7 @@ function _renderIA(c) {
 function _renderTabBiens(el) {
   if (!IA_State.biens.length) {
     el.innerHTML = `<div class="ia-empty">
-      <div class="ia-empty-icon">📦</div>
+      <div class="ia-empty-icon">${lk('package')}</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:6px">Aucun bien ne vous est affecté</div>
       <div style="font-size:13px">Les biens vous seront attribués par votre gestionnaire.<br>
       Vous pouvez aussi <a href="#" onclick="IA_State.tab='declarer';_renderIA(document.getElementById('mainContent'));return false" style="color:var(--blue);font-weight:600">déclarer un bien présent dans votre bureau</a>.</div>
@@ -134,7 +134,7 @@ function _renderTabBiens(el) {
         </div>
         <button class="ia-btn-danger" style="padding:5px 12px;font-size:11px;border-radius:6px"
           onclick="_iaSignalerDepart('${_escIA(b.Numero)}')">
-          📤 Mouvement / départ
+          ${lk('upload')} Mouvement / départ
         </button>
       </div>
       ${b.InfoProduit ? '<div style="font-size:12px;margin-bottom:8px;color:var(--text)">'+_escIA(b.InfoProduit)+'</div>' : ''}
@@ -156,15 +156,15 @@ function _renderTabBiens(el) {
 function _renderTabDeclarer(el) {
   el.innerHTML = `
     <div style="margin-bottom:20px">
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">🔍 Identifier le bien</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${lk('search')} Identifier le bien</div>
       <div style="font-size:12px;color:var(--gray-text);margin-bottom:12px">
         Saisissez le numéro du bien (inscrit sur l'étiquette) ou scannez son code-barres / QR code.
       </div>
       <div class="ia-search-box">
         <input type="text" id="ia_numero_input" placeholder="Numéro du bien (ex: MOB-001)"
           onkeydown="if(event.key==='Enter')_iaRechercher()">
-        <button class="ia-btn-primary" onclick="_iaRechercher()">🔍 Rechercher</button>
-        <button class="ia-btn-scan" onclick="_iaOuvrirScan()">📷 Scanner</button>
+        <button class="ia-btn-primary" onclick="_iaRechercher()">${lk('search')} Rechercher</button>
+        <button class="ia-btn-scan" onclick="_iaOuvrirScan()">${lk('camera')} Scanner</button>
       </div>
       <div id="ia_scan_zone"></div>
     </div>
@@ -181,7 +181,7 @@ async function _iaRechercher() {
   if (!numero) { toast('Veuillez saisir un numéro de bien.', 'error'); return; }
 
   const zone = document.getElementById('ia_search_result');
-  zone.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gray-text)">⏳ Recherche en cours…</div>';
+  zone.innerHTML = ('<div style="text-align:center;padding:20px;color:var(--gray-text)">' + lk('hourglass') + ' Recherche en cours…</div>');
 
   try {
     const bien = await apiRequest('inventaire_agent_search&numero=' + encodeURIComponent(numero));
@@ -190,7 +190,7 @@ async function _iaRechercher() {
   } catch(e) {
     IA_State.searchResult = null;
     zone.innerHTML = `<div class="ia-card" style="border-color:#ef4444;text-align:center">
-      <div style="font-size:28px;margin-bottom:8px">❌</div>
+      <div style="font-size:28px;margin-bottom:8px">${lk('circle-x', 'ko')}</div>
       <div style="font-weight:600;color:#ef4444;margin-bottom:4px">${_escIA(e.message)}</div>
       <div style="font-size:12px;color:var(--gray-text)">Vérifiez le numéro et réessayez.</div>
     </div>`;
@@ -200,7 +200,7 @@ async function _iaRechercher() {
 function _renderSearchResult(zone, bien) {
   zone.innerHTML = `
     <div class="ia-bien-result">
-      <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px">✅ Bien trouvé</div>
+      <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px">${lk('circle-check', 'ok')} Bien trouvé</div>
       <div class="ia-grid-info" style="margin-bottom:16px">
         <div><strong>N° Bien :</strong> ${_escIA(bien.Numero)}</div>
         <div><strong>Famille :</strong> ${_escIA(bien.Famille || '—')}</div>
@@ -212,7 +212,7 @@ function _renderSearchResult(zone, bien) {
       </div>
 
       <div style="border-top:1px solid var(--gray-border);padding-top:14px;margin-top:14px">
-        <div style="font-size:13px;font-weight:700;margin-bottom:10px">📍 Où se trouve ce bien actuellement ?</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">${lk('map-pin')} Où se trouve ce bien actuellement ?</div>
         <div class="ia-form-grid">
           <div>
             <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">Bâtiment</label>
@@ -245,7 +245,7 @@ function _renderSearchResult(zone, bien) {
             Annuler
           </button>
           <button class="ia-btn-primary" onclick="_iaEnvoyerDeclaration('presence','${_escIA(bien.Numero)}')">
-            ✅ Déclarer « J'ai ce bien »
+            ${lk('circle-check', 'ok')} Déclarer « J'ai ce bien »
           </button>
         </div>
       </div>
@@ -302,7 +302,7 @@ async function _iaEnvoyerDeclaration(type, numero) {
     const resp = await apiRequest('inventaire_agent', 'POST', payload);
     let msg = 'Déclaration envoyée ! Elle sera examinée par votre gestionnaire.';
     if (resp.doublon) {
-      msg = '⚠️ Déclaration envoyée. Attention : un autre agent a aussi déclaré ce bien. Le gestionnaire tranchera.';
+      msg = 'Déclaration envoyée. Attention : un autre agent a aussi déclaré ce bien. Le gestionnaire tranchera.';
     }
     toast(msg, 'success');
     IA_State.tab = 'historique';
@@ -312,7 +312,7 @@ async function _iaEnvoyerDeclaration(type, numero) {
 
 // ── Signaler un départ ──────────────────────────────────────────────────────
 function _iaSignalerDepart(numero) {
-  openModal('📤 Signaler un mouvement / départ', `
+  openModal('Signaler un mouvement / départ', `
     <div style="margin-bottom:14px;font-size:13px">
       Le bien <strong>${_escIA(numero)}</strong> a quitté votre poste ?
       Indiquez ce qu'il est devenu pour aider le gestionnaire.
@@ -321,11 +321,11 @@ function _iaSignalerDepart(numero) {
     <div style="margin-bottom:12px">
       <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">Que s'est-il passé ?</label>
       <select class="form-control" id="ia_depart_raison" onchange="_iaUpdateDepartFields()">
-        <option value="transfert_bureau">📍 Transféré dans un autre bureau</option>
-        <option value="donne_personne">👤 Donné / prêté à une autre personne</option>
-        <option value="retour_magasin">📦 Retourné au magasin / stock</option>
-        <option value="hors_service">🔧 Hors service / en panne</option>
-        <option value="autre">❓ Autre</option>
+        <option value="transfert_bureau">Transféré dans un autre bureau</option>
+        <option value="donne_personne">Donné / prêté à une autre personne</option>
+        <option value="retour_magasin">Retourné au magasin / stock</option>
+        <option value="hors_service">Hors service / en panne</option>
+        <option value="autre">Autre</option>
       </select>
     </div>
 
@@ -339,7 +339,7 @@ function _iaSignalerDepart(numero) {
         </div>
       </div>
       <div id="ia_dep_loc_wrap">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px">📍 Nouvelle localisation</div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px">${lk('map-pin')} Nouvelle localisation</div>
         <div class="ia-form-grid" style="margin-bottom:12px">
           <div>
             <label style="font-size:11px;color:var(--gray-text);margin-bottom:3px;display:block">Bâtiment</label>
@@ -552,7 +552,7 @@ function _iaOuvrirScan() {
   zone.innerHTML = `
     <div style="border:2px solid #8b5cf6;border-radius:10px;padding:16px;margin-bottom:16px;background:var(--card-bg,#fff)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:13px;font-weight:700;color:#8b5cf6">📷 Scanner un code</div>
+        <div style="font-size:13px;font-weight:700;color:#8b5cf6">${lk('camera')} Scanner un code</div>
         <button onclick="_iaFermerScan()" style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--text)">✕</button>
       </div>
       <video id="ia_scan_video" style="width:100%;border-radius:8px;background:#000;max-height:300px" autoplay playsinline></video>
@@ -569,7 +569,7 @@ function _iaOuvrirScan() {
       if (result) {
         const code = result.getText();
         const statusEl = document.getElementById('ia_scan_status');
-        if (statusEl) statusEl.innerHTML = `<span style="color:var(--green,#16a34a);font-weight:600">✅ Code détecté : ${_escIA(code)}</span>`;
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--green,#16a34a);font-weight:600">${lk('circle-check', 'ok')} Code détecté : ${_escIA(code)}</span>`;
         _iaFermerScan();
         const input = document.getElementById('ia_numero_input');
         if (input) input.value = code;
@@ -577,11 +577,11 @@ function _iaOuvrirScan() {
       }
     }).catch(e => {
       const statusEl = document.getElementById('ia_scan_status');
-      if (statusEl) statusEl.innerHTML = `<span style="color:#ef4444">❌ ${_escIA(e.message || 'Erreur caméra')}</span>`;
+      if (statusEl) statusEl.innerHTML = `<span style="color:#ef4444">${lk('circle-x', 'ko')} ${_escIA(e.message || 'Erreur caméra')}</span>`;
     });
   } else {
     const statusEl = document.getElementById('ia_scan_status');
-    if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ Bibliothèque de scan non disponible. Utilisez la saisie manuelle.</span>';
+    if (statusEl) statusEl.innerHTML = ('<span style="color:#ef4444">' + lk('circle-x', 'ko') + ' Bibliothèque de scan non disponible. Utilisez la saisie manuelle.</span>');
   }
 }
 
@@ -600,15 +600,15 @@ function _renderTabHistorique(el) {
   const decls = IA_State.declarations;
   if (!decls.length) {
     el.innerHTML = `<div class="ia-empty">
-      <div class="ia-empty-icon">📋</div>
+      <div class="ia-empty-icon">${lk('clipboard-list')}</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:6px">Aucune déclaration</div>
       <div style="font-size:13px">Vos déclarations d'inventaire apparaîtront ici une fois envoyées.</div>
     </div>`;
     return;
   }
 
-  const statusLabel = { en_attente: '⏳ En attente', valide: '✅ Validée', refuse: '❌ Refusée' };
-  const typeLabel   = { presence: '📦 Présence', depart: '🚫 Départ' };
+  const statusLabel = { en_attente: (lk('hourglass') + ' En attente'), valide: (lk('circle-check', 'ok') + ' Validée'), refuse: (lk('circle-x', 'ko') + ' Refusée') };
+  const typeLabel   = { presence: (lk('package') + ' Présence'), depart: (lk('ban', 'ko') + ' Départ') };
 
   let html = '';
   for (const d of decls) {

@@ -200,8 +200,8 @@ function _renderPanelFacture() {
   const body = `
     ${_sep('Général')}
     ${_chipsF('energie_facture', 'TypeSaisie', 'Type de saisie', [
-        { value: 'Releve',  label: '🔵 Relevé'  },
-        { value: 'Facture', label: '🟣 Facture' },
+        { value: 'Releve',  label: 'Relevé'  },
+        { value: 'Facture', label: 'Facture' },
     ])}
     ${_selectF('energie_facture', 'CompteurId', 'Compteur', _energieCompteurOptions)}
     <div style="grid-column:span 2">${_daterangeF('energie_facture', 'dates', 'Période')}</div>
@@ -210,7 +210,7 @@ function _renderPanelFacture() {
     ${_textF('energie_facture', 'Fournisseur', 'Fournisseur', 'Nom du fournisseur…')}
     ${_textF('energie_facture', 'NumeroFacture', 'N° Facture', 'Numéro…')}
   `;
-  return _energiePanelWrap('energie_facture', 'Factures & Relevés', '🟣', 'var(--blue)', body);
+  return _energiePanelWrap('energie_facture', 'Factures & Relevés', lk('circle', 'p violet'), 'var(--blue)', body);
 }
 
 
@@ -230,14 +230,14 @@ function _renderPanelSpecifique() {
 
   const body = `
     ${_sep('Plages HTA 5 plages — Conso kWh', htaActive)}
-    ${_numF('energie_specifique', 'hphs_conso', '🌞 HPHS — Hiver HP',  'kWh')}
-    ${_numF('energie_specifique', 'hchs_conso', '🌙 HCHS — Hiver HC',  'kWh')}
-    ${_numF('energie_specifique', 'hpbs_conso', '☀️ HPBS — Été HP',    'kWh')}
-    ${_numF('energie_specifique', 'hcbs_conso', '💤 HCBS — Été HC',    'kWh')}
+    ${_numF('energie_specifique', 'hphs_conso', (lk('sun') + ' HPHS — Hiver HP'),  'kWh')}
+    ${_numF('energie_specifique', 'hchs_conso', (lk('moon') + ' HCHS — Hiver HC'),  'kWh')}
+    ${_numF('energie_specifique', 'hpbs_conso', (lk('sun') + ' HPBS — Été HP'),    'kWh')}
+    ${_numF('energie_specifique', 'hcbs_conso', (lk('moon-star') + ' HCBS — Été HC'),    'kWh')}
 
     ${_sep('Plages HP / HC — Conso kWh', hphcActive)}
-    ${_numF('energie_specifique', 'hp_conso', '🌞 Heures Pleines', 'kWh')}
-    ${_numF('energie_specifique', 'hc_conso', '🌙 Heures Creuses', 'kWh')}
+    ${_numF('energie_specifique', 'hp_conso', (lk('sun') + ' Heures Pleines'), 'kWh')}
+    ${_numF('energie_specifique', 'hc_conso', (lk('moon') + ' Heures Creuses'), 'kWh')}
 
     ${_sep('Charges & taxes — Montant HT (€)', chargesActive)}
     ${_numF('energie_specifique', 'charge_abo',      'Abonnement',       '€')}
@@ -248,7 +248,7 @@ function _renderPanelSpecifique() {
     ${_numF('energie_specifique', 'charge_turpe',    'TURPE / Achemin.', '€')}
   `;
 
-  return _energiePanelWrap('energie_specifique', 'Plages HPHS / HCHS / HPBS / HCBS', '📐', '#f59e0b', body);
+  return _energiePanelWrap('energie_specifique', 'Plages HPHS / HCHS / HPBS / HCBS', lk('ruler'), '#f59e0b', body);
 }
 
 
@@ -267,7 +267,7 @@ function _renderPanelStats() {
     background:#f0f9ff;padding:14px 20px;animation:fadeIn .15s ease">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--gray-text)">
-        📊 Statistiques
+        ${lk('chart-column')} Statistiques
       </span>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
@@ -292,12 +292,12 @@ function _renderPanelStats() {
         <label style="font-size:11px;font-weight:600;color:var(--gray-text);display:block;margin-bottom:6px">KPI affichés</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           ${[
-            ['kpi_conso',    '⚡', 'Consommation', true ],
-            ['kpi_cout',     '💶', 'Coût',         true ],
-            ['kpi_contrat',  '📄', 'Contrat',      true ],
-            ['kpi_tendance', '📈', 'Tendance',     true ],
-            ['kpi_extremes', '🏆', 'Extrêmes',     false],
-            ['kpi_carbone',  '🌿', 'Carbone',      true ],
+            ['kpi_conso',    lk('zap'), 'Consommation', true ],
+            ['kpi_cout',     lk('euro'), 'Coût',         true ],
+            ['kpi_contrat',  lk('file-text'), 'Contrat',      true ],
+            ['kpi_tendance', lk('trending-up'), 'Tendance',     true ],
+            ['kpi_extremes', lk('trophy'), 'Extrêmes',     false],
+            ['kpi_carbone',  lk('leaf'), 'Carbone',      true ],
           ].map(([id, ico, lbl, defOn]) => {
             const on = (S.kpiVisible || {})[id] ?? defOn;
             return `<button id="kpiBtn_${id}" onclick="toggleKpiGroupe('${id}')"
@@ -344,7 +344,7 @@ function _renderPanelGraph() {
     background:var(--gray-bg);padding:14px 20px;animation:fadeIn .15s ease">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--gray-text)">
-        📈 Réglages graphiques
+        ${lk('trending-up')} Réglages graphiques
       </span>
     </div>
 
@@ -360,10 +360,10 @@ function _renderPanelGraph() {
         <div style="margin-bottom:10px">
           <label style="font-size:11px;color:var(--gray-text);display:block;margin-bottom:6px;font-weight:600">Type de graphique</label>
           <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${btnG('barres',    '📊 Barres',      S.graphType==='barres')}
-            ${btnG('ligne',     '📈 Ligne',        S.graphType==='ligne')}
-            ${btnG('area',      '📉 Aire',         S.graphType==='area')}
-            ${btnG('comparaison','🔀 Par compteur', S.graphType==='comparaison')}
+            ${btnG('barres',    (lk('chart-column') + ' Barres'),      S.graphType==='barres')}
+            ${btnG('ligne',     (lk('trending-up') + ' Ligne'),        S.graphType==='ligne')}
+            ${btnG('area',      (lk('trending-down') + ' Aire'),         S.graphType==='area')}
+            ${btnG('comparaison',(lk('shuffle') + ' Par compteur'), S.graphType==='comparaison')}
           </div>
         </div>
 
@@ -406,14 +406,14 @@ function _renderPanelGraph() {
       <div style="padding:14px 16px">
         <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:12px;display:flex;align-items:center;gap:6px">
           <span style="display:inline-block;width:8px;height:8px;background:#16a34a;border-radius:50%"></span>
-          🌿 Émissions CO₂
+          ${lk('leaf')} Émissions CO₂
         </div>
 
         <div style="margin-bottom:10px">
           <label style="font-size:11px;color:var(--gray-text);display:block;margin-bottom:6px;font-weight:600">Type de graphique CO₂</label>
           <div style="display:flex;gap:4px">
-            ${btnC(`switchCarboneGraphType('barres')`, '📊 Barres', SC.graphType==='barres', '#16a34a')}
-            ${btnC(`switchCarboneGraphType('ligne')`,  '📈 Ligne',  SC.graphType==='ligne',  '#16a34a')}
+            ${btnC(`switchCarboneGraphType('barres')`, (lk('chart-column') + ' Barres'), SC.graphType==='barres', '#16a34a')}
+            ${btnC(`switchCarboneGraphType('ligne')`,  (lk('trending-up') + ' Ligne'),  SC.graphType==='ligne',  '#16a34a')}
           </div>
         </div>
 
@@ -445,10 +445,10 @@ function _renderPanelGraph() {
  */
 function renderEnergieFilterButtons() {
   return [
-    { page: 'energie_facture',    icon: '🟣', label: 'Facture',   accent: 'var(--blue)'   },
-    { page: 'energie_specifique', icon: '📐', label: 'HPBS/HCHS', accent: '#f59e0b'       },
-    { page: 'energie_stats',      icon: '📊', label: 'Stats',      accent: 'var(--teal)'  },
-    { page: 'energie_graph',      icon: '📈', label: 'Graphique',  accent: '#9b59b6'       },
+    { page: 'energie_facture',    icon: lk('circle', 'p violet'), label: 'Facture',   accent: 'var(--blue)'   },
+    { page: 'energie_specifique', icon: lk('ruler'), label: 'HPBS/HCHS', accent: '#f59e0b'       },
+    { page: 'energie_stats',      icon: lk('chart-column'), label: 'Stats',      accent: 'var(--teal)'  },
+    { page: 'energie_graph',      icon: lk('trending-up'), label: 'Graphique',  accent: '#9b59b6'       },
   ].map(({ page, icon, label, accent }) => {
     const count  = FiltresEngine.activeCount(page);
     const isOpen = FiltresEngine._open[page];

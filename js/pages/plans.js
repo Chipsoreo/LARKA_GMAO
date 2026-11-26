@@ -72,6 +72,71 @@ const PLAN_SYMBOLS = {
   pin:      { label: 'Épingle',  svg: (c,s) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="${c}" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg>` },
 };
 
+/**
+ * Pictogramme d'un point : une icône Lucide (« lk:flame ») ou un emoji (« 🧯 »).
+ *
+ * Les formes ci-dessus restent les valeurs par défaut. Le préfixe « lk: » est
+ * nécessaire : plusieurs noms Lucide (circle, square, star, pin…) sont aussi
+ * des clés de PLAN_SYMBOLS, et un point enregistré « star » doit rester
+ * l'étoile pleine qu'il a toujours été.
+ */
+function _planPicto(v) {
+  const t = String(v || '');
+  if (/^lk:[a-z0-9-]+$/.test(t)) return { type: 'icone', nom: t.slice(3) };
+  if (typeof IconePicker !== 'undefined' && IconePicker.estEmoji(t)) return { type: 'emoji', texte: t };
+  return null;
+}
+function _planSymboleLibelle(v) {
+  const p = _planPicto(v);
+  if (!p) return (PLAN_SYMBOLS[v] || PLAN_SYMBOLS.circle).label;
+  return p.type === 'icone' ? 'Icône : ' + (typeof IconePicker !== 'undefined' ? IconePicker.decrire(p.nom) : p.nom) : 'Emoji ' + p.texte;
+}
+/** Dessin d'un point : forme, icône sur pastille de sa couleur, ou emoji sur pastille blanche cerclée. */
+function _planSymboleHtml(v, color, sz) {
+  const p = _planPicto(v);
+  if (!p) return (PLAN_SYMBOLS[v] || PLAN_SYMBOLS.circle).svg(color, sz);
+  const c = /^#[0-9a-f]{3,8}$/i.test(String(color || '')) ? color : '#2b7be6';
+  if (p.type === 'icone') {
+    return '<div class="plan-picto" style="width:' + sz + 'px;height:' + sz + 'px;background:' + c + ';font-size:' + Math.round(sz * .58) + 'px">' + lk(p.nom) + '</div>';
+  }
+  return '<div class="plan-picto plan-picto-emoji" style="width:' + sz + 'px;height:' + sz + 'px;border-color:' + c + ';font-size:' + Math.round(sz * .6) + 'px">' + _escPlan(p.texte) + '</div>';
+}
+/** Liste des formes, plus l'icône choisie s'il y en a une ; et le bouton qui ouvre le sélecteur. */
+function _planSymboleOptions(courant) {
+  const p = _planPicto(courant);
+  return (p ? '<option value="' + _escPlan(courant) + '" selected>' + _escPlan(_planSymboleLibelle(courant)) + '</option>' : '')
+    + Object.entries(PLAN_SYMBOLS).map(([k, v]) => '<option value="' + k + '" ' + (!p && k === (courant || 'circle') ? 'selected' : '') + '>' + v.label + '</option>').join('')
+    + '<option value="__picto">' + 'Icône ou emoji…' + '</option>';
+}
+/** Symbole lu dans la fiche : jamais l'entrée « Icône ou emoji… » elle-même. */
+function _planSymboleLu() {
+  const v = document.getElementById('pXS')?.value || 'circle';
+  return v === '__picto' ? 'circle' : v;
+}
+function _planSymboleChampHtml(courant) {
+  return '<div class="form-group"><label class="form-label">Symbole</label>'
+    + '<select class="form-control" id="pXS" data-avant="' + _escPlan(courant || 'circle') + '" onchange="_planSymboleChange(this)">' + _planSymboleOptions(courant) + '</select></div>';
+}
+/** « Icône ou emoji… » : ouvre le sélecteur, puis remet la liste sur le choix fait (ou sur le précédent). */
+function _planSymboleChange(sel, apres) {
+  if (sel.value !== '__picto') { sel.dataset.avant = sel.value; if (apres) apres(sel.value); return; }
+  const avant = sel.dataset.avant || 'circle';
+  sel.value = avant;
+  if (typeof IconePicker === 'undefined') return;
+  const p = _planPicto(avant);
+  IconePicker.ouvrir({
+    valeur: p ? (p.type === 'icone' ? p.nom : p.texte) : '',
+    titre: 'Symbole du point',
+    surChoix: v => {
+      const val = IconePicker.estEmoji(v) ? v : 'lk:' + v;
+      sel.innerHTML = _planSymboleOptions(val);
+      sel.value = val;
+      sel.dataset.avant = val;
+      if (apres) apres(val);
+    },
+  });
+}
+
 const TRAIT_SUBTYPES = {
   '':        { label: 'Trait simple', dash: null,         weight: 3, color: null },
   mur:       { label: 'Mur',          dash: null,         weight: 5, color: '#374151' },
@@ -93,13 +158,13 @@ const LINE_STYLES = {
 };
 
 const CALQUE_CATEGORIES = {
-  'Structure':   { icon: '\ud83c\udfd7\ufe0f' },
-  'Réseaux':     { icon: '\ud83d\udd0c' },
-  'Équipements': { icon: '\u2699\ufe0f' },
-  'Sécurité':    { icon: '\ud83d\udee1\ufe0f' },
-  'Annotations': { icon: '\ud83d\udcdd' },
-  'Mesures':     { icon: '\ud83d\udcd0' },
-  'Divers':      { icon: '\ud83d\udcc1' },
+  'Structure':   { icon: lk('construction') },
+  'Réseaux':     { icon: lk('plug') },
+  'Équipements': { icon: lk('settings') },
+  'Sécurité':    { icon: lk('shield') },
+  'Annotations': { icon: lk('file-pen-line') },
+  'Mesures':     { icon: lk('ruler') },
+  'Divers':      { icon: lk('folder') },
 };
 
 function _getCalqueCategory(n) {
@@ -214,6 +279,9 @@ function _injectCSS() {
 .plan-vertex-action-btn:hover{border-color:var(--blue);background:var(--blue-pale);color:var(--blue)}
 .plan-vertex-action-btn.danger:hover{border-color:#e74c3c;background:#fee;color:#e74c3c}
 .plan-vertex-action-btn .icon{font-size:18px}
+.plan-picto{border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 0 2px #fff;box-sizing:border-box;line-height:1}
+.plan-picto .lk{width:1em;height:1em;vertical-align:0;color:#fff !important;--lki-fond:0}
+.plan-picto-emoji{background:#fff;border:2px solid;box-shadow:0 0 0 1px #fff;color:initial}
 .plan-point-tooltip{background:rgba(0,0,0,.85)!important;color:#fff!important;border:none!important;border-radius:6px!important;font-size:12px!important;padding:6px 10px!important;box-shadow:0 2px 8px rgba(0,0,0,.2)!important;line-height:1.4!important}
 .plan-point-tooltip:before{border-top-color:rgba(0,0,0,.85)!important}
 @media (max-width: 900px) {
@@ -243,20 +311,20 @@ function _renderMain(c) {
       ${typeof plansTabBar==='function'?plansTabBar('plans'):''}
       <select id="planBatSelect" class="plan-batbar-select" onchange="_planSelectBat(this.value)">
         ${_p.batiments.length===0?'<option value="">— Aucun bâtiment —</option>':''}
-        ${_p.batiments.map(b=>`<option value="${b.Id}" ${_p.batiment?.Id===b.Id?'selected':''}>🏢 ${_escPlan(b.Nom)}</option>`).join('')}
+        ${_p.batiments.map(b=>`<option value="${b.Id}" ${_p.batiment?.Id===b.Id?'selected':''}>${_escPlan(b.Nom)}</option>`).join('')}
       </select>
       ${ed?`
         <button class="btn btn-secondary btn-sm" onclick="_planEditBatiment()" title="Nouveau bâtiment">＋ Bâtiment</button>
         ${_p.batiment?`
-          <button class="btn btn-secondary btn-sm" onclick="_planEditBatiment(_p.batiment.Id)" title="Modifier">✏️</button>
-          <button class="btn btn-secondary btn-sm" onclick="_planInfoBatiment()" title="Informations">ℹ️</button>
-          <button class="btn btn-sm plan-btn-danger" onclick="_planDeleteBatiment()" title="Supprimer">🗑️</button>
+          <button class="btn btn-secondary btn-sm" onclick="_planEditBatiment(_p.batiment.Id)" title="Modifier">${lk('pencil')}</button>
+          <button class="btn btn-secondary btn-sm" onclick="_planInfoBatiment()" title="Informations">${lk('info')}</button>
+          <button class="btn btn-sm plan-btn-danger" onclick="_planDeleteBatiment()" title="Supprimer">${lk('trash')}</button>
         `:''}
         <div style="flex:1"></div>
         ${_p.etage?`
-          <button class="btn btn-secondary btn-sm" onclick="_pFitToElements()" title="Recadrer sur les éléments">🎯 Recadrer</button>
-          <button class="btn btn-secondary btn-sm" onclick="_planUploadFond()" title="Charger une image de fond">🖼️ Fond</button>
-          <button class="btn btn-primary btn-sm" onclick="_planImport()" title="Importer DXF/SVG/GeoJSON/CSV">📥 Importer</button>
+          <button class="btn btn-secondary btn-sm" onclick="_pFitToElements()" title="Recadrer sur les éléments">${lk('target')} Recadrer</button>
+          <button class="btn btn-secondary btn-sm" onclick="_planUploadFond()" title="Charger une image de fond">${lk('image')} Fond</button>
+          <button class="btn btn-primary btn-sm" onclick="_planImport()" title="Importer DXF/SVG/GeoJSON/CSV">${lk('download')} Importer</button>
           <button class="btn btn-secondary btn-sm" onclick="_planShowMoreMenu(event)" title="Plus d'options">⋯</button>
         `:''}
       `:''}
@@ -293,14 +361,14 @@ function _renderMain(c) {
       <span class="plan-sep"></span>
       <select id="planTraitSub" class="plan-mini-select" onchange="_p.sousType=this.value" style="display:none">${Object.entries(TRAIT_SUBTYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select>
       <select id="planLineStyle" class="plan-mini-select" onchange="_p.lineStyle=this.value" style="display:none">${Object.entries(LINE_STYLES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select>
-      <select id="planSymbol" class="plan-mini-select" onchange="_p.symbol=this.value" style="display:none">${Object.entries(PLAN_SYMBOLS).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}</select>
+      <select id="planSymbol" class="plan-mini-select" data-avant="circle" onchange="_planSymboleChange(this, v => { _p.symbol = v; })" style="display:none" title="Symbole des prochains points">${_planSymboleOptions('circle')}</select>
       <div class="plan-color-wrap" title="Couleur"><input type="color" id="planColor" value="${_p.color}" onchange="_p.color=this.value"></div>
       <span id="planExtOutils" style="display:inline-flex;gap:4px;align-items:center"></span>
       <span id="planDrawStatus" class="plan-status"></span>
       <div style="flex:1"></div>
       <span id="planTraitOpts" style="display:none;gap:4px;align-items:center;flex-wrap:wrap">
-        <button class="plan-tbtn-small ${_p.lockAngle?'active':''}" onclick="_pToggleLockAngle()" id="ptLockAngle" title="Verrouiller l'angle">🔒 Angle</button>
-        <button class="plan-tbtn-small ${_p.lockDistance?'active':''}" onclick="_pToggleLockDist()" id="ptLockDist" title="Verrouiller la distance">📏 Dist.</button>
+        <button class="plan-tbtn-small ${_p.lockAngle?'active':''}" onclick="_pToggleLockAngle()" id="ptLockAngle" title="Verrouiller l'angle">${lk('lock')} Angle</button>
+        <button class="plan-tbtn-small ${_p.lockDistance?'active':''}" onclick="_pToggleLockDist()" id="ptLockDist" title="Verrouiller la distance">${lk('ruler')} Dist.</button>
         <button class="plan-tbtn-small" onclick="_pCloseLoop()" title="Fermer la forme en boucle">⟳ Fermer</button>
       </span>
       <button id="planFinish" class="btn btn-primary btn-sm" style="display:none" onclick="_pFinish()">✓ Terminer</button>
@@ -312,9 +380,9 @@ function _renderMain(c) {
       ${_p.leftCollapsed?`<div class="plan-side-collapsed" onclick="_p.leftCollapsed=false;_renderMain(document.getElementById('mainContent'))"><span>◀</span></div>`:`
       <div class="card plan-side plan-side-left">
         <div class="plan-side-tabs">
-          <button class="plan-side-tab ${_p.leftTab==='etages'?'active':''}" onclick="_pLeftTab('etages')" title="Étages du bâtiment">🏢 Étages</button>
-          <button class="plan-side-tab ${_p.leftTab==='calques'?'active':''}" onclick="_pLeftTab('calques')" title="Calques visibles">📚 Calques</button>
-          <button class="plan-side-tab ${_p.leftTab==='recherche'?'active':''}" onclick="_pLeftTab('recherche')" title="Rechercher et filtrer">🔍 Recherche</button>
+          <button class="plan-side-tab ${_p.leftTab==='etages'?'active':''}" onclick="_pLeftTab('etages')" title="Étages du bâtiment">${lk('building-complex')} Étages</button>
+          <button class="plan-side-tab ${_p.leftTab==='calques'?'active':''}" onclick="_pLeftTab('calques')" title="Calques visibles">${lk('library')} Calques</button>
+          <button class="plan-side-tab ${_p.leftTab==='recherche'?'active':''}" onclick="_pLeftTab('recherche')" title="Rechercher et filtrer">${lk('search')} Recherche</button>
           <button class="plan-side-collapse-btn" onclick="_p.leftCollapsed=true;_renderMain(document.getElementById('mainContent'))">▶</button>
         </div>
         <div id="planLeftContent" style="flex:1;overflow-y:auto">${_renderLeftContent()}</div>
@@ -357,7 +425,7 @@ function _renderEtageList() {
   return _p.etages.sort((a,b) => a.Niveau - b.Niveau).map(et => {
     const active = _p.etage?.Id === et.Id;
     const niv = et.Niveau < 0 ? 'SS'+Math.abs(et.Niveau) : et.Niveau === 0 ? 'RDC' : 'N'+et.Niveau;
-    return `<div class="plan-etage-item ${active?'active':''}" onclick="_planSelectEtage(${et.Id})"><span class="plan-etage-niv">${niv}</span><span class="plan-etage-nom">${_escPlan(et.Nom)}</span>${ed?`<span class="plan-etage-actions"><button class="plan-icon-btn" onclick="event.stopPropagation();_planEditEtage(${et.Id})">✏️</button><button class="plan-icon-btn plan-icon-danger" onclick="event.stopPropagation();_planDeleteEtage(${et.Id},'${_escPlan(et.Nom)}')">🗑️</button></span>`:''}</div>`;
+    return `<div class="plan-etage-item ${active?'active':''}" onclick="_planSelectEtage(${et.Id})"><span class="plan-etage-niv">${niv}</span><span class="plan-etage-nom">${_escPlan(et.Nom)}</span>${ed?`<span class="plan-etage-actions"><button class="plan-icon-btn" onclick="event.stopPropagation();_planEditEtage(${et.Id})">${lk('pencil')}</button><button class="plan-icon-btn plan-icon-danger" onclick="event.stopPropagation();_planDeleteEtage(${et.Id},'${_escPlan(et.Nom)}')">${lk('trash')}</button></span>`:''}</div>`;
   }).join('');
 }
 
@@ -381,9 +449,9 @@ function _renderCalqueList() {
       const count = _p.elements.filter(e => (e.Calque || 'Plan') === c).length;
       const hidden = !!_p.hiddenCalques[c], active = c === _p.activeCalque;
       html += `<div class="plan-calque-item ${active?'active':''} ${hidden?'hidden':''}" onclick="_planSelectCalque('${_escPlan(c)}')">
-        <button class="plan-calque-eye" onclick="event.stopPropagation();_planToggleCalque('${_escPlan(c)}')">${hidden?'👁️‍🗨️':'👁️'}</button>
+        <button class="plan-calque-eye" onclick="event.stopPropagation();_planToggleCalque('${_escPlan(c)}')">${hidden ? lk('eye-off') : lk('eye')}</button>
         <span class="plan-calque-nom">${_escPlan(c)}</span><span class="plan-calque-count">${count}</span>
-        ${ed&&c!=='Plan'?`<span class="plan-calque-actions"><button class="plan-icon-btn" onclick="event.stopPropagation();_planRenameCalque('${_escPlan(c)}')">✏️</button><button class="plan-icon-btn plan-icon-danger" onclick="event.stopPropagation();_planDeleteCalque('${_escPlan(c)}')">🗑️</button></span>`:''}
+        ${ed&&c!=='Plan'?`<span class="plan-calque-actions"><button class="plan-icon-btn" onclick="event.stopPropagation();_planRenameCalque('${_escPlan(c)}')">${lk('pencil')}</button><button class="plan-icon-btn plan-icon-danger" onclick="event.stopPropagation();_planDeleteCalque('${_escPlan(c)}')">${lk('trash')}</button></span>`:''}
       </div>`;
     });
     html += '</div>';
@@ -401,7 +469,7 @@ function _renderRecherchePanel() {
   const calques = _planGetCalques(), tc = {};
   _p.elements.forEach(el => { tc[el.TypeElement] = (tc[el.TypeElement]||0)+1; });
   const filtered = _getFilteredElements();
-  const groups = { point: '📍 Points', trait: '📏 Traits', zone: '🔷 Zones', texte: '🔤 Textes' };
+  const groups = { point: (lk('map-pin') + ' Points'), trait: (lk('ruler') + ' Traits'), zone: (lk('diamond', 'p bleu') + ' Zones'), texte: (lk('case-sensitive') + ' Textes') };
   const hasActiveFilter = _p.filters.search || _p.filters.type || _p.filters.calque || _p.filters.sousType || _p.filters.category || _p.filters.pointCategorie;
   // Récupérer les catégories de points utilisées (config + observées sur les éléments)
   const usedPtCats = new Set();
@@ -409,19 +477,19 @@ function _renderRecherchePanel() {
   const ptCats = [..._p.pointCategories.map(c => c.Valeur).filter(Boolean), ...[...usedPtCats].filter(c => !_p.pointCategories.find(pc => pc.Valeur === c))];
   let html = '<div style="padding:10px">';
   // Recherche en haut, gros et visible
-  html += '<div class="plan-filter-group"><label class="plan-filter-label">🔍 Rechercher</label><input class="plan-filter-input" placeholder="Nom, description..." value="'+_escPlan(_p.filters.search)+'" oninput="_p.filters.search=this.value;_pApplyFilters()"></div>';
+  html += ('<div class="plan-filter-group"><label class="plan-filter-label">' + lk('search') + ' Rechercher</label><input class="plan-filter-input" placeholder="Nom, description..." value="')+_escPlan(_p.filters.search)+'" oninput="_p.filters.search=this.value;_pApplyFilters()"></div>';
   // Filtres dans un détail rétractable
   html += '<details '+(hasActiveFilter?'open':'')+' style="margin-bottom:8px">';
-  html += '<summary style="font-size:11px;font-weight:600;color:var(--navy);cursor:pointer;padding:4px 0;user-select:none">⚙️ Filtres avancés '+(hasActiveFilter?'<span class="plan-list-badge" style="background:var(--blue);color:#fff">!</span>':'')+'</summary>';
+  html += ('<summary style="font-size:11px;font-weight:600;color:var(--navy);cursor:pointer;padding:4px 0;user-select:none">' + lk('settings') + ' Filtres avancés ')+(hasActiveFilter?'<span class="plan-list-badge" style="background:var(--blue);color:#fff">!</span>':'')+'</summary>';
   html += '<div style="padding:6px 0">';
   html += '<div class="plan-filter-group"><label class="plan-filter-label">Type</label><div class="plan-filter-chips">'+['point','trait','zone','texte'].map(t=>`<span class="plan-filter-chip ${_p.filters.type===t?'active':''}" onclick="_p.filters.type=_p.filters.type==='${t}'?'':'${t}';_pApplyFilters()">${t} ${tc[t]?'('+tc[t]+')':''}</span>`).join('')+'</div></div>';
   html += '<div class="plan-filter-group"><label class="plan-filter-label">Calque</label><select class="plan-filter-select" onchange="_p.filters.calque=this.value;_pApplyFilters()"><option value="">Tous</option>'+calques.map(c=>`<option value="${_escPlan(c)}" ${_p.filters.calque===c?'selected':''}>${_escPlan(c)}</option>`).join('')+'</select></div>';
   // Filtre Catégorie de point (si au moins une définie)
   if (ptCats.length > 0) {
-    html += '<div class="plan-filter-group"><label class="plan-filter-label">📍 Catégorie de point</label><select class="plan-filter-select" onchange="_p.filters.pointCategorie=this.value;_pApplyFilters()"><option value="">Toutes</option>'+ptCats.map(c => '<option value="'+_escPlan(c)+'" '+(_p.filters.pointCategorie===c?'selected':'')+'>'+_escPlan(c)+'</option>').join('')+'</select></div>';
+    html += '<div class="plan-filter-group"><label class="plan-filter-label">Catégorie de point</label><select class="plan-filter-select" onchange="_p.filters.pointCategorie=this.value;_pApplyFilters()"><option value="">Toutes</option>'+ptCats.map(c => '<option value="'+_escPlan(c)+'" '+(_p.filters.pointCategorie===c?'selected':'')+'>'+_escPlan(c)+'</option>').join('')+'</select></div>';
   }
   html += '<div class="plan-filter-group"><label class="plan-filter-label">Catégorie de calque</label><div class="plan-filter-chips">'+Object.entries(CALQUE_CATEGORIES).map(([k,v])=>`<span class="plan-filter-chip ${_p.filters.category===k?'active':''}" onclick="_p.filters.category=_p.filters.category==='${k}'?'':'${k}';_pApplyFilters()">${v.icon} ${k}</span>`).join('')+'</div></div>';
-  if (hasActiveFilter) html += '<button class="btn btn-secondary btn-sm" onclick="_pClearFilters()" style="width:100%;margin-top:4px">🔄 Réinitialiser</button>';
+  if (hasActiveFilter) html += ('<button class="btn btn-secondary btn-sm" onclick="_pClearFilters()" style="width:100%;margin-top:4px">' + lk('refresh-cw') + ' Réinitialiser</button>');
   html += '</div></details>';
   // Compteur
   html += '<div style="font-size:11px;color:var(--gray-text);text-align:center;margin-bottom:6px;padding:4px;background:var(--gray-bg);border-radius:6px">'+filtered.length+' / '+_p.elements.length+' éléments</div>';
@@ -473,7 +541,7 @@ async function _planSelectEtage(id) { _p.etage = _p.etages.find(e=>e.Id==id)||nu
 function _pInitMap() {
   _p.rendu = (_p.rendu || 0) + 1;   // génération de carte : périme les rendus PDF en cours
   const mc = document.getElementById('planMapContainer');
-  if (!_p.etage) { if (mc) mc.innerHTML = '<div class="plan-empty-map"><div style="font-size:42px;margin-bottom:8px;opacity:.4">🗺️</div>Sélectionnez un bâtiment et un étage</div>'; return; }
+  if (!_p.etage) { if (mc) mc.innerHTML = ('<div class="plan-empty-map"><div style="font-size:42px;margin-bottom:8px;opacity:.4">' + lk('map') + '</div>Sélectionnez un bâtiment et un étage</div>'); return; }
   const et = _p.etage, w = et.FondLargeur||1000, h = et.FondHauteur||700;
   _pLoadRefMeterFromEtage(); // restaurer le mètre de référence sauvegardé pour cet étage
   if (_p.map) { _p.map.remove(); _p.map = null; } _p.layers = {}; if (mc) mc.innerHTML = '';
@@ -665,7 +733,7 @@ function _pTool(mode) {
 }
 function _pToolText() { _pCancel(); _p.mode=null; _p.textMode=true; _p.eraserMode=false; _p.refMode=false; document.querySelectorAll('.plan-tbtn').forEach(b=>b.classList.remove('active')); document.getElementById('ptText')?.classList.add('active'); ['planTraitSub','planLineStyle','planSymbol','planTraitOpts'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';}); const st=document.getElementById('planDrawStatus');if(st)st.textContent='Cliquez pour placer un texte'; const mc=document.getElementById('planMapContainer');if(mc)mc.style.cursor='text'; }
 function _pToolEraser() { _pCancel(); _p.mode=null; _p.textMode=false; _p.eraserMode=true; _p.refMode=false; document.querySelectorAll('.plan-tbtn').forEach(b=>b.classList.remove('active')); document.getElementById('ptEraser')?.classList.add('active'); ['planTraitSub','planLineStyle','planSymbol','planTraitOpts'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';}); const st=document.getElementById('planDrawStatus');if(st)st.textContent='Cliquez sur un élément pour le supprimer'; const mc=document.getElementById('planMapContainer');if(mc)mc.style.cursor='crosshair'; }
-function _pToolRef() { _pCancel(); _p.mode=null; _p.textMode=false; _p.eraserMode=false; _p.refMode=true; _p.refCoords=[]; document.querySelectorAll('.plan-tbtn').forEach(b=>b.classList.remove('active')); document.getElementById('ptRef')?.classList.add('active'); ['planTraitSub','planLineStyle','planSymbol','planTraitOpts'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';}); const dist=prompt('Distance réelle en mètres :',_p.refRealDist); if(!dist||isNaN(parseFloat(dist))){_pTool(null);return;} _p.refRealDist=parseFloat(dist); const st=document.getElementById('planDrawStatus');if(st)st.textContent='Cliquez 2 points = '+_p.refRealDist+'m'; const mc=document.getElementById('planMapContainer');if(mc)mc.style.cursor='crosshair'; const ri=document.getElementById('planRefInfo');if(ri){ri.style.display='';ri.textContent='📏 Cliquez le 1er point ('+_p.refRealDist+'m)';} }
+function _pToolRef() { _pCancel(); _p.mode=null; _p.textMode=false; _p.eraserMode=false; _p.refMode=true; _p.refCoords=[]; document.querySelectorAll('.plan-tbtn').forEach(b=>b.classList.remove('active')); document.getElementById('ptRef')?.classList.add('active'); ['planTraitSub','planLineStyle','planSymbol','planTraitOpts'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';}); const dist=prompt('Distance réelle en mètres :',_p.refRealDist); if(!dist||isNaN(parseFloat(dist))){_pTool(null);return;} _p.refRealDist=parseFloat(dist); const st=document.getElementById('planDrawStatus');if(st)st.textContent='Cliquez 2 points = '+_p.refRealDist+'m'; const mc=document.getElementById('planMapContainer');if(mc)mc.style.cursor='crosshair'; const ri=document.getElementById('planRefInfo');if(ri){ri.style.display='';ri.textContent='Cliquez le 1er point ('+_p.refRealDist+'m)';} }
 function _pToggleLockAngle() { if(!_p.lockAngle){const v=prompt('Angle (degrés):',_p.lockAngleVal);if(!v)return;_p.lockAngleVal=parseInt(v);_p.lockAngle=true;}else _p.lockAngle=false; document.getElementById('ptLockAngle')?.classList.toggle('active',_p.lockAngle); }
 function _pToggleLockDist() { if(!_p.lockDistance){const v=prompt('Distance (px):',_p.lockDistVal);if(!v)return;_p.lockDistVal=parseInt(v);_p.lockDistance=true;}else _p.lockDistance=false; document.getElementById('ptLockDist')?.classList.toggle('active',_p.lockDistance); }
 function _pCloseLoop() { if(_p.drawCoords.length<3){toast('3+ points','error');return;} _p.drawCoords.push([..._p.drawCoords[0]]); _pFinish(); }
@@ -692,7 +760,7 @@ function _pMapClick(e) {
   // Ref mètre
   if (_p.refMode) {
     _p.refCoords.push([lat,lng]);
-    if (_p.refCoords.length===1) { _p.refLayer=L.circleMarker([lat,lng],{radius:5,color:'#e74c3c',fillOpacity:1}).addTo(_p.map); const ri=document.getElementById('planRefInfo');if(ri)ri.textContent='📏 Cliquez le 2ème point'; }
+    if (_p.refCoords.length===1) { _p.refLayer=L.circleMarker([lat,lng],{radius:5,color:'#e74c3c',fillOpacity:1}).addTo(_p.map); const ri=document.getElementById('planRefInfo');if(ri)ri.textContent='Cliquez le 2ème point'; }
     if (_p.refCoords.length>=2) {
       if(_p.refLayer)_p.map.removeLayer(_p.refLayer);
       const[a,b]=_p.refCoords, distPx=Math.sqrt((b[1]-a[1])**2+(b[0]-a[0])**2);
@@ -814,9 +882,9 @@ function _pAddEl(el) {
       const ph='<div style="position:relative;width:'+sz+'px;height:'+sz+'px"><div style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:#9ca3af;box-shadow:0 0 0 2px #fff,0 1px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center"><svg width="'+Math.round(18*mScale)+'" height="'+Math.round(18*mScale)+'" viewBox="0 0 16 16"><circle cx="8" cy="5" r="3" fill="#fff"/><path d="M2.5,14.5 a5.5,4.5 0 0,1 11,0 z" fill="#fff"/></svg></div><div style="position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #9ca3af"></div></div>';
       icon=L.divIcon({html:ph,className:'',iconSize:[sz,sz+7],iconAnchor:[sz/2,sz+7]});
     } else {
-      const sym=el.Icone&&PLAN_SYMBOLS[el.Icone]?el.Icone:'circle';
-      const sz=Math.round(24*mScale);
-      icon=L.divIcon({html:'<div style="cursor:pointer;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))">'+PLAN_SYMBOLS[sym].svg(color,sz)+'</div>',className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
+      const sym=el.Icone&&(PLAN_SYMBOLS[el.Icone]||_planPicto(el.Icone))?el.Icone:'circle';
+      const sz=Math.round((_planPicto(sym)?28:24)*mScale);   // une icône se lit mieux un peu plus grande
+      icon=L.divIcon({html:'<div style="cursor:pointer;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))">'+_planSymboleHtml(sym,color,sz)+'</div>',className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
     }
     layer=L.marker(coords[0],{icon,draggable:canEdit()&&!isFixed}).addTo(_p.map);
     if(canEdit()&&!isFixed){layer.on('dragend',async()=>{const pos=layer.getLatLng();const nc=[[Math.round(pos.lat*10)/10,Math.round(pos.lng*10)/10]];await PlansApi.updateElement(el.Id,{nom:el.Nom,couleur:el.Couleur,opacite:el.Opacite,coords:JSON.stringify(nc),icone:el.Icone,description:el.Description,sousType:el.SousType||'',calque:el.Calque||'Plan'});el.Coords=JSON.stringify(nc);});}
@@ -930,13 +998,13 @@ function _pShowProps(el) {
   phtml += '<div class="plan-field"><span class="plan-field-label">Calque</span><span class="plan-field-val">' + _escPlan(el.Calque||'Plan') + '</span></div>';
   if (el.TypeElement === 'texte') phtml += '<div class="plan-field"><span class="plan-field-label">Annuaire</span><span class="plan-field-val">' + (el.AfficherAnnuaire==1 ? '\u2713 Affich\u00e9' : '\u2014 Masqu\u00e9') + '</span></div>';
   phtml += '<div class="plan-field"><span class="plan-field-label">Couleur</span><span class="plan-field-val"><span class="plan-color-dot" style="background:' + (el.Couleur||'#2b7be6') + '"></span>' + (el.Couleur||'#2b7be6') + '</span></div>';
-  if (el.TypeElement==='point') phtml += '<div class="plan-field"><span class="plan-field-label">Symbole</span><span class="plan-field-val">' + (PLAN_SYMBOLS[el.Icone]||PLAN_SYMBOLS.circle).label + '</span></div>';
+  if (el.TypeElement==='point') phtml += '<div class="plan-field"><span class="plan-field-label">Symbole</span><span class="plan-field-val">' + _escPlan(_planSymboleLibelle(el.Icone)) + '</span></div>';
   phtml += vtxInfo + measHtml + '</div>';
   if (ed) {
     phtml += '<div class="plan-props-actions">';
-    phtml += '<button class="btn btn-secondary btn-sm" style="flex:1" onclick="_planEditElement(' + el.Id + ')">\u270f\ufe0f Modifier</button>';
-    phtml += '<button class="btn btn-secondary btn-sm" onclick="_pToggleFix(' + el.Id + ')">' + (_p.fixedVertices.has(el.Id+'-0')?'\ud83d\udd13 Lib\u00e9rer':'\ud83d\udd12 Fixer') + '</button>';
-    phtml += '<button class="btn btn-sm" style="flex:1;background:var(--red-light);color:var(--red);border:1px solid var(--red)" onclick="_planDeleteElement(' + el.Id + ')">\ud83d\uddd1\ufe0f Supprimer</button>';
+    phtml += '<button class="btn btn-secondary btn-sm" style="flex:1" onclick="_planEditElement(' + el.Id + (')">' + lk('pencil') + ' Modifier</button>');
+    phtml += '<button class="btn btn-secondary btn-sm" onclick="_pToggleFix(' + el.Id + ')">' + (_p.fixedVertices.has(el.Id+'-0')?(lk('lock-open') + ' Lib\u00e9rer'):(lk('lock') + ' Fixer')) + '</button>';
+    phtml += '<button class="btn btn-sm" style="flex:1;background:var(--red-light);color:var(--red);border:1px solid var(--red)" onclick="_planDeleteElement(' + el.Id + (')">' + lk('trash') + ' Supprimer</button>');
     phtml += '</div>';
   }
   panel.innerHTML = phtml;
@@ -958,7 +1026,7 @@ async function _pShowBottom(el) {
   }
   let personHtml='';
   if (el.TypeElement==='point' && (el.EstPersonne==1 || el.RefUtilisateurId || el.PersonneData)) {
-    personHtml += '<div class="plan-bottom-title" style="margin-top:10px">\u{1f464} Personne ';
+    personHtml += ('<div class="plan-bottom-title" style="margin-top:10px">' + lk('user') + ' Personne ');
     if (ed) personHtml += '<button class="btn btn-primary btn-sm" onclick="_planAddPersonne('+el.Id+')" style="margin-left:8px">'+(personObj?'Modifier':'+ Ajouter une personne')+'</button>';
     personHtml += '</div>';
     if (personObj) {
@@ -988,11 +1056,11 @@ async function _pShowBottom(el) {
   }catch(_e){}}
   var bhtml = '<div class="plan-bottom-grid"><div>';
   bhtml += '<div class="plan-bottom-title">' + _escPlan(el.Nom||'Sans nom') + '</div>';
-  if (el.TypeElement === 'point' && el.SousType) bhtml += '<div style="font-size:12px;color:var(--blue);font-weight:600;margin:2px 0 4px">📍 ' + _escPlan(el.SousType) + '</div>';
+  if (el.TypeElement === 'point' && el.SousType) bhtml += ('<div style="font-size:12px;color:var(--blue);font-weight:600;margin:2px 0 4px">' + lk('map-pin') + ' ') + _escPlan(el.SousType) + '</div>';
   if (el.Description) bhtml += '<div class="plan-bottom-desc">' + _escPlan(el.Description) + '</div>';
   bhtml += personHtml;
   bhtml += extra + '</div><div>';
-  bhtml += '<div class="plan-bottom-title">\u{1f517} Mat\u00e9riel (' + enriched.length + ') ';
+  bhtml += ('<div class="plan-bottom-title">' + lk('link') + ' Mat\u00e9riel (') + enriched.length + ') ';
   if (ed) bhtml += '<button class="btn btn-primary btn-sm" onclick="_planLinkAsset(' + el.Id + ')" style="margin-left:8px">+ Rattacher</button>';
   bhtml += '</div>';
   if (enriched.length === 0) { bhtml += '<div class="plan-empty-msg" style="text-align:left;padding:8px 0">Aucun</div>'; }
@@ -1017,10 +1085,10 @@ function _pClearBottom() { const bc=document.getElementById('planBottomContent')
 function _planLinkAsset(elementId) {
   const listes = Array.isArray(_p.listes) ? _p.listes : [];
   const listeCats=[...new Set(listes.filter(l=>l.Actif!=0).map(l=>l.Categorie))].sort();
-  const listeOpts=listeCats.map(cat=>{const items=listes.filter(l=>l.Categorie===cat&&l.Actif!=0);return '<optgroup label="📋 '+_escPlan(cat)+'">'+items.map(l=>'<option value="Liste:'+l.Id+'" data-search="'+_escPlan((l.Valeur||'')+(l.Categorie||'')).toLowerCase()+'">'+_escPlan(l.Valeur)+'</option>').join('')+'</optgroup>';}).join('');
+  const listeOpts=listeCats.map(cat=>{const items=listes.filter(l=>l.Categorie===cat&&l.Actif!=0);return '<optgroup label="'+_escPlan(cat)+'">'+items.map(l=>'<option value="Liste:'+l.Id+'" data-search="'+_escPlan((l.Valeur||'')+(l.Categorie||'')).toLowerCase()+'">'+_escPlan(l.Valeur)+'</option>').join('')+'</optgroup>';}).join('');
   const bO=_p.biens.map(b=>'<option value="Bien:'+b.Id+'" data-search="'+_escPlan((b.Numero||'')+(b.Famille||'')+(b.InfoProduit||'')+(b.Marque||'')).toLowerCase()+'">'+_escPlan(b.Numero||'—')+' · '+_escPlan(b.Famille||'')+' '+_escPlan(b.InfoProduit||'')+'</option>').join('');
   const eO=_p.equips.map(e=>'<option value="Equipement:'+e.Id+'" data-search="'+_escPlan((e.Numero||'')+(e.Famille||'')+(e.Marque||'')+(e.Modele||'')).toLowerCase()+'">'+_escPlan(e.Numero||'—')+' · '+_escPlan(e.Famille||'')+' '+_escPlan(e.Marque||'')+' '+_escPlan(e.Modele||'')+'</option>').join('');
-  const html='<div style="display:flex;flex-direction:column;gap:12px"><div class="form-group"><label class="form-label">🔍 Rechercher</label><input class="form-control" id="pLASearch" placeholder="Tapez pour filtrer..." oninput="_planFilterAssetList()"></div><div class="form-group"><label class="form-label">Matériel à rattacher</label><div style="border:1px solid var(--gray-border);border-radius:8px;overflow:hidden"><select class="form-control" id="pLA" size="12" style="height:280px;width:100%;overflow-y:auto;border:none;border-radius:0">'+listeOpts+'<optgroup label="🏢 Biens">'+(bO||'<option disabled>Aucun</option>')+'</optgroup><optgroup label="⚙️ Équipements">'+(eO||'<option disabled>Aucun</option>')+'</optgroup></select></div></div></div>';
+  const html='<div style="display:flex;flex-direction:column;gap:12px"><div class="form-group"><label class="form-label">Rechercher</label><input class="form-control" id="pLASearch" placeholder="Tapez pour filtrer..." oninput="_planFilterAssetList()"></div><div class="form-group"><label class="form-label">Matériel à rattacher</label><div style="border:1px solid var(--gray-border);border-radius:8px;overflow:hidden"><select class="form-control" id="pLA" size="12" style="height:280px;width:100%;overflow-y:auto;border:none;border-radius:0">'+listeOpts+'<optgroup label="Biens">'+(bO||'<option disabled>Aucun</option>')+'</optgroup><optgroup label="Équipements">'+(eO||'<option disabled>Aucun</option>')+'</optgroup></select></div></div></div>';
   openModal('Rattacher du matériel',html,async()=>{const v=document.getElementById('pLA').value;if(!v)return;const[t,a]=v.split(':');await PlansApi.addLien({elementId,assetType:t,assetId:parseInt(a)});closeModal();toast('Rattaché','success');const el=_p.elements.find(x=>x.Id===elementId);if(el)_pShowBottom(el);});
 }
 function _planFilterAssetList() { const s=(document.getElementById('pLASearch')?.value||'').toLowerCase();const sel=document.getElementById('pLA');if(!sel)return;[...sel.options].forEach(o=>{if(o.disabled)return;o.style.display=!s||(o.getAttribute('data-search')||'').includes(s)?'':'none';}); }
@@ -1030,7 +1098,7 @@ function _planShowAssetDetail(type,id) {
   const fields=type==='Bien'?[['N°',asset.Numero],['Famille',asset.Famille],['Sous-famille',asset.SousFamille],['Statut',asset.Statut],['État',asset.Etat],['Prix',asset.Prix?asset.Prix+' €':''],['Bâtiment',asset.Batiment],['Affecté à',asset.NomPrenom],['Info produit',asset.InfoProduit],['N° Série',asset.NumSerie]]:[['N°',asset.Numero],['Famille',asset.Famille],['Marque',asset.Marque],['Modèle',asset.Modele],['Statut',asset.Statut],['État',asset.Etat],['Fournisseur',asset.Fournisseur],['Prix',asset.Prix?asset.Prix+' €':''],['Bâtiment',asset.Batiment],['N° Série',asset.NumSerie]];
   let html='<div class="plan-info-grid">'+fields.map(([l,v])=>'<div class="plan-info-field"><div class="plan-info-field-label">'+l+'</div><div class="plan-info-field-val">'+_escPlan(v||'—')+'</div></div>').join('')+'</div>';
   html+='<div style="margin-top:12px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Fermer</button></div>';
-  openModal((type==='Bien'?'🏢':'⚙️')+' '+_escPlan(asset.Numero||'#'+id),html);
+  openModal((type==='Bien'?'':'')+' '+_escPlan(asset.Numero||'#'+id),html);
 }
 async function _planUnlinkAsset(lienId,elementId) { if(!confirm('Détacher ?'))return;await PlansApi.deleteLien(lienId);toast('Détaché','success');const el=_p.elements.find(x=>x.Id===elementId);if(el)_pShowBottom(el); }
 
@@ -1118,7 +1186,7 @@ async function _planAddPersonne(elementId) {
   const searchTab =
     '<div id="ppTabSearch" style="display:'+(_p._personneMode==='search'?'block':'none')+'">'
     + (hasAccounts
-      ? '<div class="form-group"><label class="form-label">\ud83d\udd0d Rechercher un compte</label>'
+      ? ('<div class="form-group"><label class="form-label">' + lk('search') + ' Rechercher un compte</label>')
         + '<input class="form-control" id="ppUserSearch" placeholder="Nom, service, poste\u2026" oninput="_planFilterPersonneSelect()" style="margin-bottom:6px"></div>'
         + '<div class="form-group"><div style="border:1px solid var(--gray-border);border-radius:8px;overflow:hidden">'
         + '<select id="ppUser" size="7" class="form-control" style="width:100%;height:230px;border:none;border-radius:0">'+opts+'</select></div>'
@@ -1135,9 +1203,9 @@ async function _planAddPersonne(elementId) {
     + field('ppTel','T\u00e9l\u00e9phone',manual.Tel) + field('ppEmail','E-mail',manual.Email)
     + '</div></div>';
 
-  const html = '<div style="display:flex;gap:8px;margin-bottom:12px">'+tabBtn('search','\ud83d\udd0e Compte existant')+tabBtn('manual','\u270f\ufe0f Saisir manuellement')+'</div>' + searchTab + manualTab;
+  const html = '<div style="display:flex;gap:8px;margin-bottom:12px">'+tabBtn('search',(lk('search') + ' Compte existant'))+tabBtn('manual',(lk('pencil') + ' Saisir manuellement'))+'</div>' + searchTab + manualTab;
 
-  openModal('\ud83d\udc64 Personne rattach\u00e9e', html, async () => {
+  openModal('Personne rattach\u00e9e', html, async () => {
     const mode = _p._personneMode || 'search';
     let payload, localRef = null, localData = null;
     if (mode === 'search') {
@@ -1200,7 +1268,7 @@ async function _planRemovePersonne(elementId) {
 async function _pSaveElement(type, coords) {
   const calques=_planGetCalques().filter(c=>c!==_p.activeCalque);calques.unshift(_p.activeCalque);
   const html='<div style="display:flex;flex-direction:column;gap:16px"><div><div class="section-label">Identification</div><div class="form-grid"><div class="form-group"><label class="form-label">Nom</label><input class="form-control" id="pXN" placeholder="Bureau 12..."></div><div class="form-group"><label class="form-label">Calque</label><select class="form-control" id="pXL">'+calques.map(c=>'<option value="'+_escPlan(c)+'">'+_escPlan(c)+'</option>').join('')+'</select></div><div class="form-group"><label class="form-label">Couleur</label><input type="color" id="pXC" value="'+_p.color+'" style="height:38px;width:100%;padding:2px;border-radius:8px;border:1px solid var(--gray-border)"></div><div class="form-group"><label class="form-label">Opacité</label><input type="range" id="pXO" min="0.05" max="1" step="0.05" value="'+_p.opacity+'" style="width:100%;margin-top:8px"></div>'
-    +(type==='point'?'<div class="form-group"><label class="form-label">Symbole</label><select class="form-control" id="pXS">'+Object.entries(PLAN_SYMBOLS).map(([k,v])=>'<option value="'+k+'" '+(k===_p.symbol?'selected':'')+'>'+v.label+'</option>').join('')+'</select></div>':'')
+    +(type==='point'?_planSymboleChampHtml(_p.symbol||'circle'):'')
     +(type==='point'?_planPointCategorieFieldHtml(_p.lastPointCategorie||''):'')
     +(type==='trait'?'<div class="form-group"><label class="form-label">Type de trait</label><select class="form-control" id="pXT">'+Object.entries(TRAIT_SUBTYPES).map(([k,v])=>'<option value="'+k+'" '+(k===_p.sousType?'selected':'')+'>'+v.label+'</option>').join('')+'</select></div>':'')
     +(type==='zone'?'<div class="form-group"><label class="form-label">Hauteur (m)</label><input class="form-control" id="pXH" type="number" step="0.1" value="0" min="0" placeholder="Pour calcul volume"></div>':'')
@@ -1216,7 +1284,7 @@ async function _pSaveElement(type, coords) {
       return;
     }
     if (type === 'point') _p.lastPointCategorie = sousTypeVal; // mémoriser pour le prochain
-    const data={etageId:_p.etage.Id,typeElement:type,nom:document.getElementById('pXN').value.trim(),couleur:document.getElementById('pXC').value,opacite:parseFloat(document.getElementById('pXO').value)||.4,coords:JSON.stringify(coords),icone:type==='point'?(document.getElementById('pXS')?.value||'circle'):'',sousType:sousTypeVal,calque:document.getElementById('pXL')?.value||_p.activeCalque,description:document.getElementById('pXD').value.trim()};
+    const data={etageId:_p.etage.Id,typeElement:type,nom:document.getElementById('pXN').value.trim(),couleur:document.getElementById('pXC').value,opacite:parseFloat(document.getElementById('pXO').value)||.4,coords:JSON.stringify(coords),icone:type==='point'?_planSymboleLu():'',sousType:sousTypeVal,calque:document.getElementById('pXL')?.value||_p.activeCalque,description:document.getElementById('pXD').value.trim()};
     const hauteur=type==='zone'?parseFloat(document.getElementById('pXH')?.value)||0:0;
     const res=await PlansApi.addElement(data);
     const newEl={Id:res.id,Nom:data.nom,Couleur:data.couleur,Opacite:data.opacite,Coords:data.coords,TypeElement:type,Icone:data.icone,SousType:data.sousType,Calque:data.calque,Description:data.description,Hauteur:hauteur};
@@ -1229,7 +1297,7 @@ async function _planEditElement(id) {
   const isTrait=el.TypeElement==='trait',isPoint=el.TypeElement==='point',isTexte=el.TypeElement==='texte',isZone=el.TypeElement==='zone';
   const calques=_planGetCalques();
   const html='<div style="display:flex;flex-direction:column;gap:16px"><div><div class="section-label">Identification</div><div class="form-grid"><div class="form-group"><label class="form-label">Nom</label><input class="form-control" id="pXN" value="'+_escPlan(el.Nom||'')+'"></div><div class="form-group"><label class="form-label">Calque</label><select class="form-control" id="pXL">'+calques.map(c=>'<option value="'+_escPlan(c)+'" '+(c===(el.Calque||'Plan')?'selected':'')+'>'+_escPlan(c)+'</option>').join('')+'</select></div><div class="form-group"><label class="form-label">Couleur</label><input type="color" id="pXC" value="'+(el.Couleur||'#2b7be6')+'" style="height:38px;width:100%;padding:2px;border-radius:8px;border:1px solid var(--gray-border)"></div><div class="form-group"><label class="form-label">Opacité</label><input type="range" id="pXO" min="0.05" max="1" step="0.05" value="'+(el.Opacite||.4)+'" style="width:100%;margin-top:8px"></div>'
-    +(isPoint?'<div class="form-group"><label class="form-label">Symbole</label><select class="form-control" id="pXS">'+Object.entries(PLAN_SYMBOLS).map(([k,v])=>'<option value="'+k+'" '+(k===(el.Icone||'circle')?'selected':'')+'>'+v.label+'</option>').join('')+'</select></div>':'')
+    +(isPoint?_planSymboleChampHtml(el.Icone||'circle'):'')
     +(isPoint?_planPointCategorieFieldHtml(el.SousType||''):'')
     +(isTrait?'<div class="form-group"><label class="form-label">Type de trait</label><select class="form-control" id="pXT">'+Object.entries(TRAIT_SUBTYPES).map(([k,v])=>'<option value="'+k+'" '+(k===(el.SousType||'')?'selected':'')+'>'+v.label+'</option>').join('')+'</select></div>':'')
     +(isTexte?'<div class="form-group"><label class="form-label">Taille</label><input class="form-control" id="pXTS" type="number" value="'+(parseInt(el.SousType)||14)+'" min="8" max="48"></div>':'')
@@ -1247,7 +1315,7 @@ async function _planEditElement(id) {
       toast('La catégorie est obligatoire', 'error');
       return;
     }
-    const data={nom:document.getElementById('pXN').value.trim(),couleur:document.getElementById('pXC').value,opacite:parseFloat(document.getElementById('pXO').value)||.4,coords:el.Coords,icone:isPoint?(document.getElementById('pXS')?.value||'circle'):el.Icone||'',sousType:sousTypeVal,calque:document.getElementById('pXL')?.value||el.Calque||'Plan',description:document.getElementById('pXD').value.trim()};
+    const data={nom:document.getElementById('pXN').value.trim(),couleur:document.getElementById('pXC').value,opacite:parseFloat(document.getElementById('pXO').value)||.4,coords:el.Coords,icone:isPoint?_planSymboleLu():el.Icone||'',sousType:sousTypeVal,calque:document.getElementById('pXL')?.value||el.Calque||'Plan',description:document.getElementById('pXD').value.trim()};
     if(isTexte)data.afficherAnnuaire=document.getElementById('pXTA')?.checked?1:0;
     const hauteur=isZone?parseFloat(document.getElementById('pXH')?.value)||0:el.Hauteur||0;
     await PlansApi.updateElement(id,data);
@@ -1278,19 +1346,19 @@ async function _planEditBatiment(id) {
   });
 }
 async function _planDeleteBatiment() { if(!_p.batiment)return;if(!confirm('Supprimer « '+_p.batiment.Nom+' » et tout son contenu ?'))return;await PlansApi.deleteBatiment(_p.batiment.Id);_p.batiment=null;_p.etage=null;toast('Supprimé','success');renderPlans(); }
-function _planInfoBatiment() { if(!_p.batiment)return;const b=_p.batiment;const fields=[['Nom',b.Nom],['Adresse',b.Adresse],['Type',b.Type],['Surface',(b.Surface||'—')+' m²'],['Étages',_p.etages.length],['Année',b.AnneeConstruction],['Propriétaire',b.Proprietaire],['Gestionnaire',b.Gestionnaire],['Tél.',b.Telephone],['Email',b.Email]];let html='<div class="plan-info-grid">'+fields.map(([l,v])=>'<div class="plan-info-field"><div class="plan-info-field-label">'+l+'</div><div class="plan-info-field-val">'+_escPlan(v||'—')+'</div></div>').join('')+'</div>';if(b.Notes)html+='<div style="margin-top:8px;padding:8px;background:var(--gray-bg);border-radius:6px;font-size:12px">'+_escPlan(b.Notes)+'</div>';html+='<hr style="margin:12px 0"><div style="font-size:12px;color:var(--gray-text)">'+_p.elements.length+' éléments · '+_planGetCalques().length+' calques</div>';openModal('ℹ️ '+_escPlan(b.Nom),html); }
+function _planInfoBatiment() { if(!_p.batiment)return;const b=_p.batiment;const fields=[['Nom',b.Nom],['Adresse',b.Adresse],['Type',b.Type],['Surface',(b.Surface||'—')+' m²'],['Étages',_p.etages.length],['Année',b.AnneeConstruction],['Propriétaire',b.Proprietaire],['Gestionnaire',b.Gestionnaire],['Tél.',b.Telephone],['Email',b.Email]];let html='<div class="plan-info-grid">'+fields.map(([l,v])=>'<div class="plan-info-field"><div class="plan-info-field-label">'+l+'</div><div class="plan-info-field-val">'+_escPlan(v||'—')+'</div></div>').join('')+'</div>';if(b.Notes)html+='<div style="margin-top:8px;padding:8px;background:var(--gray-bg);border-radius:6px;font-size:12px">'+_escPlan(b.Notes)+'</div>';html+='<hr style="margin:12px 0"><div style="font-size:12px;color:var(--gray-text)">'+_p.elements.length+' éléments · '+_planGetCalques().length+' calques</div>';openModal(''+_escPlan(b.Nom),html); }
 
 // ══════════════════ CRUD ÉTAGES ══════════════════
-async function _planEditEtage(id) { if(!_p.batiment){toast('Sélectionnez un bâtiment','error');return;} const et=id?_p.etages.find(x=>x.Id==id)||{}:{}; const html='<div style="display:flex;flex-direction:column;gap:16px"><div><div class="section-label">Identification</div><div class="form-grid"><div class="form-group"><label class="form-label">Nom *</label><input class="form-control" id="pEN" value="'+_escPlan(et.Nom||'')+'" placeholder="RDC, 1er…"></div><div class="form-group"><label class="form-label">Niveau (0=RDC)</label><input class="form-control" id="pEV" type="number" value="'+(et.Niveau??0)+'"></div></div></div><div><div class="section-label">Échelle</div><div class="form-grid"><div class="form-group"><label class="form-label">Échelle (m/px)</label><input class="form-control" id="pES" type="number" step="0.001" value="'+(et.Echelle||0.05)+'"><div style="font-size:11px;color:var(--gray-text);margin-top:4px">Ou utilisez l\'outil 📏 pour définir visuellement</div></div></div></div><div><div class="section-label">Canevas</div><div class="form-grid"><div class="form-group"><label class="form-label">Largeur (px)</label><input class="form-control" id="pEW" type="number" value="'+(et.FondLargeur||1000)+'"></div><div class="form-group"><label class="form-label">Hauteur (px)</label><input class="form-control" id="pEH" type="number" value="'+(et.FondHauteur||700)+'"></div></div></div></div>'; openModal(id?'Modifier l\'étage':'Nouvel étage',html,async()=>{const data={batimentId:_p.batiment.Id,nom:document.getElementById('pEN').value.trim(),niveau:parseInt(document.getElementById('pEV').value)||0,fondLargeur:parseInt(document.getElementById('pEW').value)||1000,fondHauteur:parseInt(document.getElementById('pEH').value)||700,echelle:parseFloat(document.getElementById('pES').value)||0.05};if(!data.nom){toast('Nom requis','error');return;}if(id)await PlansApi.updateEtage(id,data);else await PlansApi.addEtage(data);closeModal();toast(id?'Modifié':'Ajouté','success');_p.etages=await PlansApi.getEtages(_p.batiment.Id);if(!_p.etage&&_p.etages.length)_p.etage=_p.etages[0];if(_p.etage)_p.elements=await PlansApi.getElements(_p.etage.Id);_renderMain(document.getElementById('mainContent'));}); }
+async function _planEditEtage(id) { if(!_p.batiment){toast('Sélectionnez un bâtiment','error');return;} const et=id?_p.etages.find(x=>x.Id==id)||{}:{}; const html='<div style="display:flex;flex-direction:column;gap:16px"><div><div class="section-label">Identification</div><div class="form-grid"><div class="form-group"><label class="form-label">Nom *</label><input class="form-control" id="pEN" value="'+_escPlan(et.Nom||'')+'" placeholder="RDC, 1er…"></div><div class="form-group"><label class="form-label">Niveau (0=RDC)</label><input class="form-control" id="pEV" type="number" value="'+(et.Niveau??0)+'"></div></div></div><div><div class="section-label">Échelle</div><div class="form-grid"><div class="form-group"><label class="form-label">Échelle (m/px)</label><input class="form-control" id="pES" type="number" step="0.001" value="'+(et.Echelle||0.05)+('"><div style="font-size:11px;color:var(--gray-text);margin-top:4px">Ou utilisez l\'outil ' + lk('ruler') + ' pour définir visuellement</div></div></div></div><div><div class="section-label">Canevas</div><div class="form-grid"><div class="form-group"><label class="form-label">Largeur (px)</label><input class="form-control" id="pEW" type="number" value="')+(et.FondLargeur||1000)+'"></div><div class="form-group"><label class="form-label">Hauteur (px)</label><input class="form-control" id="pEH" type="number" value="'+(et.FondHauteur||700)+'"></div></div></div></div>'; openModal(id?'Modifier l\'étage':'Nouvel étage',html,async()=>{const data={batimentId:_p.batiment.Id,nom:document.getElementById('pEN').value.trim(),niveau:parseInt(document.getElementById('pEV').value)||0,fondLargeur:parseInt(document.getElementById('pEW').value)||1000,fondHauteur:parseInt(document.getElementById('pEH').value)||700,echelle:parseFloat(document.getElementById('pES').value)||0.05};if(!data.nom){toast('Nom requis','error');return;}if(id)await PlansApi.updateEtage(id,data);else await PlansApi.addEtage(data);closeModal();toast(id?'Modifié':'Ajouté','success');_p.etages=await PlansApi.getEtages(_p.batiment.Id);if(!_p.etage&&_p.etages.length)_p.etage=_p.etages[0];if(_p.etage)_p.elements=await PlansApi.getElements(_p.etage.Id);_renderMain(document.getElementById('mainContent'));}); }
 async function _planDeleteEtage(id,nom) { if(!confirm('Supprimer « '+nom+' » ?'))return;await PlansApi.deleteEtage(id);toast('Supprimé','success');if(_p.etage?.Id==id)_p.etage=null;_p.etages=await PlansApi.getEtages(_p.batiment.Id);if(!_p.etage&&_p.etages.length)_p.etage=_p.etages[0];_p.elements=_p.etage?await PlansApi.getElements(_p.etage.Id):[];_renderMain(document.getElementById('mainContent')); }
 
 // ══════════════════ SAUVEGARDES ══════════════════
 function _planExportSnapshot() { const name=prompt('Nom :','Sauvegarde '+new Date().toLocaleDateString('fr-FR'));if(!name)return;const snap={id:Date.now(),name,date:new Date().toISOString(),batiment:_p.batiment?{Id:_p.batiment.Id,Nom:_p.batiment.Nom}:null,etage:_p.etage?{Id:_p.etage.Id,Nom:_p.etage.Nom}:null,elements:_p.elements.map(e=>({...e})),hiddenCalques:{..._p.hiddenCalques},activeCalque:_p.activeCalque};_p.savedSnapshots.push(snap);try{localStorage.setItem('gmao_plan_snapshots',JSON.stringify(_p.savedSnapshots));}catch(_e){}const blob=new Blob([JSON.stringify(snap,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='gmao_'+name.replace(/\s/g,'_')+'.json';a.click();URL.revokeObjectURL(url);toast('Sauvegarde créée','success'); }
 
 function _planShowSnapshots() {
-  let html=_p.savedSnapshots.length===0?'<div class="plan-empty-msg">Aucune sauvegarde</div>':_p.savedSnapshots.map(s=>'<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-border)"><div style="flex:1"><div style="font-weight:500">'+_escPlan(s.name)+'</div><div style="font-size:11px;color:var(--gray-text)">'+new Date(s.date).toLocaleString('fr-FR')+' · '+(s.elements?.length||0)+' éléments</div></div><button class="btn btn-secondary btn-sm" onclick="_planRestoreSnapshot('+s.id+')">♻️ Restaurer</button><button class="plan-icon-btn plan-icon-danger" onclick="_planDeleteSnapshot('+s.id+')">🗑️</button></div>').join('');
-  html+='<hr style="margin:12px 0"><div style="text-align:center"><button class="btn btn-secondary btn-sm" onclick="_planImportSnapshot()">📥 Importer JSON</button></div>';
-  openModal('📂 Sauvegardes',html);
+  let html=_p.savedSnapshots.length===0?'<div class="plan-empty-msg">Aucune sauvegarde</div>':_p.savedSnapshots.map(s=>'<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-border)"><div style="flex:1"><div style="font-weight:500">'+_escPlan(s.name)+'</div><div style="font-size:11px;color:var(--gray-text)">'+new Date(s.date).toLocaleString('fr-FR')+' · '+(s.elements?.length||0)+' éléments</div></div><button class="btn btn-secondary btn-sm" onclick="_planRestoreSnapshot('+s.id+(')">' + lk('recycle') + ' Restaurer</button><button class="plan-icon-btn plan-icon-danger" onclick="_planDeleteSnapshot(')+s.id+(')">' + lk('trash') + '</button></div>')).join('');
+  html+=('<hr style="margin:12px 0"><div style="text-align:center"><button class="btn btn-secondary btn-sm" onclick="_planImportSnapshot()">' + lk('download') + ' Importer JSON</button></div>');
+  openModal('Sauvegardes',html);
 }
 async function _planRestoreSnapshot(id) { const s=_p.savedSnapshots.find(x=>x.id===id);if(!s){toast('Introuvable','error');return;}if(!confirm('Restaurer « '+s.name+' » ?\\nLes éléments actuels seront remplacés.'))return;for(const el of _p.elements){try{await PlansApi.deleteElement(el.Id);}catch(_e){}}_p.elements=[];for(const el of(s.elements||[])){try{const data={etageId:_p.etage.Id,typeElement:el.TypeElement,nom:el.Nom||'',couleur:el.Couleur||'#2b7be6',opacite:el.Opacite||0.4,coords:typeof el.Coords==='string'?el.Coords:JSON.stringify(el.Coords),icone:el.Icone||'',sousType:el.SousType||'',calque:el.Calque||'Plan',description:el.Description||''};const res=await PlansApi.addElement(data);_p.elements.push({...el,Id:res.id});}catch(_e){console.warn('Restore skip:',_e);}}closeModal();toast('Restauré: '+s.name,'success');_pInitMap();_pRefreshCalqueLists(); }
 function _planDeleteSnapshot(id) { if(!confirm('Supprimer ?'))return;_p.savedSnapshots=_p.savedSnapshots.filter(x=>x.id!==id);try{localStorage.setItem('gmao_plan_snapshots',JSON.stringify(_p.savedSnapshots));}catch(_e){}toast('Supprimé','success');_planShowSnapshots(); }
@@ -1302,7 +1370,7 @@ function _planImportSnapshot() { const input=document.createElement('input');inp
 // l'image) sont signalés et peuvent être rattachés à un étage existant.
 async function _planShowFonds() {
   // On affiche la modal en chargement, puis on remplit
-  openModal('🖼️ Images de fond', '<div style="padding:24px;text-align:center;color:var(--gray-text)">⏳ Chargement…</div>');
+  openModal('Images de fond', ('<div style="padding:24px;text-align:center;color:var(--gray-text)">' + lk('hourglass') + ' Chargement…</div>'));
 
   let files = [];
   try {
@@ -1310,12 +1378,12 @@ async function _planShowFonds() {
     files = r?.files || [];
   } catch (e) {
     document.querySelector('#modalBody, .modal-body, .modal .modal-body')?.replaceChildren();
-    openModal('🖼️ Images de fond', '<div class="plan-empty-msg">Erreur de chargement : ' + _escPlan(e.message || 'inconnue') + '</div>');
+    openModal('Images de fond', '<div class="plan-empty-msg">Erreur de chargement : ' + _escPlan(e.message || 'inconnue') + '</div>');
     return;
   }
 
   if (!files.length) {
-    openModal('🖼️ Images de fond', '<div class="plan-empty-msg">Le dossier <code>data/plans</code> est vide.</div>');
+    openModal('Images de fond', '<div class="plan-empty-msg">Le dossier <code>data/plans</code> est vide.</div>');
     return;
   }
 
@@ -1337,7 +1405,7 @@ async function _planShowFonds() {
 
   if (orphans.length) {
     html += '<div style="font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-bottom:12px">'
-         +  '⚠️ <b>' + orphans.length + ' fichier(s) orphelin(s)</b> — présents dans le dossier mais non rattachés à un étage.'
+         +  (lk('triangle-exclamation-point', 'warn') + ' <b>') + orphans.length + ' fichier(s) orphelin(s)</b> — présents dans le dossier mais non rattachés à un étage.'
          +  '</div>';
   }
 
@@ -1345,17 +1413,17 @@ async function _planShowFonds() {
     const isPdf = f.ext === 'pdf';
     const url = API_BASE + '?action=plans_file&name=' + encodeURIComponent(f.name);
     const linkedInfo = f.linked
-      ? '<div style="font-size:11px;color:var(--gray-text);margin-top:2px">📌 Rattaché à : <b>' + niveauLabel(f.linked.niveau) + ' — ' + _escPlan(f.linked.etage_nom) + '</b></div>'
-      : '<div style="font-size:11px;color:#b45309;margin-top:2px">⚠️ Non rattaché</div>';
+      ? ('<div style="font-size:11px;color:var(--gray-text);margin-top:2px">' + lk('pin') + ' Rattaché à : <b>') + niveauLabel(f.linked.niveau) + ' — ' + _escPlan(f.linked.etage_nom) + '</b></div>'
+      : ('<div style="font-size:11px;color:#b45309;margin-top:2px">' + lk('triangle-exclamation-point', 'warn') + ' Non rattaché</div>');
     const previewInner = isPdf
-      ? '<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:var(--gray-bg);font-size:16px">📄</div>'
+      ? ('<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:var(--gray-bg);font-size:16px">' + lk('file-text') + '</div>')
       : '<img src="' + url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML=\'<div style=&quot;display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:var(--gray-bg);font-size:16px&quot;>?</div>\'">';
     const actions = []
-      .concat(['<button class="btn btn-secondary btn-sm" onclick="window.open(\'' + url + '\',\'_blank\')" title="Ouvrir dans un onglet">👁️ Voir</button>'])
+      .concat(['<button class="btn btn-secondary btn-sm" onclick="window.open(\'' + url + ('\',\'_blank\')" title="Ouvrir dans un onglet">' + lk('eye') + ' Voir</button>')])
       .concat(f.linked
         ? []
-        : ['<button class="btn btn-primary btn-sm" onclick="_planAttachOrphan(' + jsArg(f.name) + ')" title="Rattacher à un étage existant">🔗 Rattacher</button>',
-           '<button class="btn btn-danger btn-sm" onclick="_planDeleteOrphan(' + jsArg(f.name) + ')" title="Supprimer du dossier">🗑️</button>']);
+        : ['<button class="btn btn-primary btn-sm" onclick="_planAttachOrphan(' + jsArg(f.name) + (')" title="Rattacher à un étage existant">' + lk('link') + ' Rattacher</button>'),
+           '<button class="btn btn-danger btn-sm" onclick="_planDeleteOrphan(' + jsArg(f.name) + (')" title="Supprimer du dossier">' + lk('trash') + '</button>')]);
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--gray-border);border-radius:8px;margin-bottom:6px;background:' + (f.linked ? 'var(--white)' : '#fffbeb') + '">'
          + '<div style="width:60px;height:40px;border-radius:4px;overflow:hidden;border:1px solid var(--gray-border);flex-shrink:0">' + previewInner + '</div>'
          + '<div style="flex:1;min-width:0">'
@@ -1376,7 +1444,7 @@ async function _planShowFonds() {
     html += linked.map(renderRow).join('');
   }
 
-  openModal('🖼️ Images de fond — dossier <code>data/plans</code>', html);
+  openModal((lk('image') + ' Images de fond — dossier <code>data/plans</code>'), html);
 }
 
 // Rattacher un fichier orphelin à un étage existant
@@ -1391,8 +1459,8 @@ async function _planAttachOrphan(name) {
   }).join('');
   const html = '<div class="form-row"><p style="margin:0 0 8px;font-size:13px">Rattacher <code>' + _escPlan(name) + '</code> à un étage :</p>'
              + '<select id="pAttachEtage" class="input" style="width:100%">' + opts + '</select>'
-             + '<p style="margin:8px 0 0;font-size:11px;color:#b45309">⚠️ Si l\'étage a déjà un fond, il sera remplacé.</p></div>';
-  openModal('🔗 Rattacher à un étage', html, async () => {
+             + ('<p style="margin:8px 0 0;font-size:11px;color:#b45309">' + lk('triangle-exclamation-point', 'warn') + ' Si l\'étage a déjà un fond, il sera remplacé.</p></div>');
+  openModal('Rattacher à un étage', html, async () => {
     const sel = document.getElementById('pAttachEtage');
     const etageId = parseInt(sel?.value, 10);
     if (!etageId) { toast('Choisissez un étage', 'error'); return; }
@@ -1440,11 +1508,11 @@ function _planShowMoreMenu(evt) {
   menu.id = 'planMoreMenu';
   menu.style.cssText = 'position:fixed;top:'+(rect.bottom+4)+'px;right:'+(window.innerWidth-rect.right)+'px;background:var(--white);border:1px solid var(--gray-border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;min-width:220px;overflow:hidden';
   const items = [
-    { icon:'💾', label:'Créer une sauvegarde', action:'_planExportSnapshot()' },
-    { icon:'📂', label:'Mes sauvegardes…', action:'_planShowSnapshots()' },
-    { icon:'🖼️', label:'Voir les images de fond', action:'_planShowFonds()' },
+    { icon:lk('save'), label:'Créer une sauvegarde', action:'_planExportSnapshot()' },
+    { icon:lk('folder-open'), label:'Mes sauvegardes…', action:'_planShowSnapshots()' },
+    { icon:lk('image'), label:'Voir les images de fond', action:'_planShowFonds()' },
     { sep:true },
-    { icon:'⌨️', label:'Raccourcis clavier', action:'_planShowShortcuts()' },
+    { icon:lk('keyboard'), label:'Raccourcis clavier', action:'_planShowShortcuts()' },
   ];
   menu.innerHTML = items.map(it => {
     if (it.sep) return '<div style="height:1px;background:var(--gray-border);margin:4px 0"></div>';
@@ -1475,7 +1543,7 @@ function _planShowShortcuts() {
     + '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-bg)"><span>Outil mesure</span><kbd style="background:var(--gray-bg);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px">M</kbd></div>'
     + '<div style="display:flex;justify-content:space-between;padding:6px 0"><span>Recadrer sur les éléments</span><kbd style="background:var(--gray-bg);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px">F</kbd></div>'
     + '</div>';
-  openModal('⌨️ Raccourcis clavier', html);
+  openModal('Raccourcis clavier', html);
 }
 
 // ══════════════════ ACTIONS SUR SOMMET (modal au lieu de prompt) ══════════════════
@@ -1492,11 +1560,11 @@ function _pShowVertexActions(elId, idx) {
   const html = '<div style="font-size:13px;color:var(--gray-text);margin-bottom:12px">Sommet n°'+(idx+1)+' de « '+_escPlan(el.Nom||'Sans nom')+' »</div>'
     + '<div class="plan-vertex-action-grid">'
     + '<button class="plan-vertex-action-btn" onclick="_pVertexFix('+elId+','+idx+');closeModal()">'
-    + '<span class="icon">'+(isFixed?'🔓':'🔒')+'</span><span>'+(isFixed?'Libérer':'Fixer')+'</span>'
+    + '<span class="icon">'+(isFixed?lk('lock-open'):lk('lock'))+'</span><span>'+(isFixed?'Libérer':'Fixer')+'</span>'
     + '</button>'
     + (canDelete
-      ? '<button class="plan-vertex-action-btn danger" onclick="_pVertexDelete('+elId+','+idx+');closeModal()"><span class="icon">🗑️</span><span>Supprimer</span></button>'
-      : '<button class="plan-vertex-action-btn" disabled style="opacity:.4;cursor:not-allowed"><span class="icon">🗑️</span><span>Min. '+minPts+' pts</span></button>')
+      ? '<button class="plan-vertex-action-btn danger" onclick="_pVertexDelete('+elId+','+idx+(');closeModal()"><span class="icon">' + lk('trash') + '</span><span>Supprimer</span></button>')
+      : ('<button class="plan-vertex-action-btn" disabled style="opacity:.4;cursor:not-allowed"><span class="icon">' + lk('trash') + '</span><span>Min. ')+minPts+' pts</span></button>')
     + '</div>';
   openModal('Action sur le sommet', html);
 }

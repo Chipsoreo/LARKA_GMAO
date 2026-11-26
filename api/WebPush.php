@@ -44,7 +44,7 @@ class WebPush {
     ];
 
     /**
-     * ⚠️ FIX SÉCURITÉ (SSRF) : l'« endpoint » d'une souscription est fourni par
+     * FIX SÉCURITÉ (SSRF) : l'« endpoint » d'une souscription est fourni par
      * le navigateur — donc par n'importe quel compte connecté — et le serveur
      * lui envoyait ensuite une requête POST, TLS non vérifié, en renvoyant le
      * début de la réponse dans le diagnostic du test push. Une souscription
@@ -132,7 +132,7 @@ class WebPush {
             CURLOPT_POSTFIELDS     => $encrypted,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
-            // ⚠️ FIX SÉCURITÉ : la vérification TLS était désactivée.
+            // FIX SÉCURITÉ : la vérification TLS était désactivée.
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
@@ -160,7 +160,7 @@ class WebPush {
     /**
      * Envoie un lot de notifications EN PARALLÈLE via curl_multi.
      *
-     * ⚠️ FIX PERFS : `send()` séquentielle prend ~30s en cas de timeout sur
+     * FIX PERFS : `send()` séquentielle prend ~30s en cas de timeout sur
      * un seul push service lent — multiplié par N abonnés, on dépasse vite
      * `max_execution_time`. Avec curl_multi, tous les push partent ensemble
      * et on récupère les réponses au fur et à mesure : le total équivaut à
@@ -241,7 +241,7 @@ class WebPush {
                     CURLOPT_POSTFIELDS     => $req['encrypted'],
                     CURLOPT_HTTPHEADER     => $req['headers'],
                     CURLOPT_RETURNTRANSFER => true,
-                    // ⚠️ FIX SÉCURITÉ : la vérification TLS était désactivée.
+                    // FIX SÉCURITÉ : la vérification TLS était désactivée.
                     CURLOPT_SSL_VERIFYPEER => true,
                     CURLOPT_SSL_VERIFYHOST => 2,
                     CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
@@ -488,7 +488,7 @@ class WebPush {
     /**
      * Fichier de configuration OpenSSL, sous Windows seulement.
      *
-     * ⚠️ SOUS WINDOWS, AUCUNE NOTIFICATION NE POUVAIT PARTIR.
+     * SOUS WINDOWS, AUCUNE NOTIFICATION NE POUVAIT PARTIR.
      * openssl_pkey_new() et openssl_pkey_export() lisent un openssl.cnf, que PHP
      * pour Windows cherche dans « C:\Program Files\Common Files\SSL\ » — où il
      * n'est presque jamais — à moins que la variable OPENSSL_CONF ne le désigne.

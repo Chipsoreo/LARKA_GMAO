@@ -192,7 +192,7 @@ function _extZoneDepot() {
       onclick="document.getElementById('extFichier').click()"
       style="border:2px dashed var(--gray-border);border-radius:10px;padding:26px;
         text-align:center;cursor:pointer;transition:all .15s;background:var(--gray-bg)">
-      <div style="font-size:30px;line-height:1">🧩</div>
+      <div style="font-size:30px;line-height:1">${lk('puzzle')}</div>
       <div style="font-weight:600;margin-top:6px">
         Glissez un paquet <code>.larka</code> ici</div>
       <div style="font-size:12px;color:var(--gray-text);margin-top:3px">
@@ -368,7 +368,7 @@ function _extTableau() {
         ${e.echecs ? `<div style="font-size:11px">${e.echecs} échec(s)</div>` : ''}
         ${e.installee && e.roles_effectifs ? `
           <div style="font-size:11px;color:var(--gray-text);margin-top:3px">
-            👥 ${_extEsc(e.roles_effectifs.join(', '))}</div>` : ''}
+            ${lk('users')} ${_extEsc(e.roles_effectifs.join(', '))}</div>` : ''}
       </td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm btn-secondary"
@@ -376,7 +376,7 @@ function _extTableau() {
         ${e.installee && (e.roles_optionnels || []).length ? `
           <button class="btn btn-sm btn-secondary"
             onclick="extRoles('${_extEsc(e.identifiant)}')"
-            title="Qui voit ce module">👥 Accès</button>` : ''}
+            title="Qui voit ce module">${lk('users')} Accès</button>` : ''}
         ${e.installee && !e.code_modifie && !e.capacites_nouvelles?.length ? `
           <button class="btn btn-sm ${e.active ? 'btn-secondary' : 'btn-primary'}"
             onclick="extBasculer('${_extEsc(e.identifiant)}', ${!e.active})">
@@ -777,7 +777,7 @@ async function extRoles(id) {
   const possibles = e.roles_optionnels || [];
   const actifs = new Set(e.roles_effectifs || []);
 
-  openModal(`👥 Accès à « ${_extEsc(e.nom || id)} »`, `
+  openModal(`Accès à « ${_extEsc(e.nom || id)} »`, `
     <div class="form-grid cols-1">
       <p style="font-size:13px;color:var(--gray-text);margin:0">
         Les gestionnaires et administrateurs conservent l'accès dans tous les

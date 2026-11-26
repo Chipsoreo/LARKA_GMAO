@@ -67,6 +67,60 @@ function lireCsv(octets) {
   return XLSX.read(texte, { type: 'string', raw: true, FS: sep ? sep[1] : undefined });
 }
 
+/**
+ * ⚠️ LES DATES AU FORMAT D'AFFICHAGE « 21-janv » PERDAIENT LEUR ANNÉE : la
+ * feuille était lue telle qu'affichée (sheet_to_json, raw: false), et dateNF
+ * ne sert qu'aux cellules SANS format. Un planning saisi en « j-mmm » arrivait
+ * donc en « 21-Jan », illisible. Une cellule date est maintenant rendue en
+ * AAAA-MM-JJ d'après sa valeur (numéro de série, sans fuseau horaire), quel
+ * que soit son format ; une heure seule (« 1:45 », durée) reste telle qu'affichée.
+ *
+ * Lecture cellule par cellule plutôt que sheet_to_json :
+ *   - les lignes et colonnes gardent leur place réelle (ligne 1 = A1, lignes
+ *     vides comprises) : les références montrées à l'utilisateur sont celles
+ *     de son fichier ;
+ *   - l'étendue vient des cellules présentes, pas de « !ref » (un !ref gonflé à
+ *     A1:XFD1048576 ne fait plus construire un tableau géant).
+ * Les cellules fusionnées sont transmises à part (zones [l1, c1, l2, c2]) :
+ * seul l'import d'un planning s'en sert ; ailleurs, recopier la valeur dans
+ * toute la zone dupliquerait par exemple le titre du document sur une ligne.
+ */
+const MAX_LIGNES = 200000, MAX_COLONNES = 2000;
+function lireFeuille(ws) {
+  const grille = [];
+  let maxC = -1;
+  for (const cle of Object.keys(ws)) {
+    if (cle.charAt(0) === '!') continue;
+    const a = XLSX.utils.decode_cell(cle);
+    if (!(a.r >= 0 && a.r < MAX_LIGNES && a.c >= 0 && a.c < MAX_COLONNES)) continue;
+    const c = ws[cle];
+    if (!c || c.v == null) continue;
+    let v;
+    if (c.t === 'n' && c.v >= 1 && c.z && XLSX.SSF.is_date(c.z)) {
+      const d = XLSX.SSF.parse_date_code(c.v);
+      v = d ? d.y + '-' + String(d.m).padStart(2, '0') + '-' + String(d.d).padStart(2, '0') : String(c.v);
+    } else if (c.t === 'd' && c.v instanceof Date && !isNaN(c.v.getTime())) {
+      v = c.v.toISOString().substring(0, 10);
+    } else {
+      v = c.w != null ? String(c.w) : String(c.v);
+    }
+    if (v === '') continue;
+    (grille[a.r] || (grille[a.r] = []))[a.c] = v;
+    if (a.c > maxC) maxC = a.c;
+  }
+  const lignes = [];
+  for (let r = 0; r < grille.length; r++) {
+    const src = grille[r] || [], l = new Array(maxC + 1);
+    for (let c = 0; c <= maxC; c++) l[c] = src[c] == null ? '' : src[c];
+    lignes.push(l);
+  }
+  const fusions = [];
+  for (const m of (ws['!merges'] || [])) {
+    if (m && m.s && m.e && fusions.length < 20000) fusions.push([m.s.r, m.s.c, m.e.r, m.e.c].map((x) => parseInt(x, 10) || 0));
+  }
+  return { lignes, fusions };
+}
+
 self.onmessage = (e) => {
   const d = e.data || {};
   try {
@@ -74,13 +128,13 @@ self.onmessage = (e) => {
     const octets = new Uint8Array(d.buf);
     const wb = /\.(csv|txt)$/i.test(String(d.nom || ''))
       ? lireCsv(octets)
-      : XLSX.read(octets, { type: 'array', cellDates: true });
+      : XLSX.read(octets, { type: 'array', cellNF: true });
     // Paires [nom, lignes] plutôt qu'un objet indexé par nom : une feuille
     // nommée « __proto__ » ou « constructor » reste une donnée ordinaire.
     const feuilles = [];
     for (const nom of wb.SheetNames) {
-      const lignes = XLSX.utils.sheet_to_json(wb.Sheets[nom], { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' });
-      feuilles.push([String(nom), lignes.map((l) => Array.from(l, (c) => (c == null ? '' : String(c))))]);
+      const f = lireFeuille(wb.Sheets[nom]);
+      feuilles.push([String(nom), f.lignes, f.fusions]);
     }
     self.postMessage({ ok: true, feuilles });
   } catch (err) {

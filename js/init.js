@@ -379,6 +379,9 @@ function initApp(user, isSessionRestore = false) {
     }
 
     window._currentUser = user;
+    // Icônes Lucide choisies par l'organisation hors du jeu embarqué (plans,
+    // urgences) : quelques Ko, non bloquant.
+    if (typeof LarkaIcones !== 'undefined' && LarkaIcones.chargerChoisies) LarkaIcones.chargerChoisies();
     await buildSidebarWithVisibility(user);
 
     // Extensions communautaires : charge les pages et scripts autorisés pour ce
@@ -486,7 +489,7 @@ function initApp(user, isSessionRestore = false) {
 // ── Utilitaire HTML d'erreur ──────────────────────────────────────────────────
 function errorHtml(msg) {
   const escaped = String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  return `<div class="card" style="color:var(--red);text-align:center;padding:48px">⚠️ ${escaped}</div>`;
+  return `<div class="card" style="color:var(--red);text-align:center;padding:48px">${lk('triangle-exclamation-point', 'warn')} ${escaped}</div>`;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -564,25 +567,25 @@ function _setupDemandeurNotifBell() {
     pushHtml = `
       <div style="padding:16px;text-align:center;color:var(--gray-text);font-size:13px">
         Les notifications push ne sont pas supportées sur ce navigateur.
-        ${pushStatus?.isIOS && !pushStatus?.isIOSPWA ? '<br><br>📱 <strong>Sur iPhone</strong>, ajoutez l\'app à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil) pour les activer.' : ''}
+        ${pushStatus?.isIOS && !pushStatus?.isIOSPWA ? ('<br><br>' + lk('smartphone') + ' <strong>Sur iPhone</strong>, ajoutez l\'app à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil) pour les activer.') : ''}
       </div>`;
   } else if (granted) {
     pushHtml = `
       <div style="padding:16px;text-align:center">
-        <div style="font-size:28px;margin-bottom:8px">🔔</div>
+        <div style="font-size:28px;margin-bottom:8px">${lk('bell')}</div>
         <div style="font-size:13px;color:var(--green,#16a34a);font-weight:600;margin-bottom:4px">Notifications activées</div>
         <div style="font-size:12px;color:var(--gray-text);margin-bottom:12px">Vous recevrez les notifications sur cet appareil.</div>
-        <button onclick="PushManager_GMAO.testNotification()" style="font-size:12px;padding:6px 14px;background:var(--blue);color:white;border:none;border-radius:6px;cursor:pointer;margin-right:6px">📤 Tester</button>
+        <button onclick="PushManager_GMAO.testNotification()" style="font-size:12px;padding:6px 14px;background:var(--blue);color:white;border:none;border-radius:6px;cursor:pointer;margin-right:6px">${lk('upload')} Tester</button>
         <button onclick="PushManager_GMAO.disable().then(()=>{_setupDemandeurNotifBell();toast('Notifications désactivées','success')})" style="font-size:12px;padding:6px 14px;background:var(--gray-bg);color:var(--text);border:1px solid var(--gray-border);border-radius:6px;cursor:pointer">Désactiver</button>
       </div>`;
   } else {
     pushHtml = `
       <div style="padding:16px;text-align:center">
-        <div style="font-size:28px;margin-bottom:8px">🔕</div>
+        <div style="font-size:28px;margin-bottom:8px">${lk('bell-off')}</div>
         <div style="font-size:13px;font-weight:600;margin-bottom:4px">Notifications désactivées</div>
         <div style="font-size:12px;color:var(--gray-text);margin-bottom:12px">Activez-les pour être prévenu(e) quand votre demande est traitée.</div>
         <button onclick="PushManager_GMAO.promptNow();setTimeout(_setupDemandeurNotifBell,2000)" style="font-size:12px;padding:8px 18px;background:linear-gradient(135deg,#0096c7,#48cae4);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:700">
-          🔔 Activer les notifications
+          ${lk('bell')} Activer les notifications
         </button>
       </div>`;
   }
@@ -608,7 +611,7 @@ function _injectSuperAdminButton() {
       btn.id = 'saFloatingBtn';
       btn.title = 'Panneau Super Admin';
       btn.onclick = () => { window.location.href = '?superadmin'; };
-      btn.innerHTML = '🛡️';
+      btn.innerHTML = lk('shield');
       // La bulle assistant occupe aussi le coin bas-droite (bottom:24px, 56px).
       // Si elle est présente, on remonte le bouton super-admin juste au-dessus
       // pour éviter qu'ils se chevauchent ; sinon on reste à 20px.

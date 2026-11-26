@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2025-2026 Mickaël Larcin (Chipsoreo)
 // SPDX-License-Identifier: LicenseRef-Larka-Proprietary
 /**
- * Vérifie un pack de langue contre le catalogue lang/fr.json.
+ * Vérifie un pack de langue contre le catalogue (lang/traductions.json).
  *
  * Trois défauts sont cherchés, dans cet ordre d'importance :
  *
@@ -19,6 +19,7 @@
  *      portent un accent ou un mot outil français.
  *
  *   php outils/langues/verifier-traduction.php extensions/langues/larka.langue-en/extension.json
+ *   php outils/langues/verifier-traduction.php lang/traductions.json      (toutes ses langues)
  */
 
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit("Ligne de commande uniquement.\n"); }
@@ -31,11 +32,18 @@ if ($fichier === '' || !is_file($fichier)) {
     exit(2);
 }
 
-$cat = json_decode((string)file_get_contents($racine . '/lang/fr.json'), true)['libelles'] ?? [];
+require __DIR__ . '/traductions.php';
+$base = trad_lire($racine);
+$cat = trad_catalogue($base);
 $pack = json_decode((string)file_get_contents($fichier), true);
-// lang/<code>.json (fichier du traducteur, même forme que le catalogue) ou
-// extension.json d'un pack.
-$langues = $pack['langues'] ?? (isset($pack['libelles'], $pack['langue']) ? [$pack['langue'] => $pack['libelles']] : []);
+// Le fichier de traduction lui-même (toutes ses langues sauf le français), ou
+// l'extension.json d'un pack.
+if (realpath($fichier) === realpath($racine . '/' . TRAD_CHEMIN)) {
+    $langues = [];
+    foreach (array_keys($base['langues']) as $code) if ($code !== 'fr') $langues[$code] = trad_langue($base, $code);
+} else {
+    $langues = $pack['langues'] ?? [];
+}
 if ($cat === [] || $langues === []) {
     fwrite(STDERR, "Catalogue ou pack illisible.\n");
     exit(2);
@@ -88,7 +96,7 @@ foreach ($langues as $code => $dico) {
     $ordre = array_values(array_intersect(array_keys($dico), array_keys($cat))) === array_keys($cat);
     $orphelins = array_diff_key($dico, $cat);
     if ($ordre && !$orphelins && !$manquants) {
-        printf("  ✅ mêmes libellés, même ordre que lang/fr.json (%d)\n", count($cat));
+        printf("  ✅ mêmes libellés, même ordre que le catalogue (%d)\n", count($cat));
     } else {
         printf("  ⚠ ordre ou contenu différent du catalogue (%d orphelin(s)) : php outils/langues/construire-pack.php %s\n", count($orphelins), $code);
     }

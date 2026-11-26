@@ -35,12 +35,13 @@
  */
 
 require_once __DIR__ . '/AssistantLangue.php';
+require_once __DIR__ . '/AssistantSupervision.php';
 
 final class AssistantComprehension
 {
     /** Intentions exprimées par un mot de la question (et non déduites). */
     private const EXPLICITES = ['localiser', 'compter', 'fiche', 'quand', 'alertes', 'personne', 'stock',
-                                'somme', 'contexte', 'modules', 'aide', 'politesse', 'hors_sujet', 'lister'];
+                                'somme', 'contexte', 'modules', 'aide', 'politesse', 'hors_sujet', 'lister', 'supervision'];
 
     /** Mots-outils que l'on corrige s'ils sont mal orthographiés (« cobien », « intervantions »). */
     private const LEXIQUE_CORRIGEABLE = [
@@ -90,12 +91,17 @@ final class AssistantComprehension
             // « le 2e », « celui-ci », « où est-il ? » : sans objet nommé, on désigne un élément déjà cité.
             $designe = ($c['rang'] !== null || $c['pronom']) && !$c['mots'] && !$c['codes'] && !$c['id'];
             if ($precQ !== null) {
-                $p = $this->analyserSimple($precQ);
-                // La question précédente était elle-même une suite : on remonte d'un cran.
-                if ($this->estSuite($p)) {
-                    [$precQ2] = $this->echangePrecedent($historique, 2);
-                    if ($precQ2 !== null) $p = $this->fusionner($p, $this->analyserSimple($precQ2));
+                // Les questions précédentes étaient elles-mêmes des suites (« et pour le gaz ? »,
+                // « et en septembre ? ») : on remonte jusqu'à la question complète (4 crans au plus),
+                // puis on refait le chemin dans l'ordre.
+                $chaine = [$this->analyserSimple($precQ)];
+                for ($n = 2; $n <= 5 && $this->estSuite(end($chaine)); $n++) {
+                    [$q] = $this->echangePrecedent($historique, $n);
+                    if ($q === null) break;
+                    $chaine[] = $this->analyserSimple($q);
                 }
+                $p = array_pop($chaine);
+                while ($chaine) $p = $this->fusionner(array_pop($chaine), $p);
                 $c = $this->fusionner($c, $p);
                 if ($designe) {
                     $ref = self::entiteCitee((string)$precR, $c['rang']);
@@ -130,6 +136,7 @@ final class AssistantComprehension
             'personne' => [], 'role' => null, 'auteur' => false, 'pronom' => false, 'rang' => null,
             'reference' => null, 'tri' => null, 'limite' => null, 'suite_explicite' => false,
             'corrections' => [], 'confiance' => 'basse', '_mots_bruts' => [], 'affichage' => [], 'date_invalide' => null,
+            'sup' => null, 'sup_param' => null,
         ];
         $t0 = AssistantLangue::preparer($question);
         if ($t0 === '') { $c['intention'] = 'aide'; return $c; }
@@ -187,6 +194,17 @@ final class AssistantComprehension
         // ── Intentions (sur le texte d'origine, avant retraits) ───────────
         $intention = $this->detecterIntention($t0, $c);
 
+        // ── Supervision : consommations, alarmes, état, valeurs mesurées ──
+        // Lue sur la question entière : « combien a consommé… » n'est pas un
+        // comptage de fiches, « alarmes » n'est pas une alerte de la GMAO. Les
+        // paramètres (énergie, période) sont gardés même sans intention : « et
+        // pour le gaz ? » complète la question précédente.
+        $quoiSup = AssistantSupervision::detecter($t0);
+        if ($quoiSup !== null && !in_array($intention, ['localiser', 'personne', 'hors_sujet', 'modules'], true)) {
+            $intention = 'supervision';
+            $c['sup'] = ['quoi' => $quoiSup];
+        }
+
         // ── Type ──────────────────────────────────────────────────────────
         $this->extraireType($t, $c);
 
@@ -207,6 +225,9 @@ final class AssistantComprehension
             $c['type'] = ['planifie' => 'interventions', 'refuse' => 'demandes', 'relance' => 'demandes', 'resilie' => 'contrats'][$c['filtres']['statut'] ?? ''] ?? null;
         }
         $this->resoudreDates($t0, $c);
+        // Paramètres de supervision : après les dates (« en octobre » vient d'être daté).
+        $c['sup_param'] = AssistantSupervision::parametres($t0, $c['filtres']);
+        if ($c['sup'] !== null) $c['sup'] += $c['sup_param'];
 
         // ── Rang et pronoms (suites de conversation) ──────────────────────
         $this->extraireReference($t0, $c);
@@ -623,6 +644,20 @@ final class AssistantComprehension
         $m['role'] ??= $p['role'];
         if (!$m['personne']) $m['personne'] = $p['personne'];
         $m['tri'] ??= $p['tri'];
+        // Suite d'une question de supervision : ce que la nouvelle question précise
+        // (énergie, période, gravité) remplace, le reste est repris.
+        if ($m['intention'] === 'supervision') {
+            $prec = $p['sup'] ?? ($p['sup_param'] ?? []);
+            $neuf = array_filter((array)($c['sup'] ?? $c['sup_param'] ?? []), fn($v) => $v !== null);
+            $m['sup'] = array_merge((array)$prec, $neuf);
+            $m['sup']['quoi'] = $c['sup']['quoi'] ?? ($p['sup']['quoi'] ?? 'conso');
+            // Bâtiment : celui nommé maintenant ; sinon celui des questions précédentes, de la
+            // plus récente à la plus ancienne (« … l'Hôtel de Ville ? » → « et le groupe
+            // scolaire ? » → « et en septembre ? » : le groupe scolaire).
+            if (!isset($c['filtres']['batiment'])) unset($m['filtres']['batiment']);
+            $m['questions_prec'] = array_values(array_filter(array_merge([(string)($p['question'] ?? '')], (array)($p['questions_prec'] ?? []))));
+            $m['bat_prec'] = $p['filtres']['batiment'] ?? ($p['bat_prec'] ?? null);
+        }
         $m['suite'] = true;
         $m['confiance'] = $p['confiance'] === 'basse' ? $c['confiance'] : 'haute';
         return $m;

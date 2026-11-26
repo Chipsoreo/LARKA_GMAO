@@ -22,7 +22,8 @@ FiltresEngine.register('interventions', {
       { value: 'Réalisée',  label: 'Réalisée' },
       { value: 'Validée',   label: 'Terminée' },
     ] },
-    { key: 'Type',      label: 'Type',      type: 'select', options: ['Préventive','Curative','Contrôle réglementaire','Divers'] },
+    // Préventive et Contrôle réglementaire ont leurs écrans (menu Maintenance).
+    { key: 'Type',      label: 'Type',      type: 'select', options: ['Curative','Divers'] },
     { key: 'Priorite',  label: 'Priorité',  type: 'select', options: ['Basse','Normale','Haute','Urgente'] },
     { key: 'dates',     label: 'Période',    type: 'daterange', dateKey: 'DateRealisation' },
     { key: 'SocieteManuelle', label: 'Société', type: 'text', placeholder: 'Société…' },

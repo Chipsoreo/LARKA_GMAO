@@ -9,6 +9,22 @@
  */
 
 /**
+ * Ligne d'un rapport du serveur (test de connexion, migration, enregistrement) :
+ * son premier caractère dit sa nature — « ⚠ » avertissement, « ✅ » réussite,
+ * « ❌ » échec, « → » marche à suivre. Rend { couleur, html } : le marqueur
+ * devient une icône, le reste reste du texte.
+ */
+function _cfgLigneRapport(l, couleurParDefaut = 'var(--text)') {
+  const t = String(l ?? '');
+  const m = /^(⚠️?|✅|❌|→)\s*/u.exec(t);
+  const nature = m ? { '⚠': 'warn', '⚠️': 'warn', '✅': 'ok', '❌': 'ko', '→': 'suite' }[m[1]] : null;
+  const reste = m ? t.slice(m[0].length) : t;
+  const icone = { warn: lk('triangle-exclamation-point'), ok: lk('circle-check'), ko: lk('circle-x') }[nature] || '';
+  const couleur = { warn: 'var(--chip-warn-fg)', ok: 'var(--chip-ok-fg)', ko: 'var(--red)', suite: 'var(--gray-text)' }[nature] || couleurParDefaut;
+  return { couleur, html: (icone ? icone + ' ' : (nature === 'suite' ? '→ ' : '')) + _escCfg(reste) };
+}
+
+/**
  * ═══════════════════════════════════════════════════════════════════════════════
  * Larka — Page : Configuration (Admin)
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -57,13 +73,13 @@ const CATEGORIES_LABELS = {
 
 // Groupes d'onglets pour la configuration des listes
 const LISTES_TABS = {
-  biens:         { label: '🏢 Biens',         cats: ['FamilleBien','SousFamilleBien','StatutBien','EtatAsset','Batiment'] },
-  equipements:   { label: '⚙️ Équipements',   cats: ['FamilleEquipement','SousFamilleEquipement','StatutEquipement'] },
-  interventions: { label: '🔧 Interventions',  cats: ['TypeIntervention','PrioriteIntervention','StatutIntervention'] },
-  contrats:      { label: '📋 Contrats',       cats: ['TypeContrat','StatutContrat'] },
-  stock:         { label: '📦 Stock',          cats: ['CategorieStock'] },
-  demandes:      { label: '📝 Demandes',       cats: ['CategorieDemande'] },
-  plans:         { label: '🗺️ Plans',           cats: ['CategoriePoint'] },
+  biens:         { label: (lk('building-complex') + ' Biens'),         cats: ['FamilleBien','SousFamilleBien','StatutBien','EtatAsset','Batiment'] },
+  equipements:   { label: (lk('settings') + ' Équipements'),   cats: ['FamilleEquipement','SousFamilleEquipement','StatutEquipement'] },
+  interventions: { label: (lk('wrench') + ' Interventions'),  cats: ['TypeIntervention','PrioriteIntervention','StatutIntervention'] },
+  contrats:      { label: (lk('clipboard-list') + ' Contrats'),       cats: ['TypeContrat','StatutContrat'] },
+  stock:         { label: (lk('package') + ' Stock'),          cats: ['CategorieStock'] },
+  demandes:      { label: (lk('file-pen-line') + ' Demandes'),       cats: ['CategorieDemande'] },
+  plans:         { label: (lk('map') + ' Plans'),           cats: ['CategoriePoint'] },
 };
 
 // ── Listes des modules ──────────────────────────────────────────────────────
@@ -305,7 +321,7 @@ async function renderConfiguration() {
     <!-- En-tête bleue -->
     <div class="card" style="padding:16px 22px;background:linear-gradient(135deg,#1a2e4a,#213a5c);color:white;border:none;margin-bottom:0;border-radius:10px 10px 0 0">
       <div style="display:flex;align-items:center;gap:14px">
-        <span style="font-size:26px">⚙️</span>
+        <span style="font-size:26px">${lk('settings')}</span>
         <div>
           <div style="font-size:15px;font-weight:700">Configuration — Administrateur</div>
           <div style="font-size:12px;opacity:.7;margin-top:2px">Listes, accès utilisateurs et paramètres serveur</div>
@@ -314,24 +330,24 @@ async function renderConfiguration() {
     </div>
 
     <div style="display:flex;border-bottom:2px solid var(--gray-border);background:var(--card-bg);padding:0 18px;margin-bottom:20px;overflow-x:auto">
-      <button class="cfg-tab ${_configTab==='listes'  ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('listes')">📋 Listes</button>
-      <button class="cfg-tab ${_configTab==='comptes' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('comptes')">👥 Comptes</button>
-      <button class="cfg-tab ${_configTab==='notes'   ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('notes')">📢 Notes info</button>
-      <button class="cfg-tab ${_configTab==='notifications' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('notifications')">🔔 Notifications</button>
-      <button class="cfg-tab ${_configTab==='inventaire' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('inventaire')">📦 Inventaire</button>
-      <button class="cfg-tab ${_configTab==='plans' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('plans')">🗺️ Plans</button>
-      <button class="cfg-tab ${_configTab==='urgences' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('urgences')">🚨 Urgences</button>
-      <button class="cfg-tab ${_configTab==='serveur' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('serveur')" id="cfgTabServeur" style="display:none">🖥️ Serveur</button>
+      <button class="cfg-tab ${_configTab==='listes'  ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('listes')">${lk('clipboard-list')} Listes</button>
+      <button class="cfg-tab ${_configTab==='comptes' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('comptes')">${lk('users')} Comptes</button>
+      <button class="cfg-tab ${_configTab==='notes'   ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('notes')">${lk('megaphone')} Notes info</button>
+      <button class="cfg-tab ${_configTab==='notifications' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('notifications')">${lk('bell')} Notifications</button>
+      <button class="cfg-tab ${_configTab==='inventaire' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('inventaire')">${lk('package')} Inventaire</button>
+      <button class="cfg-tab ${_configTab==='plans' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('plans')">${lk('map')} Plans</button>
+      <button class="cfg-tab ${_configTab==='urgences' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('urgences')">${lk('siren')} Urgences</button>
+      <button class="cfg-tab ${_configTab==='serveur' ? 'cfg-tab-active' : ''}" onclick="switchConfigTab('serveur')" id="cfgTabServeur" style="display:none">${lk('monitor')} Serveur</button>
     </div>
 
     <div id="cfg-tab-body">
       ${_configTab === 'listes'         ? _renderTabListes(listes, config)      : ''}
-      ${_configTab === 'comptes'        ? '<div id="cfg_comptes_slot"><div style="padding:30px;text-align:center;color:var(--gray-text)">⏳ Chargement…</div></div>' : ''}
+      ${_configTab === 'comptes'        ? ('<div id="cfg_comptes_slot"><div style="padding:30px;text-align:center;color:var(--gray-text)">' + lk('hourglass') + ' Chargement…</div></div>') : ''}
       ${_configTab === 'notes'          ? _renderTabNotes()             : ''}
       ${_configTab === 'notifications'  ? await _renderTabNotifications() : ''}
       ${_configTab === 'inventaire'     ? _renderTabInventaire(config)  : ''}
       ${_configTab === 'plans'          ? _renderTabPlans(config)       : ''}
-      ${_configTab === 'urgences'       ? '<div id="cfg_urgences_slot"><div style="padding:30px;text-align:center;color:var(--gray-text)">⏳ Chargement…</div></div>' : ''}
+      ${_configTab === 'urgences'       ? ('<div id="cfg_urgences_slot"><div style="padding:30px;text-align:center;color:var(--gray-text)">' + lk('hourglass') + ' Chargement…</div></div>') : ''}
       ${_configTab === 'serveur'        ? '<div id="cfg-srv-slot" style="padding:50px;text-align:center;color:var(--gray-text)">Chargement…</div>' : ''}
     </div>`;
 
@@ -390,7 +406,7 @@ function _renderTabListes(listes, config) {
       : 'background:var(--gray-bg);color:var(--gray-text)';
     html += `<button style="flex:1;min-width:100px;padding:10px;text-align:center;
       font-size:12px;font-weight:600;cursor:pointer;border:none;${actif}"
-      onclick="_listesSubTab='modules';renderConfiguration()">🧩 Modules</button>`;
+      onclick="_listesSubTab='modules';renderConfiguration()">${lk('puzzle')} Modules</button>`;
   }
   html += `</div>`;
 
@@ -403,7 +419,7 @@ function _renderTabListes(listes, config) {
   // Message d'aide pour l'onglet Plans
   if (_listesSubTab === 'plans') {
     html += `<div style="padding:14px 18px;background:var(--blue-pale);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--navy);line-height:1.6">
-      <strong>💡 Catégories de points</strong> — Définissez ici les catégories utilisées pour classer les points sur vos plans (ex&nbsp;: Détecteur de fumée, Prise réseau, Robinet, Caméra, Borne incendie...). Elles apparaîtront dans la liste déroulante « Catégorie » lors de la création/modification d'un point.
+      <strong>${lk('lightbulb')} Catégories de points</strong> — Définissez ici les catégories utilisées pour classer les points sur vos plans (ex&nbsp;: Détecteur de fumée, Prise réseau, Robinet, Caméra, Borne incendie...). Elles apparaîtront dans la liste déroulante « Catégorie » lors de la création/modification d'un point.
     </div>`;
   }
 
@@ -421,9 +437,9 @@ function _renderTabListes(listes, config) {
     html += `
     <div class="card">
       <div class="card-header">
-        <div class="card-title">📋 ${label}</div>
+        <div class="card-title">${lk('clipboard-list')} ${label}</div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button class="btn btn-ghost btn-sm" onclick="configurerCategorie(${jsArg(cat)},${jsArg(label)})" title="Configurer la liste">⚙️</button>
+          <button class="btn btn-ghost btn-sm" onclick="configurerCategorie(${jsArg(cat)},${jsArg(label)})" title="Configurer la liste">${lk('settings')}</button>
           <button class="btn btn-primary btn-sm" onclick="ajouterValeur('${cat}')">+ Ajouter</button>
         </div>
       </div>
@@ -449,14 +465,14 @@ function _renderTabListes(listes, config) {
         return `
         <div style="display:flex;align-items:center;gap:8px;padding:9px 16px;border-bottom:1px solid var(--gray-border);${isInactive?'opacity:.55;':''}">
           <span style="flex:1;font-size:13px;font-weight:500;${isInactive?'text-decoration:line-through;color:var(--gray-text)':''}">${_escCfg(item.Valeur)}</span>
-          ${isProtected ? `<span title="Valeur système — non modifiable" style="font-size:11px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 6px">🔒 système</span>` : ''}
+          ${isProtected ? `<span title="Valeur système — non modifiable" style="font-size:11px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 6px">${lk('lock')} système</span>` : ''}
           ${isInactive
             ? `<span class="badge badge-gray" style="font-size:10.5px">Désactivée</span>
-               <button class="icon-btn" onclick="(async()=>{try{await ListesApi.update(${item.Id},${valArg},${parseInt(item.Ordre,10)||0},1,${parseInt(item.Obligatoire,10)||0},${parseInt(item.SaisieLibre,10)||0});toast('Réactivée.','success');renderConfiguration();}catch(e){toast(e.message,'error');}})()" title="Réactiver">🔄</button>`
+               <button class="icon-btn" onclick="(async()=>{try{await ListesApi.update(${item.Id},${valArg},${parseInt(item.Ordre,10)||0},1,${parseInt(item.Obligatoire,10)||0},${parseInt(item.SaisieLibre,10)||0});toast('Réactivée.','success');renderConfiguration();}catch(e){toast(e.message,'error');}})()" title="Réactiver">${lk('refresh-cw')}</button>`
             : `<span class="badge badge-teal" style="font-size:10.5px">Active</span>`
           }
-          ${isProtected ? '' : `<button class="icon-btn" onclick="modifierValeur(${item.Id},${jsArg(cat)},${valArg},${parseInt(item.Ordre,10)||0},${parseInt(item.Actif,10)||0},${parseInt(item.Obligatoire,10)||0},${parseInt(item.SaisieLibre,10)||0})" title="Modifier">✏️</button>`}
-          ${!isProtected && !isInactive ? `<button class="icon-btn delete" onclick="desactiverValeur(${item.Id},${valArg})" title="Désactiver">⏸️</button>` : ''}
+          ${isProtected ? '' : `<button class="icon-btn" onclick="modifierValeur(${item.Id},${jsArg(cat)},${valArg},${parseInt(item.Ordre,10)||0},${parseInt(item.Actif,10)||0},${parseInt(item.Obligatoire,10)||0},${parseInt(item.SaisieLibre,10)||0})" title="Modifier">${lk('pencil')}</button>`}
+          ${!isProtected && !isInactive ? `<button class="icon-btn delete" onclick="desactiverValeur(${item.Id},${valArg})" title="Désactiver">${lk('pause')}</button>` : ''}
         </div>`;
       };
 
@@ -479,8 +495,8 @@ function _renderTabListes(listes, config) {
     html += `
     <div class="card" style="margin-top:20px">
       <div class="card-header">
-        <div class="card-title">✅ Champs obligatoires — formulaire ${LISTES_TABS[_listesSubTab]?.label||_listesSubTab}</div>
-        <button class="btn btn-primary btn-sm" onclick="_sauverChampsOblig()">💾 Enregistrer</button>
+        <div class="card-title">${lk('circle-check', 'ok')} Champs obligatoires — formulaire ${LISTES_TABS[_listesSubTab]?.label||_listesSubTab}</div>
+        <button class="btn btn-primary btn-sm" onclick="_sauverChampsOblig()">${lk('save')} Enregistrer</button>
       </div>
       <div style="padding:12px 16px;font-size:12px;color:var(--gray-text);border-bottom:1px solid var(--gray-border)">
         Cochez les champs que l'utilisateur devra obligatoirement renseigner dans le formulaire.
@@ -503,7 +519,7 @@ function _renderTabListes(listes, config) {
 //  ONGLET NOTES INFO (banderole demandeur)
 // ═══════════════════════════════════════════════════════════════
 function _renderTabNotes() {
-  return `<div id="cfg-notes-slot" style="padding:50px;text-align:center;color:var(--gray-text)">⏳ Chargement…</div>`;
+  return `<div id="cfg-notes-slot" style="padding:50px;text-align:center;color:var(--gray-text)">${lk('hourglass')} Chargement…</div>`;
 }
 
 async function _loadNotes() {
@@ -514,7 +530,7 @@ async function _loadNotes() {
     let html = `
     <div class="card">
       <div class="card-header">
-        <div class="card-title">📢 Notes d'information (banderole demandeur)</div>
+        <div class="card-title">${lk('megaphone')} Notes d'information (banderole demandeur)</div>
         <button class="btn btn-primary btn-sm" onclick="ajouterNote()">+ Ajouter une note</button>
       </div>
       <div style="padding:8px 0;font-size:13px;color:var(--gray-text);padding-left:20px">
@@ -531,8 +547,8 @@ async function _loadNotes() {
           <span style="flex:1;font-size:13px">${_escCfg(n.Message)}</span>
           <span class="badge ${n.Actif==1?'badge-teal':'badge-gray'}" style="font-size:10px">${n.Actif==1?'Active':'Inactive'}</span>
           <span style="font-size:11px;color:var(--gray-text)">${escHtml(n.CreePar||'')}</span>
-          <button class="icon-btn" onclick="modifierNote(${n.Id},${jsArg(n.Message)},${parseInt(n.Actif,10)||0})" title="Modifier">✏️</button>
-          <button class="icon-btn delete" onclick="supprimerNote(${n.Id})" title="Supprimer">🗑️</button>
+          <button class="icon-btn" onclick="modifierNote(${n.Id},${jsArg(n.Message)},${parseInt(n.Actif,10)||0})" title="Modifier">${lk('pencil')}</button>
+          <button class="icon-btn delete" onclick="supprimerNote(${n.Id})" title="Supprimer">${lk('trash')}</button>
         </div>`;
       });
     }
@@ -541,13 +557,13 @@ async function _loadNotes() {
     <!-- Vitesse du bandeau -->
     <div class="card" style="margin-top:20px">
       <div class="card-header">
-        <div class="card-title">⏱️ Vitesse du bandeau défilant</div>
+        <div class="card-title">${lk('timer')} Vitesse du bandeau défilant</div>
       </div>
       <div style="padding:18px 22px">
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Durée d'affichage par message (secondes)</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input class="form-control" type="number" id="cfg_bandeau_speed" min="2" max="60" style="width:90px" value="">
-          <button class="btn btn-primary btn-sm" onclick="sauverConfigDemande('bandeau_vitesse','cfg_bandeau_speed')">💾</button>
+          <button class="btn btn-primary btn-sm" onclick="sauverConfigDemande('bandeau_vitesse','cfg_bandeau_speed')">${lk('save')}</button>
         </div>
         <div style="font-size:11px;color:var(--gray-text);margin-top:4px">Par défaut : 8 secondes — Valeurs suggérées : 4 (rapide), 8 (normal), 15 (lent).</div>
       </div>
@@ -563,7 +579,7 @@ async function _loadNotes() {
     } catch(_) {}
   } catch(e) {
     const slot = document.getElementById('cfg-notes-slot');
-    if (slot) slot.innerHTML = `<div style="color:var(--red);padding:20px">❌ ${_escCfg(e.message)}</div>`;
+    if (slot) slot.innerHTML = `<div style="color:var(--red);padding:20px">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</div>`;
   }
 }
 
@@ -644,7 +660,7 @@ async function _loadServeurConfig() {
     // ⚠️ Le rendu remplaçait #cfg-srv-slot sans le recréer : « ↩ Annuler »
     // (qui rappelle cette fonction) ne trouvait plus où écrire et ne
     // rétablissait rien. Le conteneur porte désormais toujours cet identifiant.
-    if (slot) { slot.outerHTML = '<div id="cfg-srv-slot">' + _renderTabServeur(cfg) + '</div>'; _srvOrganiser(); _srvChargerEtatSauvegardes(); }
+    if (slot) { slot.outerHTML = '<div id="cfg-srv-slot">' + _renderTabServeur(cfg) + '</div>'; _srvOrganiser(); _srvChargerEtatSauvegardes(); _srvChargerEtatConnect(); }
     // Encadré « Version et mises à jour » : état, vérification et installation affichés sur place.
     const majEl = document.getElementById('cfgMajPanneau');
     if (majEl) {
@@ -667,7 +683,7 @@ async function _loadServeurConfig() {
           </span>
           <div style="display:flex;gap:10px">
             <button class="btn" onclick="_loadServeurConfig()">↩ Annuler</button>
-            <button class="btn btn-primary" onclick="_sauvegarderServeur()">💾 Enregistrer config.json</button>
+            <button class="btn btn-primary" onclick="_sauvegarderServeur()">${lk('save')} Enregistrer config.json</button>
           </div>
         </div>`);
     }
@@ -685,7 +701,7 @@ async function _loadServeurConfig() {
     _loadUploadLimits();
   } catch(e) {
     const slot = document.getElementById('cfg-srv-slot');
-    if (slot) slot.innerHTML = `<div style="color:var(--red);padding:20px">❌ ${_escCfg(e.message)}</div>`;
+    if (slot) slot.innerHTML = `<div style="color:var(--red);padding:20px">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</div>`;
   }
 }
 
@@ -702,13 +718,13 @@ async function _loadServeurConfig() {
 // identifiants (liens profonds depuis Chorus, Légifrance…) et la lecture des
 // champs par _sauvegarderServeur() sont inchangés.
 const _SRV_GROUPES = [
-  { id: 'general',   icone: '🌐', titre: 'Général',                   motifs: [/^Serveur$/, /^Version et mises à jour/, /^Paramètres demandes/, /^Documents/, /^Limites d/] },
-  { id: 'donnees',   icone: '🗄️', titre: 'Base de données',           motifs: [/^Base de données/, /^Maintenance base/] },
-  { id: 'securite',  icone: '🔐', titre: 'Sécurité',                  motifs: [/^Sécurité$/, /^Session/, /^CORS/, /^En-têtes/, /^Logs/] },
-  { id: 'connexion', icone: '🔑', titre: 'Connexion des utilisateurs', motifs: [/^Connexion Microsoft/, /^Connexion Google/, /^Relay OAuth/] },
-  { id: 'messages',  icone: '📧', titre: 'E-mails et notifications',   motifs: [/^Serveur SMTP/, /^Feedback/, /^Notifications Push/] },
-  { id: 'services',  icone: '🧭', titre: 'Services externes',          motifs: [/^Assistant IA/, /^Légifrance/, /^Facteurs carbone/, /^Chorus/] },
-  { id: 'modules',   icone: '🧩', titre: 'Modules',                    motifs: [/^Modules complémentaires/] },
+  { id: 'general',   icone: lk('globe'), titre: 'Général',                   motifs: [/^Serveur$/, /^Version et mises à jour/, /^Paramètres demandes/, /^Documents/, /^Limites d/] },
+  { id: 'donnees',   icone: lk('archive'), titre: 'Base de données',           motifs: [/^Base de données/, /^Maintenance base/] },
+  { id: 'securite',  icone: lk('lock-keyhole'), titre: 'Sécurité',                  motifs: [/^Sécurité$/, /^Session/, /^CORS/, /^En-têtes/, /^Logs/] },
+  { id: 'connexion', icone: lk('key-round'), titre: 'Connexion des utilisateurs', motifs: [/^Connexion Microsoft/, /^Connexion Google/, /^Relay OAuth/] },
+  { id: 'messages',  icone: lk('mail'), titre: 'E-mails et notifications',   motifs: [/^Serveur SMTP/, /^Feedback/, /^Notifications Push/] },
+  { id: 'services',  icone: lk('compass'), titre: 'Services externes',          motifs: [/^Assistant IA/, /^Légifrance/, /^Facteurs carbone/, /^Chorus/] },
+  { id: 'modules',   icone: lk('puzzle'), titre: 'Modules',                    motifs: [/^Modules complémentaires/] },
 ];
 let _srvEtat = null;
 
@@ -725,7 +741,7 @@ function _srvOrganiser() {
 
   // Rubriques visibles, rangées par groupe (ordre du groupe, puis ordre d'origine).
   const sections = [...conteneur.querySelectorAll(':scope > .srv-section')].filter(s => s.style.display !== 'none' && _srvTitreSection(s));
-  const autres = { id: 'autres', icone: '⚙️', titre: 'Autres réglages', motifs: [] };
+  const autres = { id: 'autres', icone: lk('settings'), titre: 'Autres réglages', motifs: [] };
   const groupes = [..._SRV_GROUPES, autres].map(g => ({ ...g, sections: [] }));
   sections.forEach((sec, i) => {
     const titre = _srvTitreSection(sec);
@@ -792,7 +808,7 @@ function _srvOrganiser() {
     const cb = e.target;
     if (cb.matches && cb.matches('.srv-toggle input[type=checkbox]')) {
       const lbl = document.getElementById(cb.id + '_lbl');
-      if (lbl) lbl.textContent = cb.checked ? '✅ Activé' : '⬜ Désactivé';
+      if (lbl) lbl.textContent = cb.checked ? 'Activé' : 'Désactivé';
       const sec = cb.closest('.srv-section'); if (sec) _srvMajEtatModule(sec);
     }
   });
@@ -919,7 +935,7 @@ function _srvMajModifs() {
       const noms = [...parSection.keys()].map(_srvTitreSection).filter(Boolean);
       st.innerHTML = `<span style="color:var(--chip-warn-fg);font-weight:600">● ${total} modification${total > 1 ? 's' : ''} non enregistrée${total > 1 ? 's' : ''}</span>`
         + ` <span style="color:var(--gray-text)">— ${_escCfg(noms.slice(0, 3).join(', '))}${noms.length > 3 ? '…' : ''}</span>`;
-    } else if (!st.querySelector('div') && !/✅/.test(st.textContent)) {
+    } else if (!st.querySelector('div') && !st.querySelector('.lk-circle-check')) {
       st.textContent = 'Aucune modification en attente.';
     }
   }
@@ -946,43 +962,43 @@ async function _loadUploadLimits() {
     slot.innerHTML = `
       <div class="srv-grid">
         <div class="srv-field">
-          <div class="srv-label">📦 Taille maximum d'un fichier (upload_max_filesize)</div>
+          <div class="srv-label">${lk('package')} Taille maximum d'un fichier (upload_max_filesize)</div>
           <div class="srv-desc">Valeur PHP actuelle : <code>${_escCfg(data.upload_max_filesize_php)}</code>. Format : 100M, 500M, 1G, 2G…</div>
           <input class="form-control" id="ul_upmax" type="text" value="${_escCfg(data.upload_max_filesize_php)}" placeholder="500M" style="font-family:monospace">
         </div>
         <div class="srv-field">
-          <div class="srv-label">📥 Taille maximum d'une requête POST (post_max_size)</div>
+          <div class="srv-label">${lk('download')} Taille maximum d'une requête POST (post_max_size)</div>
           <div class="srv-desc">Valeur PHP actuelle : <code>${_escCfg(data.post_max_size_php)}</code>. Doit être ≥ upload_max_filesize.</div>
           <input class="form-control" id="ul_postmax" type="text" value="${_escCfg(data.post_max_size_php)}" placeholder="500M" style="font-family:monospace">
         </div>
         <div class="srv-field">
-          <div class="srv-label">🧠 Limite mémoire PHP (memory_limit)</div>
+          <div class="srv-label">${lk('brain')} Limite mémoire PHP (memory_limit)</div>
           <div class="srv-desc">Valeur actuelle : <code>${_escCfg(data.memory_limit_php)}</code>. Mettre <code>-1</code> pour illimité (déconseillé).</div>
           <input class="form-control" id="ul_mem" type="text" value="${_escCfg(data.memory_limit_php)}" placeholder="512M" style="font-family:monospace">
         </div>
         <div class="srv-field">
-          <div class="srv-label">⏱️ Temps d'exécution max (max_execution_time, secondes)</div>
+          <div class="srv-label">${lk('timer')} Temps d'exécution max (max_execution_time, secondes)</div>
           <div class="srv-desc">Valeur actuelle : <code>${_escCfg(data.max_execution_time_php)}</code>. Mettre <code>0</code> pour illimité.</div>
           <input class="form-control" id="ul_exec" type="text" value="${_escCfg(data.max_execution_time_php)}" placeholder="300" style="font-family:monospace">
         </div>
         <div class="srv-field">
-          <div class="srv-label">⏲️ Temps d'attente upload (max_input_time, secondes)</div>
+          <div class="srv-label">${lk('timer')} Temps d'attente upload (max_input_time, secondes)</div>
           <div class="srv-desc">Valeur actuelle : <code>${_escCfg(data.max_input_time_php)}</code>. Mettre <code>-1</code> pour pas de limite.</div>
           <input class="form-control" id="ul_input" type="text" value="${_escCfg(data.max_input_time_php)}" placeholder="300" style="font-family:monospace">
         </div>
       </div>
       <div style="margin-top:14px;padding:10px 12px;background:var(--gray-bg);border-radius:8px;font-size:12px;color:var(--gray-text)">
-        <strong>Fichier .user.ini :</strong> ${data.user_ini_exists ? '<code>'+_escCfg(data.user_ini_file)+'</code> ✅' : 'Sera créé à la racine du projet'}<br>
+        <strong>Fichier .user.ini :</strong> ${data.user_ini_exists ? '<code>'+_escCfg(data.user_ini_file)+('</code> ' + lk('circle-check', 'ok')) : 'Sera créé à la racine du projet'}<br>
         <strong>SAPI PHP :</strong> <code>${_escCfg(data.sapi)}</code><br>
         <span style="opacity:.85">${_escCfg(data.note)}</span>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-secondary btn-sm" onclick="_loadUploadLimits()">↩ Recharger</button>
-        <button class="btn btn-primary btn-sm" onclick="_saveUploadLimits()">💾 Enregistrer .user.ini</button>
+        <button class="btn btn-primary btn-sm" onclick="_saveUploadLimits()">${lk('save')} Enregistrer .user.ini</button>
       </div>
     `;
   } catch(e) {
-    slot.innerHTML = `<div style="color:var(--red);padding:14px">❌ ${_escCfg(e.message)}</div>`;
+    slot.innerHTML = `<div style="color:var(--red);padding:14px">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</div>`;
   }
 }
 
@@ -1057,6 +1073,9 @@ function _renderTabServeur(cfg) {
   const dc = cfg.documents       || {};
   const lg = cfg.logs            || {};
   const bk = cfg.sauvegardes     || {};
+  const cx = cfg.connect         || {};
+  const cxo= cx.ocpp             || {};
+  const cxl= cx.lorawan          || {};
   const ms = cfg.microsoft_oauth || {};
   const gg = cfg.google_oauth    || {};
   const rl = cfg.oauth_relay     || {};
@@ -1093,13 +1112,13 @@ function _renderTabServeur(cfg) {
       const envName = sObj[key + '_env_name'] || '';
       locked = isLock;
       if (isLock) {
-        envBadge = `<span class="srv-envbadge srv-envbadge-lock" title="Géré par l'environnement système, non modifiable ici">🔒 Variable système ${_escCfg(envName)}</span>`;
+        envBadge = `<span class="srv-envbadge srv-envbadge-lock" title="Géré par l'environnement système, non modifiable ici">${lk('lock')} Variable système ${_escCfg(envName)}</span>`;
         placeholder = 'Géré par l\'environnement système';
       } else if (inEnv || isSet) {
-        envBadge = `<span class="srv-envbadge srv-envbadge-ok" title="Stocké dans le fichier .env (permissions 600)">🔐 Stocké dans .env${envName?' · '+_escCfg(envName):''}</span>`;
+        envBadge = `<span class="srv-envbadge srv-envbadge-ok" title="Stocké dans le fichier .env (permissions 600)">${lk('lock-keyhole')} Stocké dans .env${envName?' · '+_escCfg(envName):''}</span>`;
         if (secretMode) placeholder = '•••••••• (laisser tel quel pour conserver)';
       } else {
-        envBadge = `<span class="srv-envbadge srv-envbadge-todo" title="Sera enregistré dans le fichier .env">🔑 À définir → .env${envName?' · '+_escCfg(envName):''}</span>`;
+        envBadge = `<span class="srv-envbadge srv-envbadge-todo" title="Sera enregistré dans le fichier .env">${lk('key-round')} À définir → .env${envName?' · '+_escCfg(envName):''}</span>`;
       }
     }
 
@@ -1132,7 +1151,7 @@ function _renderTabServeur(cfg) {
       ${desc ? `<div class="srv-desc">${desc}</div>` : ''}
       <div class="srv-toggle">
         <input type="checkbox" id="${id}" ${val?'checked':''}>
-        <label for="${id}" id="${id}_lbl">${val?'✅ Activé':'⬜ Désactivé'}</label>
+        <label for="${id}" id="${id}_lbl">${val?(lk('circle-check', 'ok') + ' Activé'):(lk('square') + ' Désactivé')}</label>
       </div>
     </div>`;
   }
@@ -1241,7 +1260,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Serveur ───────────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🌐','Serveur')}
+      ${sectionTitle(lk('globe'),'Serveur')}
       <div class="srv-grid-3">
         ${field('s_host','Hôte d\'écoute', s.host,
           'Utilisez <code>0.0.0.0</code> pour écouter sur toutes les interfaces réseau, <code>127.0.0.1</code> pour localhost uniquement.',
@@ -1270,28 +1289,28 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Base de données (unifié config + migration) ── -->
     <div class="srv-section" id="srv-db-unified">
-      ${sectionTitle('🗄️','Base de données')}
+      ${sectionTitle(lk('archive'),'Base de données')}
 
       <!-- Badge driver actuel -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--gray-text)">Driver actuel :</span>
         <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:var(--green-bg,#e6f4ea);color:var(--green,#1a7a3f);border:1px solid var(--green-border,#a8d5b5)">
-          ${{sqlite:'🗃️ SQLite', pgsql:'🐘 PostgreSQL', mariadb:'🐬 MariaDB'}[drv] || drv}
+          ${{sqlite:(lk('archive') + ' SQLite'), pgsql:(lk('database') + ' PostgreSQL'), mariadb:(lk('database') + ' MariaDB')}[drv] || drv}
         </span>
         <span id="db-mode-badge" style="font-size:11px;padding:3px 10px;border-radius:12px;display:none"></span>
       </div>
 
       <div class="db-tabs" id="db-driver-tabs">
-        <button class="db-tab ${drv==='sqlite'?'active':''}"   onclick="_switchDbDriver('sqlite')">🗃️ SQLite</button>
-        <button class="db-tab ${drv==='pgsql'?'active':''}"    onclick="_switchDbDriver('pgsql')">🐘 PostgreSQL</button>
-        <button class="db-tab ${drv==='mariadb'?'active':''}"  onclick="_switchDbDriver('mariadb')">🐬 MariaDB / MySQL</button>
+        <button class="db-tab ${drv==='sqlite'?'active':''}"   onclick="_switchDbDriver('sqlite')">${lk('archive')} SQLite</button>
+        <button class="db-tab ${drv==='pgsql'?'active':''}"    onclick="_switchDbDriver('pgsql')">${lk('database')} PostgreSQL</button>
+        <button class="db-tab ${drv==='mariadb'?'active':''}"  onclick="_switchDbDriver('mariadb')">${lk('database')} MariaDB / MySQL</button>
       </div>
 
       <!-- === Panneau driver actuel : édition normale === -->
       <!-- SQLite -->
       <div id="db-panel-sqlite" style="display:${drv==='sqlite'?'block':'none'}">
         <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-          ℹ️ SQLite est idéal pour une installation locale ou mono-utilisateur.
+          ${lk('info')} SQLite est idéal pour une installation locale ou mono-utilisateur.
           Aucun serveur externe requis — la base est un simple fichier.
         </div>
         <div class="srv-grid-1">
@@ -1304,7 +1323,7 @@ function _renderTabServeur(cfg) {
       <!-- PostgreSQL -->
       <div id="db-panel-pgsql" style="display:${drv==='pgsql'?'block':'none'}">
         <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-          ℹ️ PostgreSQL est recommandé pour un usage multi-utilisateurs ou en production.
+          ${lk('info')} PostgreSQL est recommandé pour un usage multi-utilisateurs ou en production.
           Requiert l'extension PHP <code>pdo_pgsql</code> et un serveur PostgreSQL accessible.
         </div>
         <div class="srv-grid">
@@ -1323,7 +1342,7 @@ function _renderTabServeur(cfg) {
       <!-- MariaDB / MySQL -->
       <div id="db-panel-mariadb" style="display:${drv==='mariadb'?'block':'none'}">
         <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-          ℹ️ Compatible MariaDB 10.3+ et MySQL 8+. Requiert l'extension PHP <code>pdo_mysql</code>.
+          ${lk('info')} Compatible MariaDB 10.3+ et MySQL 8+. Requiert l'extension PHP <code>pdo_mysql</code>.
         </div>
         <div class="srv-grid">
           ${field('db_host_m','Hôte', db.host, 'Adresse IP ou nom d\'hôte du serveur MySQL/MariaDB.','127.0.0.1')}
@@ -1339,7 +1358,7 @@ function _renderTabServeur(cfg) {
       <!-- === Panneau migration (affiché quand driver ≠ actuel) === -->
       <div id="db-migration-flow" style="display:none">
         <div class="srv-alert srv-alert-warn" style="margin-bottom:16px">
-          🔄 <strong>Changement de driver détecté.</strong> Suivez les étapes ci-dessous pour migrer
+          ${lk('refresh-cw')} <strong>Changement de driver détecté.</strong> Suivez les étapes ci-dessous pour migrer
           vos données en toute sécurité vers le nouveau driver.
         </div>
 
@@ -1364,7 +1383,7 @@ function _renderTabServeur(cfg) {
           </div>
           <div class="mig-step-body">
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <button class="btn" id="mig-btn-test" onclick="_migUnifiedTest()">🔌 Tester la connexion</button>
+              <button class="btn" id="mig-btn-test" onclick="_migUnifiedTest()">${lk('plug')} Tester la connexion</button>
               <span id="mig-test-result" style="font-size:12px;color:var(--gray-text)">Remplissez les champs ci-dessus puis testez.</span>
             </div>
             <div id="mig-test-detail" style="margin-top:10px"></div>
@@ -1401,12 +1420,12 @@ function _renderTabServeur(cfg) {
           </div>
           <div class="mig-step-body">
             <div class="srv-alert srv-alert-info" style="margin-bottom:12px;font-size:12px">
-              ℹ️ La migration copie <strong>toutes vos données</strong> vers la nouvelle base,
+              ${lk('info')} La migration copie <strong>toutes vos données</strong> vers la nouvelle base,
               puis met à jour <code>config.json</code> automatiquement. En cas d'échec, rien n'est modifié.
             </div>
             <button class="btn btn-primary" id="mig-btn-run" onclick="_migUnifiedRun()"
               style="background:#1a7a3f;border-color:#1a7a3f">
-              🚀 Lancer la migration
+              ${lk('rocket')} Lancer la migration
             </button>
           </div>
         </div>
@@ -1431,7 +1450,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Sécurité ──────────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🔐','Sécurité')}
+      ${sectionTitle(lk('lock-keyhole'),'Sécurité')}
       <div class="srv-grid">
         ${field('sec_key','Clé secrète (secret_key)', sec.secret_key,
           'Utilisée pour signer les sessions et les tokens OAuth. <strong>Changez absolument cette valeur en production.</strong> Minimum 32 caractères aléatoires.',
@@ -1448,7 +1467,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Session cookies ───────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🍪','Session & Cookies')}
+      ${sectionTitle(lk('cookie'),'Session & Cookies')}
       <div class="srv-grid">
         ${toggle('ses_secure','Cookie Secure', ses.cookie_secure,
           'Envoyer le cookie uniquement sur HTTPS. <strong>Activer uniquement si HTTPS est activé.</strong>')}
@@ -1461,9 +1480,9 @@ function _renderTabServeur(cfg) {
 
     <!-- ── CORS ──────────────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🌍','CORS (Cross-Origin Resource Sharing)')}
+      ${sectionTitle(lk('earth'),'CORS (Cross-Origin Resource Sharing)')}
       <div class="srv-alert srv-alert-warn" style="margin-bottom:14px">
-        ⚠️ En production, listez précisément les origines autorisées. Ne jamais utiliser <code>*</code>
+        ${lk('triangle-exclamation-point', 'warn')} En production, listez précisément les origines autorisées. Ne jamais utiliser <code>*</code>
         avec <code>allow_credentials: true</code>.
       </div>
       <div class="srv-grid-1">
@@ -1479,7 +1498,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── En-têtes sécurité HTTP ────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🛡️','En-têtes de sécurité HTTP')}
+      ${sectionTitle(lk('shield'),'En-têtes de sécurité HTTP')}
       <div class="srv-grid-1">
         ${field('sh_csp','Content-Security-Policy', sh.csp,
           'Limite les sources autorisées pour scripts, styles, images, etc. Aide à prévenir le XSS. '
@@ -1502,7 +1521,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Documents / uploads ───────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('📎','Documents & Uploads')}
+      ${sectionTitle(lk('paperclip'),'Documents & Uploads')}
       <div class="srv-grid-3">
         ${field('doc_max','Fichiers max par catégorie', dc.max_par_categorie,
           'Nombre maximal de fichiers par catégorie (photo, plan, facture…) par entité.','4')}
@@ -1521,11 +1540,11 @@ function _renderTabServeur(cfg) {
     <!-- ── Sauvegardes automatiques (installation simple ; en multi-tenant :
          par organisation, dans Super Admin) ─────────────────────────────── -->
     <div class="srv-section" id="srv-sauvegardes">
-      ${sectionTitle('💾','Sauvegardes automatiques')}
+      ${sectionTitle(lk('save'),'Sauvegardes automatiques')}
       <div class="srv-desc" style="margin-bottom:10px">Base de données <strong>et</strong> fichiers (plans, modules,
         thèmes, médias d'urgence), à intervalle régulier, avec rotation. Déclenchées par le lanceur
         (<code>./start.sh</code>, <code>Larka.cmd</code>) tant que Larka tourne, par la tâche planifiée en production.</div>
-      <div id="srv-bk-etat" class="srv-desc" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--gray-bg)">⏳ État des sauvegardes…</div>
+      <div id="srv-bk-etat" class="srv-desc" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--gray-bg)">${lk('hourglass')} État des sauvegardes…</div>
       <div class="srv-grid" id="srv-bk-champs">
         ${toggle('bk_actif','Sauvegardes automatiques', bk.actif,
           'Désactivées par défaut. Une fois activées, la première a lieu dans les minutes qui suivent.')}
@@ -1534,12 +1553,61 @@ function _renderTabServeur(cfg) {
         ${field('bk_keep','Sauvegardes conservées', bk.garder, 'Au-delà, les plus anciennes sont supprimées (base et fichiers ensemble).','30')}
         ${field('bk_dossier','Dossier', bk.dossier, 'Sous <code>data/</code> (un autre emplacement se règle par le Super Admin).','data/backups')}
       </div>
-      <div style="margin-top:12px"><button type="button" class="btn" onclick="_srvSauvegarderMaintenant(this)">💾 Sauvegarder maintenant</button></div>
+      <div style="margin-top:12px"><button type="button" class="btn" onclick="_srvSauvegarderMaintenant(this)">${lk('save')} Sauvegarder maintenant</button></div>
+    </div>
+
+    <!-- ── Larka Connect (équipements raccordés) ─────────────────────────── -->
+    <div class="srv-section" id="srv-connect">
+      ${sectionTitle(lk('satellite-dish'),'Larka Connect — équipements raccordés')}
+      <div class="srv-desc" style="margin-bottom:10px">${_srvCxT(
+        `GTB/GTC (BACnet/IP, Modbus TCP, API REST, exports CSV), capteurs MQTT, bornes de recharge (OCPP). La collecte est faite <strong>par le serveur</strong>, jamais par le navigateur : planificateur de <code>./start.sh</code> ou <code>Larka.cmd</code>, minuterie systemd, tâche cron en production. Les connexions se règlent dans <strong>Bâtiments → Connexions</strong>.`,
+        `BMS (BACnet/IP, Modbus TCP, REST API, CSV exports), MQTT sensors, EV chargers (OCPP). Collection is done <strong>by the
+server</strong>, never by the browser: <code>./start.sh</code> or <code>Larka.cmd</code> scheduler, systemd timer, cron job in production.
+Connections are set up in <strong>Buildings →
+Connections</strong>.`)}</div>
+      <div id="srv-cx-etat" class="srv-desc" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--gray-bg)">${lk('hourglass')} État de Larka Connect…</div>
+      <div class="srv-grid">
+        ${toggle('cx_actif','Larka Connect activé', cx.actif,
+          'Fermé par défaut. Une organisation peut aussi en être privée depuis le Super Admin (modules).')}
+        ${field('cx_retention','Historique des mesures (jours)', cx.retention_jours,
+          'Au-delà, les mesures sont purgées chaque nuit. Les relevés écrits dans les compteurs, eux, restent.','400')}
+        ${field('cx_periodique','Valeur stable : historisée toutes les (minutes)', cx.valeur_periodique_minutes,
+          'Une valeur qui ne bouge pas est quand même gardée à ce rythme, pour des courbes continues.','15')}
+        ${field('cx_budget',"Durée maximale d'un passage (secondes)", cx.budget_secondes,
+          'Les connexions non traitées à temps passent au tour suivant (une minute plus tard).','50')}
+      </div>
+      <div class="srv-desc" style="margin:14px 0 8px;font-weight:600">${lk('plug')} Bornes de recharge (OCPP 1.6)</div>
+      <div class="srv-grid">
+        ${toggle('cx_ocpp_actif','Service OCPP', cxo.actif,
+          "Les bornes se connectent à Larka (et non l'inverse). Le service relit ce réglage tout seul, sans redémarrage.")}
+        ${field('cx_ocpp_hote',"Adresse d'écoute", cxo.hote,
+          '<span>Toutes les interfaces :</span> <code>0.0.0.0</code>. <span>Derrière Nginx (wss:// chiffré, recommandé) :</span> <code>127.0.0.1</code>.','0.0.0.0')}
+        ${field('cx_ocpp_port','Port', cxo.port, 'Le pare-feu doit laisser passer les bornes vers ce port (ou vers Nginx en wss://).','9000')}
+        ${field('cx_ocpp_adresse','Adresse publique (facultatif)', cxo.adresse_publique,
+          'Celle que les bornes doivent utiliser si elle diffère (relais Nginx). Affichée dans la fiche de chaque borne.','wss://gmao.example.com/ocpp')}
+      </div>
+      <div class="srv-desc" style="margin:14px 0 8px;font-weight:600">${lk('satellite-dish')} ${_srvCxT('Capteurs radio LoRaWAN (serveur intégré)', 'LoRaWAN radio sensors (built-in server)')}</div>
+      <div class="srv-grid">
+        ${toggle('cx_lw_actif', _srvCxT('Serveur LoRaWAN intégré', 'Built-in LoRaWAN server'), cxl.actif,
+          _srvCxT("Les passerelles LoRaWAN du bâtiment envoient leurs trames à Larka (packet forwarder Semtech, UDP) : ni ChirpStack, ni TTN. Même service que l'OCPP, relu sans redémarrage.",
+                  "The building's LoRaWAN gateways send their frames to Larka (Semtech packet forwarder, UDP): no ChirpStack, no TTN. Same service as OCPP, reloaded without restart."))}
+        ${field('cx_lw_hote',"Adresse d'écoute", cxl.hote, '<span>Toutes les interfaces :</span> <code>0.0.0.0</code>.','0.0.0.0')}
+        ${field('cx_lw_port','Port UDP', cxl.port, _srvCxT('À saisir dans chaque passerelle (ports montant et descendant). Le pare-feu doit laisser entrer l\'UDP.', 'To enter in each gateway (up and down ports). The firewall must let UDP in.'),'1700')}
+        ${field('cx_lw_puissance', _srvCxT("Puissance d'émission des réponses (dBm)", 'Reply transmit power (dBm)'), cxl.puissance,
+          _srvCxT('14 dBm : la limite en Europe (EU868) pour la plupart des passerelles.', '14 dBm: the European (EU868) limit for most gateways.'),'14')}
+      </div>
+      <div class="srv-desc" style="margin-top:6px">${_srvCxT(
+        `Seules les passerelles d'un réseau privé sont écoutées. Pour une passerelle reliée par Internet, ajoutez son EUI à <code>connect.lorawan.passerelles</code> dans <code>config.json</code> sur le serveur (réglage réservé, comme les dossiers CSV).`,
+        `Only gateways on a private network are heard. For a gateway reached over the Internet, add its EUI to <code>connect.lorawan.passerelles</code> in <code>config.json</code> on the server (restricted setting, like CSV folders).`)}</div>
+      <div class="srv-desc" style="margin-top:10px">${lk('folder')} Dossiers où les exports CSV peuvent être lus :
+        <span id="srv-cx-racines">—</span>.<br>${_srvCxT(
+        `Pour en ajouter un (partage réseau monté…), éditez <code>connect.csv_racines</code> dans <code>config.json</code> sur le serveur : par sécurité, ce réglage ne se change pas depuis l'application.`,
+        `To add one (mounted network share…), edit <code>connect.csv_racines</code> in <code>config.json</code> on the server: for security, this setting cannot be changed from the application.`)}</div>
     </div>
 
     <!-- ── Logs ──────────────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('📋','Logs')}
+      ${sectionTitle(lk('clipboard-list'),'Logs')}
       <div class="srv-grid">
         ${toggle('lg_actif','Logs activés', lg.actif, 'Active l\'écriture des erreurs PHP dans un fichier de log.')}
         ${field('lg_dossier','Dossier des logs', lg.dossier,
@@ -1553,7 +1621,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── OAuth Microsoft ───────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🪟','Connexion Microsoft (Azure AD)')}
+      ${sectionTitle(lk('app-window'),'Connexion Microsoft (Azure AD)')}
       <div class="srv-grid">
         ${toggle('ms_actif','Microsoft OAuth activé', ms.actif,
           'Active le bouton "Se connecter avec Microsoft" sur la page de login.')}
@@ -1579,7 +1647,7 @@ function _renderTabServeur(cfg) {
 
     <!-- ── OAuth Google ──────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🔵','Connexion Google')}
+      ${sectionTitle(lk('circle', 'p bleu'),'Connexion Google')}
       <div class="srv-grid">
         ${toggle('gg_actif','Google OAuth activé', gg.actif,
           'Active le bouton "Se connecter avec Google" sur la page de login.')}
@@ -1602,9 +1670,9 @@ function _renderTabServeur(cfg) {
     <!-- ── Légifrance / France ───────────────────────── -->
     <!-- ── Facteurs carbone (ADEME) ──────────────────── -->
     <div class="srv-section" id="srv-carbone-section">
-      ${sectionTitle('🌱','Facteurs carbone mobilité (ADEME)')}
+      ${sectionTitle(lk('sprout'),'Facteurs carbone mobilité (ADEME)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ <span>Sans cette source, Larka calcule avec ses <strong>valeurs de repli intégrées</strong> :
+        ${lk('info')} <span>Sans cette source, Larka calcule avec ses <strong>valeurs de repli intégrées</strong> :
         la page Mobilité reste pleinement fonctionnelle. Activer la source permet de suivre les mises à jour
         de la Base Carbone sans redéployer.</span>
       </div>
@@ -1626,8 +1694,8 @@ function _renderTabServeur(cfg) {
           'Laisser activé. À ne désactiver que derrière un proxy interceptant le TLS.')}
       </div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn" onclick="_testerCarbone()">🔌 Tester la connexion</button>
-        <button class="btn" onclick="_purgerCacheCarbone()">🧹 Vider le cache</button>
+        <button class="btn" onclick="_testerCarbone()">${lk('plug')} Tester la connexion</button>
+        <button class="btn" onclick="_purgerCacheCarbone()">${lk('brush-cleaning')} Vider le cache</button>
         <span id="cb_test_result" style="font-size:12px;align-self:center"></span>
       </div>
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--gray-border)">
@@ -1642,27 +1710,27 @@ function _renderTabServeur(cfg) {
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
           <input class="form-control" type="number" id="cb_sync_annee" min="2000" max="2100"
                  value="${new Date().getFullYear()}" style="width:110px;font-family:monospace">
-          <button class="btn" onclick="_figerMillesimeCarbone(false)">📌 Figer depuis l’ADEME</button>
-          <button class="btn" onclick="_figerMillesimeCarbone(true)" style="color:#dc2626">♻️ Refiger (écrase)</button>
-          <button class="btn" onclick="_ouvrirGrilleCarbone()">✏️ Saisir / corriger la grille</button>
+          <button class="btn" onclick="_figerMillesimeCarbone(false)">${lk('pin')} Figer depuis l’ADEME</button>
+          <button class="btn" onclick="_figerMillesimeCarbone(true)" style="color:#dc2626">${lk('recycle')} Refiger (écrase)</button>
+          <button class="btn" onclick="_ouvrirGrilleCarbone()">${lk('pencil')} Saisir / corriger la grille</button>
           <span id="cb_sync_result" style="font-size:12px"></span>
         </div>
         <div class="srv-alert srv-alert-info" style="margin-top:10px">
-          ℹ️ <span>Pour un <strong>exercice passé</strong>, « Figer depuis l’ADEME » ne convient pas : l’API renverrait
+          ${lk('info')} <span>Pour un <strong>exercice passé</strong>, « Figer depuis l’ADEME » ne convient pas : l’API renverrait
           les valeurs d’aujourd’hui. Utilisez la saisie manuelle avec une Base Carbone archivée.</span>
         </div>
       </div>
       <div class="srv-alert srv-alert-warn" style="margin-top:10px">
-        ⚠️ <span>Deux périmètres sont récupérés pour chaque mode : <strong>ACV complet</strong> (fabrication du
+        ${lk('triangle-exclamation-point', 'warn')} <span>Deux périmètres sont récupérés pour chaque mode : <strong>ACV complet</strong> (fabrication du
         véhicule incluse) et <strong>hors construction</strong> (production et combustion du carburant ou de
         l’électricité). « Hors construction » n’est pas « scope 1 » : l’amont carburant y reste compté.</span>
       </div>
     </div>
     <!-- ── Facteurs carbone énergie (ADEME) ──────────────── -->
     <div class="srv-section" id="srv-carbone-energie-section">
-      ${sectionTitle('⚡','Facteurs carbone énergie (ADEME)')}
+      ${sectionTitle(lk('zap'),'Facteurs carbone énergie (ADEME)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ <span>Source ouverte, <strong>aucune clé nécessaire</strong> : le jeu de données Base Carbone est
+        ${lk('info')} <span>Source ouverte, <strong>aucune clé nécessaire</strong> : le jeu de données Base Carbone est
         public sur data.ademe.fr. Comme pour la mobilité, les facteurs sont figés par année et ne sont
         jamais recalculés rétroactivement.</span>
       </div>
@@ -1700,7 +1768,7 @@ function _renderTabServeur(cfg) {
       </div>
     </div>
     <div class="srv-section" id="srv-legifrance-section">
-      ${sectionTitle('⚖️','Légifrance / France')}
+      ${sectionTitle(lk('scale'),'Légifrance / France')}
       <div class="srv-grid">
         ${toggle('lf_actif','Service activé', lf.actif,
           'Active l’intégration backend vers l’API PISTE Légifrance.')}
@@ -1728,17 +1796,17 @@ function _renderTabServeur(cfg) {
           'Optionnel. Chemin vers un fichier .pem approuvé par ton serveur PHP/cURL si la chaîne TLS est interceptée ou privée.', '/etc/ssl/certs/ca-certificates.crt')}
       </div>
       <div class="srv-alert srv-alert-info" id="lf_env_hint" style="margin-top:14px">
-        ℹ️ <span>Les URLs OAuth et API suivent automatiquement l’environnement sélectionné. Tu peux toujours les surcharger ensuite si besoin.</span>
+        ${lk('info')} <span>Les URLs OAuth et API suivent automatiquement l’environnement sélectionné. Tu peux toujours les surcharger ensuite si besoin.</span>
       </div>
       <div class="srv-alert srv-alert-warn" style="margin-top:10px">
-        ⚠️ <span>Si tu obtiens une erreur SSL du type <code>self-signed certificate in certificate chain</code>, garde <strong>Vérification TLS</strong> activée et renseigne d’abord un <strong>bundle CA</strong>. Désactive la vérification seulement en test.</span>
+        ${lk('triangle-exclamation-point', 'warn')} <span>Si tu obtiens une erreur SSL du type <code>self-signed certificate in certificate chain</code>, garde <strong>Vérification TLS</strong> activée et renseigne d’abord un <strong>bundle CA</strong>. Désactive la vérification seulement en test.</span>
       </div>
     </div>
     <!-- ── Relay OAuth ───────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🔁','Relay OAuth (accès mobile hors réseau local)')}
+      ${sectionTitle(lk('repeat'),'Relay OAuth (accès mobile hors réseau local)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ Le relay est un fichier <code>relay.php</code> à héberger sur un domaine public.
+        ${lk('info')} Le relay est un fichier <code>relay.php</code> à héberger sur un domaine public.
         Il permet à un mobile extérieur au réseau local de revenir vers ce serveur
         après authentification OAuth.
       </div>
@@ -1751,9 +1819,9 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Version & mises à jour ───────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('⬆️','Version et mises à jour')}
+      ${sectionTitle(lk('arrow-up'),'Version et mises à jour')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ Larka vérifie automatiquement si une nouvelle version est publiée et vous la propose ; rien ne s'installe sans votre validation.
+        ${lk('info')} Larka vérifie automatiquement si une nouvelle version est publiée et vous la propose ; rien ne s'installe sans votre validation.
         Les données (base, documents, plans, <code>config.json</code>, <code>.env</code>) ne sont jamais modifiées ; une sauvegarde est faite avant chaque installation.
       </div>
       <!-- Rempli par LarkaMaj.panneau() (js/maj.js) une fois l'onglet affiché : version,
@@ -1763,9 +1831,9 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Assistant IA ─────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🤖','Assistant IA (recherche en langage naturel)')}
+      ${sectionTitle(lk('bot'),'Assistant IA (recherche en langage naturel)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ L'assistant permet de rechercher dans Larka en langage naturel.
+        ${lk('info')} L'assistant permet de rechercher dans Larka en langage naturel.
         Choisissez un fournisseur d'IA : <strong>Anthropic</strong>, <strong>OpenAI</strong>, <strong>Mistral</strong>, <strong>Google Gemini</strong>, <strong>Microsoft Copilot</strong>, ou un modèle local (<strong>Ollama</strong>, <strong>LM Studio</strong>).
         Les modèles proposés par défaut sont les plus <strong>rapides et économiques</strong> de chaque fournisseur ; les requêtes réutilisent le cache de prompt (jusqu'à −90 % sur les tokens d'entrée).
       </div>
@@ -1838,9 +1906,9 @@ function _renderTabServeur(cfg) {
 
 <!-- ── SMTP ──────────────────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('📧','Serveur SMTP (envoi d\'emails)')}
+      ${sectionTitle(lk('mail'),'Serveur SMTP (envoi d\'emails)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ Configurez le serveur SMTP pour l'envoi de mails (réinitialisation de mot de passe, notifications).
+        ${lk('info')} Configurez le serveur SMTP pour l'envoi de mails (réinitialisation de mot de passe, notifications).
         Sans configuration SMTP, les emails seront envoyés via <code>mail()</code> de PHP (souvent bloqué).
       </div>
       <div class="srv-grid">
@@ -1865,11 +1933,11 @@ function _renderTabServeur(cfg) {
       </div>
       <div class="srv-grid-1" style="margin-top:14px">
         <div class="srv-field">
-          <div class="srv-label">🧪 Tester l'envoi SMTP</div>
+          <div class="srv-label">${lk('flask-conical')} Tester l'envoi SMTP</div>
           <div class="srv-desc">Envoie un email de test à l'adresse indiquée pour vérifier la configuration.</div>
           <div style="display:flex;gap:8px;margin-top:6px">
             <input class="form-control" id="smtp_test_email" type="email" placeholder="votre@email.com" style="max-width:300px">
-            <button class="btn btn-primary btn-sm" onclick="testerSmtp()">📧 Envoyer un test</button>
+            <button class="btn btn-primary btn-sm" onclick="testerSmtp()">${lk('mail')} Envoyer un test</button>
           </div>
           <div id="smtp_test_result" style="margin-top:6px;font-size:12px"></div>
         </div>
@@ -1877,13 +1945,13 @@ function _renderTabServeur(cfg) {
     </div>
 
     <!-- ── Feedback utilisateur (Problème / Suggestion) ─────────── -->
-    <!-- ⚠️ DÉSACTIVÉ : feedback off (pas de SMTP). Section cachée mais code
+    <!-- ${lk('triangle-exclamation-point', 'warn')} DÉSACTIVÉ : feedback off (pas de SMTP). Section cachée mais code
          conservé pour pouvoir le réactiver facilement. Pour le rouvrir,
          retirer le display:none ci-dessous et la condition dans feedback.js. -->
     <div class="srv-section" style="display:none">
-      ${sectionTitle('💬','Feedback utilisateur (problème / suggestion)')}
+      ${sectionTitle(lk('message-circle'),'Feedback utilisateur (problème / suggestion)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ Permet aux utilisateurs d'envoyer un message via le bouton <strong>« Un problème ? Une suggestion ? »</strong> du menu utilisateur. Le mail est envoyé via le serveur SMTP configuré ci-dessus.
+        ${lk('info')} Permet aux utilisateurs d'envoyer un message via le bouton <strong>« Un problème ? Une suggestion ? »</strong> du menu utilisateur. Le mail est envoyé via le serveur SMTP configuré ci-dessus.
       </div>
       <div class="srv-grid-1">
         ${field('feedback_emails','Destinataires des feedback', ((cfg.feedback||{}).emails || []).join(', '),
@@ -1896,9 +1964,9 @@ function _renderTabServeur(cfg) {
 
     <!-- ── Notifications Push ────────────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🔔','Notifications Push (Web Push / PWA)')}
+      ${sectionTitle(lk('bell'),'Notifications Push (Web Push / PWA)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
-        ℹ️ Envoie une notification native (Android, iOS PWA, Desktop) aux utilisateurs abonnés lorsqu'une demande d'intervention est créée.
+        ${lk('info')} Envoie une notification native (Android, iOS PWA, Desktop) aux utilisateurs abonnés lorsqu'une demande d'intervention est créée.
         La variable <code>{demandeur}</code> est remplacée automatiquement par le nom du demandeur.
       </div>
       <div class="srv-grid">
@@ -1908,9 +1976,9 @@ function _renderTabServeur(cfg) {
           'Si activé, la notification ne disparaît pas automatiquement et nécessite une action de l\'utilisateur.')}
       </div>
       <div class="srv-grid" style="margin-top:14px">
-        ${field('push_titre','Titre de la notification', pu.notif_demande_titre || "📝 Nouvelle demande d'intervention",
+        ${field('push_titre','Titre de la notification', pu.notif_demande_titre || "Nouvelle demande d'intervention",
           'Titre affiché dans la notification. Variable disponible : <code>{demandeur}</code>.',
-          "📝 Nouvelle demande d'intervention")}
+          "Nouvelle demande d'intervention")}
         ${field('push_corps','Corps de la notification', pu.notif_demande_corps || "{demandeur} a soumis une demande d'intervention.",
           'Texte principal. Variable disponible : <code>{demandeur}</code>.',
           "{demandeur} a soumis une demande d'intervention.")}
@@ -1939,48 +2007,48 @@ function _renderTabServeur(cfg) {
       </div>
       <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm" style="background:var(--blue);color:white;border:none;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer"
-          onclick="_pushTestNotif('roles')" title="Simule une vraie demande : envoie aux rôles cochés ci-dessus">📤 Tester (rôles configurés)</button>
+          onclick="_pushTestNotif('roles')" title="Simule une vraie demande : envoie aux rôles cochés ci-dessus">${lk('upload')} Tester (rôles configurés)</button>
         <button class="btn btn-sm" style="background:var(--gray-bg);color:var(--text);border:1px solid var(--gray-border);border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer"
-          onclick="_pushTestNotif('me')" title="Envoie uniquement à vos appareils enregistrés">📱 Tester (moi seul)</button>
+          onclick="_pushTestNotif('me')" title="Envoie uniquement à vos appareils enregistrés">${lk('smartphone')} Tester (moi seul)</button>
         <button class="btn btn-sm" style="background:var(--gray-bg);color:var(--text);border:1px solid var(--gray-border);border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer"
-          onclick="_pushTestNotif('all')" title="Envoie à TOUS les abonnés">📢 Tester (tous)</button>
+          onclick="_pushTestNotif('all')" title="Envoie à TOUS les abonnés">${lk('megaphone')} Tester (tous)</button>
       </div>
       <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm" style="background:var(--gray-bg);color:var(--text);border:1px solid var(--gray-border);border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer"
-          onclick="_pushDiagnose()">🔍 Diagnostic VAPID</button>
+          onclick="_pushDiagnose()">${lk('search')} Diagnostic VAPID</button>
         <button class="btn btn-sm" style="background:var(--gray-bg);color:var(--text);border:1px solid var(--gray-border);border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer"
-          onclick="_pushShowSubscriptions()">📋 Voir les abonnements</button>
+          onclick="_pushShowSubscriptions()">${lk('clipboard-list')} Voir les abonnements</button>
         <button class="btn btn-sm" style="background:#fff3cd;color:#856404;border:1px solid #ffc107;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer"
-          onclick="if(confirm('⚠️ Régénérer les clés VAPID supprimera TOUS les abonnements existants. Continuer ?')) _pushRegenVapid()">🔑 Régénérer clés VAPID</button>
+          onclick="if(confirm('Régénérer les clés VAPID supprimera TOUS les abonnements existants. Continuer ?')) _pushRegenVapid()">${lk('key-round')} Régénérer clés VAPID</button>
       </div>
       <div id="push_test_result" style="font-size:12px;margin-top:10px"></div>
       <div id="push_subs_list" style="margin-top:10px"></div>
     </div>
 
     <div class="srv-section">
-      ${sectionTitle('📝','Paramètres demandes')}
+      ${sectionTitle(lk('file-pen-line'),'Paramètres demandes')}
       <div class="srv-grid">
         <div id="srv-max-photos-wrap">
-          ${field('srv_max_photos','📷 Nombre max de photos par demande','',
+          ${field('srv_max_photos',(lk('camera') + ' Nombre max de photos par demande'),'',
             'Nombre maximum de photos qu\'un demandeur peut joindre à une demande. Mettre 0 pour désactiver.','4')}
-          <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="sauverConfigDemande('max_photos_demande','srv_max_photos')">💾 Enregistrer</button>
+          <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="sauverConfigDemande('max_photos_demande','srv_max_photos')">${lk('save')} Enregistrer</button>
         </div>
         <div id="srv-items-page-wrap">
-          ${field('srv_items_page','📄 Nombre d\'éléments par page (demandeur)','',
+          ${field('srv_items_page',(lk('file-text') + ' Nombre d\'éléments par page (demandeur)'),'',
             'Nombre de demandes affichées par page dans la vue demandeur.','25')}
-          <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="sauverConfigDemande('items_par_page','srv_items_page')">💾 Enregistrer</button>
+          <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="sauverConfigDemande('items_par_page','srv_items_page')">${lk('save')} Enregistrer</button>
         </div>
       </div>
     </div>
 
     <!-- ── Modules complémentaires ───────────────────── -->
     <div class="srv-section">
-      ${sectionTitle('🧩','Modules complémentaires')}
+      ${sectionTitle(lk('puzzle'),'Modules complémentaires')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
         Un module est un fichier <code>.larka</code> décrivant des données et des écrans,
         que Larka interprète : <strong>aucun code n'est exécuté</strong>. Chaque module
         annonce, avant installation, les tables qu'il créera et les écrans qu'il ajoutera.
-        <br>Un module doit ensuite être affecté à un client (Super&nbsp;Admin → Tenants → 🧩).
+        <br>Un module doit ensuite être affecté à un client (Super&nbsp;Admin → Tenants → ${lk('puzzle')}).
       </div>
       <div class="srv-grid">
         ${toggle('ext_actif','Activer les modules complémentaires', ext.actif === true,
@@ -1989,21 +2057,21 @@ function _renderTabServeur(cfg) {
     </div>
 
     <div class="srv-section" id="srv-upload-limits-section">
-      ${sectionTitle('📤','Limites d\'upload (taille des fichiers)')}
+      ${sectionTitle(lk('upload'),'Limites d\'upload (taille des fichiers)')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
         Ces valeurs s'appliquent aux uploads (image de fond, import DXF/SVG/Shapefile, etc.). Elles sont écrites dans un fichier <code>.user.ini</code> à la racine, lu automatiquement par PHP-FPM (Nginx) et CGI/Apache.
         <br><strong>Important :</strong> en Nginx, vérifiez aussi <code>client_max_body_size</code> dans la conf serveur.
       </div>
-      <div id="srv-upload-limits-content" style="color:var(--gray-text);text-align:center;padding:20px">⏳ Chargement…</div>
+      <div id="srv-upload-limits-content" style="color:var(--gray-text);text-align:center;padding:20px">${lk('hourglass')} Chargement…</div>
     </div>
 
     <div class="srv-section">
-      ${sectionTitle('🛠️','Maintenance base de données')}
+      ${sectionTitle(lk('hammer'),'Maintenance base de données')}
       <div class="srv-alert srv-alert-info" style="margin-bottom:14px">
         <strong>Resynchronisation des séquences PostgreSQL</strong> — Si vous obtenez une erreur "<code>duplicate key value violates unique constraint</code>" lors d'un ajout (par exemple : ajout d'une catégorie de liste), cela signifie que les compteurs d'auto-incrémentation sont désynchronisés. Cela arrive après un import de données depuis SQLite/MariaDB. Cliquez sur le bouton ci-dessous pour réparer.
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="_dbResyncSequences()" id="btnResyncSeq">🔧 Resynchroniser les séquences</button>
+        <button class="btn btn-primary btn-sm" onclick="_dbResyncSequences()" id="btnResyncSeq">${lk('wrench')} Resynchroniser les séquences</button>
         <span id="resyncSeqResult" style="font-size:12px"></span>
       </div>
     </div>
@@ -2017,7 +2085,7 @@ function _renderTabServeur(cfg) {
     document.querySelectorAll('.srv-toggle input[type=checkbox]').forEach(cb => {
       cb.addEventListener('change', function() {
         const lbl = document.getElementById(this.id + '_lbl');
-        if (lbl) lbl.textContent = this.checked ? '✅ Activé' : '⬜ Désactivé';
+        if (lbl) lbl.innerHTML = this.checked ? '${lk('circle-check', 'ok')} Activé' : '${lk('square')} Désactivé';
       });
     });
   })();
@@ -2055,7 +2123,7 @@ function _switchDbDriver(drv) {
       modeBadge.style.background = '#fff8e1';
       modeBadge.style.color = '#795548';
       modeBadge.style.border = '1px solid #ffe082';
-      modeBadge.textContent = '🔄 Migration vers ' + {sqlite:'SQLite',pgsql:'PostgreSQL',mariadb:'MariaDB'}[drv];
+      modeBadge.textContent = 'Migration vers ' + {sqlite:'SQLite',pgsql:'PostgreSQL',mariadb:'MariaDB'}[drv];
     }
     _migPopulateConfigFields(drv);
     _migResetSteps();
@@ -2176,34 +2244,35 @@ async function _migUnifiedTest() {
   const stepBk     = document.getElementById('mig-step-backup');
   const stepRun    = document.getElementById('mig-step-run');
 
-  btn.disabled = true; btn.textContent = '⏳ Test en cours…';
+  btn.disabled = true; btn.textContent = 'Test en cours…';
   detail.innerHTML = '';
 
   try {
     const r = await MigrationApi.test(dest);
     if (r.connected) {
       // Success
-      if (result)     { result.textContent = '✅ Connexion réussie !'; result.style.color = 'var(--chip-ok-fg)'; }
+      if (result)     { result.textContent = 'Connexion réussie !'; result.style.color = 'var(--chip-ok-fg)'; }
       if (stepTest)   stepTest.classList.add('step-ok');
       if (stepTest)   stepTest.classList.remove('step-err');
-      if (statusTest) { statusTest.textContent = '✅ OK'; statusTest.style.color = 'var(--chip-ok-fg)'; }
+      if (statusTest) { statusTest.textContent = 'OK'; statusTest.style.color = 'var(--chip-ok-fg)'; }
       detail.innerHTML = `<div style="background:#e6f4ea;border:1px solid #a8d5b5;border-radius:7px;padding:10px 14px;color:#1a7a3f;font-size:12px;font-weight:600">
-        ✅ Connexion ${dest.driver.toUpperCase()} réussie — vous pouvez continuer.
+        ${lk('circle-check', 'ok')} Connexion ${dest.driver.toUpperCase()} réussie — vous pouvez continuer.
       </div>`;
       // Unlock next steps
       if (stepBk)  { stepBk.style.opacity = '1'; stepBk.style.pointerEvents = 'auto'; }
       if (stepRun) { stepRun.style.opacity = '1'; stepRun.style.pointerEvents = 'auto'; }
     } else {
       // Failure
-      if (result)     { result.textContent = '❌ Connexion échouée'; result.style.color = 'var(--red)'; }
+      if (result)     { result.textContent = 'Connexion échouée'; result.style.color = 'var(--red)'; }
       if (stepTest)   stepTest.classList.add('step-err');
       if (stepTest)   stepTest.classList.remove('step-ok');
-      if (statusTest) { statusTest.textContent = '❌ Échoué'; statusTest.style.color = 'var(--red)'; }
-      const lines = (r.error ?? 'Erreur inconnue').split('\n').map(l =>
-        `<div style="margin-top:3px;font-size:12px;color:${l.startsWith('⚠')?'var(--chip-warn-fg)':l.startsWith('→')?'var(--gray-text)':'var(--text)'}">${_escCfg(l)}</div>`
-      ).join('');
+      if (statusTest) { statusTest.textContent = 'Échoué'; statusTest.style.color = 'var(--red)'; }
+      const lines = (r.error ?? 'Erreur inconnue').split('\n').map(l => {
+        const x = _cfgLigneRapport(l);
+        return `<div style="margin-top:3px;font-size:12px;color:${x.couleur}">${x.html}</div>`;
+      }).join('');
       detail.innerHTML = `<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:7px;padding:12px 14px">
-        <div style="font-weight:700;color:var(--red);margin-bottom:6px">❌ Connexion impossible</div>
+        <div style="font-weight:700;color:var(--red);margin-bottom:6px">${lk('circle-x', 'ko')} Connexion impossible</div>
         ${lines}
       </div>`;
       // Keep next steps locked
@@ -2211,11 +2280,11 @@ async function _migUnifiedTest() {
       if (stepRun) { stepRun.style.opacity = '0.5'; stepRun.style.pointerEvents = 'none'; }
     }
   } catch(e) {
-    if (result) { result.textContent = '❌ Erreur'; result.style.color = 'var(--red)'; }
+    if (result) { result.textContent = 'Erreur'; result.style.color = 'var(--red)'; }
     if (stepTest) stepTest.classList.add('step-err');
-    detail.innerHTML = `<div style="color:var(--red);padding:10px;font-size:13px">❌ ${_escCfg(e.message)}</div>`;
+    detail.innerHTML = `<div style="color:var(--red);padding:10px;font-size:13px">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</div>`;
   } finally {
-    btn.disabled = false; btn.textContent = '🔌 Tester la connexion';
+    btn.disabled = false; btn.textContent = 'Tester la connexion';
   }
 }
 
@@ -2226,7 +2295,7 @@ async function _migUnifiedRun() {
   const backupPath = document.getElementById('mig_backup_path')?.value.trim() || null;
 
   const ok = confirm(
-    '⚠️  MIGRATION — CONFIRMATION\n\n' +
+    ' MIGRATION — CONFIRMATION\n\n' +
     'Ce que va faire cet outil :\n' +
     '  1. Créer une sauvegarde de la base source\n' +
     '  2. Copier toutes les données vers ' + dest.driver.toUpperCase() + '\n' +
@@ -2245,11 +2314,11 @@ async function _migUnifiedRun() {
   const statusBk  = document.getElementById('mig-status-backup');
 
   runBtn.disabled = true; testBtn.disabled = true;
-  runBtn.textContent = '⏳ Migration en cours…';
-  if (statusRun) { statusRun.textContent = '⏳ En cours…'; statusRun.style.color = 'var(--gray-text)'; }
-  if (statusBk)  { statusBk.textContent = '⏳ Sauvegarde…'; statusBk.style.color = 'var(--gray-text)'; }
+  runBtn.textContent = 'Migration en cours…';
+  if (statusRun) { statusRun.textContent = 'En cours…'; statusRun.style.color = 'var(--gray-text)'; }
+  if (statusBk)  { statusBk.textContent = 'Sauvegarde…'; statusBk.style.color = 'var(--gray-text)'; }
   res.innerHTML = `<div style="padding:22px;text-align:center;color:var(--gray-text);font-size:13px">
-    ⏳ Migration en cours — ne fermez pas cette page…
+    ${lk('hourglass')} Migration en cours — ne fermez pas cette page…
   </div>`;
 
   try {
@@ -2257,13 +2326,13 @@ async function _migUnifiedRun() {
 
     // Mark steps as OK
     if (stepBk)    stepBk.classList.add('step-ok');
-    if (statusBk)  { statusBk.textContent = '✅ Sauvegardé'; statusBk.style.color = 'var(--chip-ok-fg)'; }
+    if (statusBk)  { statusBk.textContent = 'Sauvegardé'; statusBk.style.color = 'var(--chip-ok-fg)'; }
     if (stepRun)   stepRun.classList.add('step-ok');
-    if (statusRun) { statusRun.textContent = '✅ Réussi'; statusRun.style.color = 'var(--chip-ok-fg)'; }
+    if (statusRun) { statusRun.textContent = 'Réussi'; statusRun.style.color = 'var(--chip-ok-fg)'; }
 
     // Rapport table par table
     const rows = (r.report ?? []).map(item => {
-      const icon  = {ok:'✅', skip:'⏭️', info:'ℹ️', warn:'⚠️', error:'❌'}[item.status] ?? '•';
+      const icon  = {ok:lk('circle-check', 'ok'), skip:lk('skip-forward'), info:lk('info'), warn:lk('triangle-exclamation-point', 'warn'), error:''}[item.status] ?? '•';
       const color = item.status==='error' ? 'var(--red)'
                   : item.status==='warn'  ? 'var(--orange, #b45309)'
                   : item.status==='skip'  ? 'var(--gray-text)' : 'var(--text)';
@@ -2278,10 +2347,10 @@ async function _migUnifiedRun() {
     res.innerHTML = `
       <div style="background:#e6f4ea;border:1px solid #a8d5b5;border-radius:7px;padding:14px 16px;margin-bottom:14px">
         <div style="font-weight:700;font-size:14px;color:#1a7a3f">
-          ✅ Migration réussie : ${r.src_driver?.toUpperCase()} → ${r.dst_driver?.toUpperCase()}
+          ${lk('circle-check', 'ok')} Migration réussie : ${r.src_driver?.toUpperCase()} → ${r.dst_driver?.toUpperCase()}
         </div>
         ${r.backup ? `<div style="margin-top:6px;font-size:12px;color:#2e7d32">
-          📦 Sauvegarde conservée : <code>data/backups/${_escCfg(r.backup)}</code></div>` : ''}
+          ${lk('package')} Sauvegarde conservée : <code>data/backups/${_escCfg(r.backup)}</code></div>` : ''}
       </div>
       <div style="border:1px solid var(--gray-border);border-radius:7px;overflow:hidden;margin-bottom:14px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -2294,13 +2363,13 @@ async function _migUnifiedRun() {
         </table>
       </div>
       <div class="srv-alert srv-alert-warn">
-        ⚠️ <strong>config.json mis à jour automatiquement.</strong>
+        ${lk('triangle-exclamation-point', 'warn')} <strong>config.json mis à jour automatiquement.</strong>
         Redémarrez le serveur PHP (Ctrl+C puis relancez) puis reconnectez-vous.
         <strong>Pas besoin d'enregistrer à nouveau.</strong>
       </div>
       <div style="margin-top:12px;text-align:center">
         <button class="btn btn-primary" onclick="location.reload()" style="background:#1a7a3f;border-color:#1a7a3f;font-size:14px;padding:10px 28px">
-          🔄 Recharger la page (après redémarrage du serveur)
+          ${lk('refresh-cw')} Recharger la page (après redémarrage du serveur)
         </button>
       </div>`;
 
@@ -2317,23 +2386,23 @@ async function _migUnifiedRun() {
 
   } catch(e) {
     if (stepRun)   stepRun.classList.add('step-err');
-    if (statusRun) { statusRun.textContent = '❌ Échoué'; statusRun.style.color = 'var(--red)'; }
+    if (statusRun) { statusRun.textContent = 'Échoué'; statusRun.style.color = 'var(--red)'; }
     if (stepBk)    stepBk.classList.add('step-err');
-    if (statusBk)  { statusBk.textContent = '❌ Erreur'; statusBk.style.color = 'var(--red)'; }
+    if (statusBk)  { statusBk.textContent = 'Erreur'; statusBk.style.color = 'var(--red)'; }
 
     const lines = e.message.split('\n').map((l,i) => {
-      const color = l.startsWith('⚠') ? 'var(--chip-warn-fg)' : l.startsWith('→') ? 'var(--gray-text)' : i===0 ? 'var(--red)' : 'var(--text)';
-      return `<div style="margin-top:${i===0?0:4}px;font-size:${i===0?13:12}px;color:${color};${i===0?'font-weight:700':''}">${_escCfg(l)}</div>`;
+      const x = _cfgLigneRapport(l, i === 0 ? 'var(--red)' : 'var(--text)');
+      return `<div style="margin-top:${i===0?0:4}px;font-size:${i===0?13:12}px;color:${x.couleur};${i===0?'font-weight:700':''}">${x.html}</div>`;
     }).join('');
     res.innerHTML = `
       <div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:7px;padding:14px 16px">
-        <div style="font-weight:700;color:var(--red);margin-bottom:8px">❌ Migration échouée — aucune modification effectuée</div>
+        <div style="font-weight:700;color:var(--red);margin-bottom:8px">${lk('circle-x', 'ko')} Migration échouée — aucune modification effectuée</div>
         ${lines}
       </div>`;
     toast('Migration échouée — aucune modification.', 'error');
   } finally {
     runBtn.disabled = false; testBtn.disabled = false;
-    runBtn.textContent = '🚀 Lancer la migration';
+    runBtn.textContent = 'Lancer la migration';
   }
 }
 
@@ -2350,22 +2419,22 @@ async function _srvChargerEtatSauvegardes() {
       // Multi-tenant : une sauvegarde par organisation, réglée dans Super Admin.
       document.getElementById('srv-bk-champs')?.remove();
       sec?.querySelector('button')?.remove();
-      el.innerHTML = '🏢 Installation multi-tenant : les sauvegardes se règlent <strong>par organisation</strong> — Super Admin → organisation → ✏️ → Sauvegardes.';
+      el.innerHTML = (lk('building-complex') + ' Installation multi-tenant : les sauvegardes se règlent <strong>par organisation</strong> — Super Admin → organisation → ' + lk('pencil') + ' → Sauvegardes.');
       return;
     }
     const w = (d.travaux || [])[0];
     if (!w) { el.textContent = 'État indisponible.'; return; }
     const quand = (t) => t ? new Date(String(t).replace(' ', 'T')).toLocaleString('fr-FR') : '—';
-    let h = w.derniere ? `✅ Dernière : <strong>${_escCfg(quand(w.derniere))}</strong>${w.fichier ? ` — <code>${_escCfg(w.fichier)}</code>` : ''}`
-                       : '⬜ Aucune sauvegarde automatique pour l\'instant.';
-    if (w.reglage && w.reglage.actif) h += `<br>⏭️ Prochaine : ${_escCfg(quand(w.prochaine))}`;
-    if (w.en_retard) h += `<br><span style="color:var(--red)">⚠️ En retard : le planificateur ne tourne pas ? (lanceur fermé, tâche planifiée absente) — <code>php api/outils/sauvegarde-auto.php --etat</code></span>`;
-    if (w.erreur) h += `<br><span style="color:var(--red)">⚠️ Dernier échec : ${_escCfg(w.erreur)}</span>`;
+    let h = w.derniere ? `${lk('circle-check', 'ok')} Dernière : <strong>${_escCfg(quand(w.derniere))}</strong>${w.fichier ? ` — <code>${_escCfg(w.fichier)}</code>` : ''}`
+                       : (lk('square') + ' Aucune sauvegarde automatique pour l\'instant.');
+    if (w.reglage && w.reglage.actif) h += `<br>${lk('skip-forward')} Prochaine : ${_escCfg(quand(w.prochaine))}`;
+    if (w.en_retard) h += `<br><span style="color:var(--red)">${lk('triangle-exclamation-point', 'warn')} En retard : le planificateur ne tourne pas ? (lanceur fermé, tâche planifiée absente) — <code>php api/outils/sauvegarde-auto.php --etat</code></span>`;
+    if (w.erreur) h += `<br><span style="color:var(--red)">${lk('triangle-exclamation-point', 'warn')} Dernier échec : ${_escCfg(w.erreur)}</span>`;
     // Le planificateur passe toutes les 10 minutes : au-delà de 30, il ne tourne pas.
     const passe = d.dernier_passage ? Date.parse(String(d.dernier_passage).replace(' ', 'T')) : NaN;
     const actif = !isNaN(passe) && (Date.now() - passe) < 30 * 60 * 1000;
     if (w.reglage && w.reglage.actif && !actif && !w.en_retard) {
-      h += `<br><span style="color:var(--orange,#b45309)">⚠️ Planificateur ${d.dernier_passage ? 'inactif depuis le ' + _escCfg(quand(d.dernier_passage)) : 'pas encore passé'} : `
+      h += `<br><span style="color:var(--orange,#b45309)">${lk('triangle-exclamation-point', 'warn')} Planificateur ${d.dernier_passage ? 'inactif depuis le ' + _escCfg(quand(d.dernier_passage)) : 'pas encore passé'} : `
          + `les sauvegardes partent pendant que Larka tourne avec <code>./start.sh</code> ou <code>Larka.cmd</code>, avec la minuterie systemd `
          + `(<code>./start.sh autostart on</code>) ou la tâche cron de production.</span>`;
     } else if (actif) {
@@ -2376,8 +2445,62 @@ async function _srvChargerEtatSauvegardes() {
     el.textContent = 'État des sauvegardes indisponible : ' + (e.message || e);
   }
 }
+// ── Larka Connect : état du planificateur et du service OCPP ────────────────
+/**
+ * Larka Connect : phrases assemblées (dates, comptes) composées dans la langue
+ * de l'interface ; les libellés fixes passent par le pack de langue.
+ */
+function _srvCxT(fr, en) {
+  try { return ((typeof uiPrefsGet === 'function' ? uiPrefsGet() : JSON.parse(localStorage.getItem('gmao_ui_prefs')) || {}).langue === 'en') ? en : fr; }
+  catch (_) { return fr; }
+}
+
+async function _srvChargerEtatConnect() {
+  const el = document.getElementById('srv-cx-etat');
+  if (!el) return;
+  try {
+    const r = await apiRequest('connect_etat');
+    const d = (r && r.data) || r || {};
+    const quand = (t) => t ? new Date(String(t).replace(' ', 'T')).toLocaleString('fr-FR') : '—';
+    const rac = document.getElementById('srv-cx-racines');
+    if (rac) rac.innerHTML = (d.csv_racines || []).map(x => '<code>' + _escCfg(x) + '</code>').join(', ') || '—';
+    if (!d.actif_serveur) { el.innerHTML = _srvCxT(`${lk('square')} Larka Connect est fermé sur ce serveur.`, `${lk('square')} Larka Connect is closed on this server.`); return; }
+    const dp = d.dernier_passage ? _escCfg(quand(d.dernier_passage)) : '';
+    let h = d.planificateur_actif
+      ? _srvCxT(`${lk('circle-check', 'ok')} Collecte active — dernier passage : <strong>${dp || '—'}</strong>.`, `${lk('circle-check', 'ok')} Collection running — last run: <strong>${dp || '—'}</strong>.`)
+      : `<span style="color:var(--orange,#b45309)">` + _srvCxT(
+          `${lk('triangle-exclamation-point', 'warn')} La collecte ne passe pas${dp ? ' depuis le ' + dp : ''} : elle tourne avec <code>./start.sh</code> ou <code>Larka.cmd</code>, la minuterie systemd (<code>./start.sh autostart on</code>) ou la tâche cron de production. Vérifier : <code>php api/outils/connect-collecte.php --etat</code>`,
+          `${lk('triangle-exclamation-point', 'warn')} Collection is not running${dp ? ' since ' + dp : ''}: it runs with <code>./start.sh</code> or <code>Larka.cmd</code>, the systemd timer (<code>./start.sh autostart on</code>) or the production cron job. Check: <code>php api/outils/connect-collecte.php --etat</code>`) + `</span>`;
+    const o = d.ocpp || {};
+    if (o.actif) {
+      h += o.en_marche
+        ? '<br>' + _srvCxT(`${lk('circle-check', 'ok')} Service OCPP en écoute sur <code>${_escCfg(o.ecoute || '')}</code> — adresse des bornes : <code>${_escCfg(o.adresse || '')}</code>`,
+                           `${lk('circle-check', 'ok')} OCPP service listening on <code>${_escCfg(o.ecoute || '')}</code> — charger
+address: <code>${_escCfg(o.adresse || '')}</code>`)
+        : `<br><span style="color:var(--orange,#b45309)">` + _srvCxT(`${lk('triangle-exclamation-point', 'warn')} OCPP activé, mais le service ne tourne pas : <code>php api/outils/connect-ocpp.php --etat</code>`,
+                                                                      `${lk('triangle-exclamation-point', 'warn')} OCPP enabled, but the service is not running: <code>php api/outils/connect-ocpp.php --etat</code>`) + `</span>`;
+      const n = (o.inconnues || []).length;
+      if (n) h += `<br><span style="color:var(--orange,#b45309)">` + _srvCxT(`${lk('triangle-exclamation-point', 'warn')} ${n} connexion(s) de borne inconnue refusée(s) — voir Bâtiments → Connexions.`,
+                                                                              `${lk('triangle-exclamation-point', 'warn')} ${n} unknown charger connection${n > 1 ? 's' : ''} refused — see Buildings → Connections.`) + `</span>`;
+    }
+    const lw = d.lorawan || {};
+    if (lw.actif) {
+      const ng = (lw.passerelles || []).length;
+      h += lw.en_marche
+        ? '<br>' + _srvCxT(`${lk('circle-check', 'ok')} Serveur LoRaWAN en écoute sur <code>udp://${_escCfg(lw.ecoute || '')}</code> — ${ng} passerelle(s) entendue(s).`,
+                           `${lk('circle-check', 'ok')} LoRaWAN server listening on <code>udp://${_escCfg(lw.ecoute || '')}</code> — ${ng} gateway(s) heard.`)
+        : `<br><span style="color:var(--orange,#b45309)">` + _srvCxT(`${lk('triangle-exclamation-point', 'warn')} LoRaWAN activé, mais le service ne tourne pas : <code>php api/outils/connect-ocpp.php --etat</code>`,
+                                                                      `${lk('triangle-exclamation-point', 'warn')} LoRaWAN enabled, but the service is not running: <code>php api/outils/connect-ocpp.php --etat</code>`) + `</span>`;
+    }
+    if (d.actif_organisation === false) h += '<br>' + _srvCxT(`${lk('square')} Fermé pour cette organisation (Super Admin → modules).`, `${lk('square')} Closed for this organisation (Super Admin → modules).`);
+    el.innerHTML = h;
+  } catch (e) {
+    el.textContent = _srvCxT(`État de Larka Connect indisponible : `, `Larka Connect status unavailable: `) + (e.message || e);
+  }
+}
+
 async function _srvSauvegarderMaintenant(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Sauvegarde en cours…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sauvegarde en cours…'; }
   try {
     const r = await apiRequest('sauvegarde_maintenant', 'POST', {});
     const d = (r && r.data) || r || {};
@@ -2385,7 +2508,7 @@ async function _srvSauvegarderMaintenant(btn) {
   } catch (e) {
     toast('Sauvegarde impossible : ' + (e.message || e), 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Sauvegarder maintenant'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Sauvegarder maintenant'; }
     _srvChargerEtatSauvegardes();
   }
 }
@@ -2406,7 +2529,7 @@ function _activeDriver() {
 async function _sauvegarderServeur() {
   const btn = document.querySelector('.srv-save-bar .btn-primary');
   const status = document.getElementById('srv-save-status');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enregistrement…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Enregistrement…'; }
 
   const drv = _activeDriver();
 
@@ -2491,6 +2614,25 @@ async function _sauvegarderServeur() {
     p('sauvegardes','dossier',           'bk_dossier', 'data/backups');
   }
 
+  // Larka Connect
+  if (document.getElementById('cx_actif')) {
+    const entier = (id, def, min, max) => Math.min(max, Math.max(min, parseInt(_readField(id, def), 10) || def));
+    p('connect','actif', 'cx_actif', false);
+    P.push({section:'connect', cle:'retention_jours',           valeur: entier('cx_retention', 400, 30, 3650)});
+    P.push({section:'connect', cle:'valeur_periodique_minutes', valeur: entier('cx_periodique', 15, 1, 1440)});
+    P.push({section:'connect', cle:'budget_secondes',           valeur: entier('cx_budget', 50, 10, 55)});
+    p('connect','actif',            'cx_ocpp_actif',   false,     'ocpp');
+    p('connect','hote',             'cx_ocpp_hote',    '0.0.0.0', 'ocpp');
+    P.push({section:'connect', sous_section:'ocpp', cle:'port', valeur: entier('cx_ocpp_port', 9000, 1, 65535)});
+    p('connect','adresse_publique', 'cx_ocpp_adresse', '',        'ocpp');
+    if (document.getElementById('cx_lw_actif')) {
+      p('connect','actif', 'cx_lw_actif', false,     'lorawan');
+      p('connect','hote',  'cx_lw_hote',  '0.0.0.0', 'lorawan');
+      P.push({section:'connect', sous_section:'lorawan', cle:'port',      valeur: entier('cx_lw_port', 1700, 1, 65535)});
+      P.push({section:'connect', sous_section:'lorawan', cle:'puissance', valeur: entier('cx_lw_puissance', 14, 2, 27)});
+    }
+  }
+
   // Logs
   p('logs','actif',          'lg_actif',  true);
   p('logs','dossier',        'lg_dossier','data/logs');
@@ -2566,7 +2708,7 @@ async function _sauvegarderServeur() {
 
   // Push Notifications
   p('push','actif',                          'push_actif',              true);
-  p('push','notif_demande_titre',            'push_titre',             '📝 Nouvelle demande d\'intervention');
+  p('push','notif_demande_titre',            'push_titre',             'Nouvelle demande d\'intervention');
   p('push','notif_demande_corps',            'push_corps',             '{demandeur} a soumis une demande d\'intervention.');
   p('push','notif_demande_icon',             'push_icon',              '/icon.png');
   p('push','notif_demande_image',            'push_image',             '');
@@ -2608,18 +2750,18 @@ async function _sauvegarderServeur() {
 
     if (warnings.length > 0) {
       const warnHtml = warnings.map(w => {
-        const color = w.startsWith('✅') ? 'var(--chip-ok-fg)' : w.startsWith('→') ? 'var(--gray-text)' : 'var(--chip-warn-fg)';
-        return `<div style="color:${color};font-size:12px;margin-top:3px">${_escCfg(w)}</div>`;
+        const x = _cfgLigneRapport(w, 'var(--chip-warn-fg)');
+        return `<div style="color:${x.couleur};font-size:12px;margin-top:3px">${x.html}</div>`;
       }).join('');
       if (status) status.innerHTML = `
         <div style="background:var(--orange-light,#fff8e1);border:1px solid var(--orange,#f5a623);border-radius:7px;padding:12px 14px;margin-top:6px">
-          <div style="font-weight:700;color:var(--text);margin-bottom:6px">⚠️ Config sauvegardée — avertissements :</div>
+          <div style="font-weight:700;color:var(--text);margin-bottom:6px">${lk('triangle-exclamation-point', 'warn')} Config sauvegardée — avertissements :</div>
           ${warnHtml}
         </div>`;
       toast('Config sauvegardée — voir les avertissements.', 'warning');
       _srvNoterEnregistre();
     } else {
-      if (status) status.innerHTML = `<span style="color:var(--chip-ok-fg)">✅ config.json enregistré — redémarrez le serveur pour appliquer.</span>`;
+      if (status) status.innerHTML = `<span style="color:var(--chip-ok-fg)">${lk('circle-check', 'ok')} config.json enregistré — redémarrez le serveur pour appliquer.</span>`;
       toast('Configuration serveur sauvegardée.', 'success');
       _srvNoterEnregistre();
     }
@@ -2635,17 +2777,15 @@ async function _sauvegarderServeur() {
       ? warnings
       : e.message.split('\n');
 
-    const lines = allLines.map(l => `<div style="margin-top:3px;font-size:12px;color:${
-      l.startsWith('✅') ? 'var(--chip-ok-fg)' : l.startsWith('→') ? 'var(--gray-text)' : l.startsWith('⚠') ? 'var(--chip-warn-fg)' : 'var(--text)'
-    }">${_escCfg(l)}</div>`).join('');
+    const lines = allLines.map(l => { const x = _cfgLigneRapport(l); return `<div style="margin-top:3px;font-size:12px;color:${x.couleur}">${x.html}</div>`; }).join('');
     if (status) status.innerHTML = `
       <div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:7px;padding:12px 14px;margin-top:6px">
-        <div style="font-weight:700;color:var(--red);margin-bottom:6px">❌ Sauvegarde refusée — base de données inaccessible</div>
+        <div style="font-weight:700;color:var(--red);margin-bottom:6px">${lk('circle-x', 'ko')} Sauvegarde refusée — base de données inaccessible</div>
         ${lines}
       </div>`;
     toast('Sauvegarde refusée — voir les détails.', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Enregistrer config.json'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Enregistrer config.json'; }
   }
 }
 
@@ -2734,7 +2874,7 @@ async function configurerCategorie(categorie, label) {
       </div>
     </label>`;
 
-  openModal(`⚙️ Configurer "${label}"`, `
+  openModal(`Configurer "${label}"`, `
   <div class="form-grid cols-1">
     <div style="font-size:13px;color:var(--gray-text);margin-bottom:4px">
       Ces paramètres s'appliquent à <strong>tous les éléments</strong> de cette
@@ -2753,6 +2893,7 @@ async function configurerCategorie(categorie, label) {
       const res = await apiRequest('liste_reglages', 'POST', {
         categorie, obligatoire: v('f_catOblig'), libre: v('f_catLibre'),
       });
+      if (typeof ListesApi !== 'undefined') ListesApi.invalidateCache();
       toast(res?.valeurs_touchees > 0
         ? 'Configuration appliquée à la liste.'
         : "Configuration enregistrée : elle s'appliquera aux valeurs à venir.",
@@ -2784,7 +2925,7 @@ function _renderListesModules() {
 
   let html = `<div style="padding:12px 16px;background:var(--blue-pale);border-radius:10px;
       margin-bottom:16px;font-size:13px;color:var(--navy);line-height:1.6">
-      <strong>🧩 Listes des modules</strong> — Elles vivent dans un fichier propre à
+      <strong>${lk('puzzle')} Listes des modules</strong> — Elles vivent dans un fichier propre à
       ce client, pas dans la base. Vous pouvez les modifier ici ou éditer le
       fichier directement : c'est le même.
     </div>`;
@@ -2809,7 +2950,7 @@ function _renderListesModules() {
           </div>
           <button class="btn btn-sm btn-secondary"
             onclick="modifierListeModule('${escHtml(mod.identifiant)}','${escHtml(cat)}')">
-            ⚙️ Modifier</button>
+            ${lk('settings')} Modifier</button>
         </div>
         <div style="font-size:11px;color:var(--gray-text);margin-bottom:8px;display:flex;gap:12px">
           ${def.obligatoire ? '<span style="color:var(--red)">● Champ obligatoire</span>'
@@ -2843,7 +2984,7 @@ function modifierListeModule(identifiant, categorie) {
   const def = mod?.listes?.[categorie];
   if (!def) { toast('Liste introuvable.', 'error'); return; }
 
-  openModal(`⚙️ ${escHtml(def.libelle || categorie)}`, `
+  openModal(`${escHtml(def.libelle || categorie)}`, `
   <div class="form-grid cols-1">
     <div style="font-size:12px;color:var(--gray-text)">
       Module « ${escHtml(mod.module)} » · <code>${escHtml(mod.fichier)}</code>
@@ -3020,15 +3161,15 @@ async function testerSmtp() {
   const email = document.getElementById('smtp_test_email')?.value;
   const result = document.getElementById('smtp_test_result');
   if (!email || !email.includes('@')) {
-    if (result) result.innerHTML = '<span style="color:var(--red)">❌ Entrez une adresse email valide.</span>';
+    if (result) result.innerHTML = ('<span style="color:var(--red)">' + lk('circle-x', 'ko') + ' Entrez une adresse email valide.</span>');
     return;
   }
-  if (result) result.innerHTML = '<span style="color:var(--gray-text)">⏳ Envoi en cours…</span>';
+  if (result) result.innerHTML = ('<span style="color:var(--gray-text)">' + lk('hourglass') + ' Envoi en cours…</span>');
   try {
     const resp = await apiRequest('smtp_test', 'POST', { email });
-    if (result) result.innerHTML = '<span style="color:var(--green,#16a34a)">✅ Email envoyé ! Vérifiez votre boîte de réception.</span>';
+    if (result) result.innerHTML = ('<span style="color:var(--green,#16a34a)">' + lk('circle-check', 'ok') + ' Email envoyé ! Vérifiez votre boîte de réception.</span>');
   } catch(e) {
-    if (result) result.innerHTML = `<span style="color:var(--red)">❌ Échec : ${_escCfg(e.message)}</span>`;
+    if (result) result.innerHTML = `<span style="color:var(--red)">${lk('circle-x', 'ko')} Échec : ${_escCfg(e.message)}</span>`;
   }
 }
 // (Migration functions are now unified above in _migUnifiedTest / _migUnifiedRun)
@@ -3064,7 +3205,7 @@ async function _renderTabNotifications() {
   let pushSubsInfo = '';
   try {
     const status = await apiRequest('push_subscriptions', 'GET');
-    pushSubsInfo = `<span style="font-size:12px;color:var(--gray-text)">📱 ${(status.subscriptions||[]).length} appareil(s) enregistré(s)</span>`;
+    pushSubsInfo = `<span style="font-size:12px;color:var(--gray-text)">${lk('smartphone')} ${(status.subscriptions||[]).length} appareil(s) enregistré(s)</span>`;
   } catch(_) {}
 
   setTimeout(() => _cfgNotifRenderTargets(users, roles, services), 0);
@@ -3072,7 +3213,7 @@ async function _renderTabNotifications() {
   return `
   <div style="padding:0 4px">
     <div style="margin-bottom:20px">
-      <h3 style="margin:0 0 6px;font-size:16px;font-weight:700">📤 Envoyer une notification</h3>
+      <h3 style="margin:0 0 6px;font-size:16px;font-weight:700">${lk('upload')} Envoyer une notification</h3>
       <p style="margin:0 0 8px;font-size:13px;color:var(--gray-text)">
         Envoyez une notification push à un groupe de rôles, un service, ou une sélection personnalisée d'utilisateurs.
       </p>
@@ -3080,11 +3221,11 @@ async function _renderTabNotifications() {
     </div>
 
     <div class="srv-section" style="margin-bottom:16px">
-      <div class="srv-section-title"><span>💬</span> Message</div>
+      <div class="srv-section-title"><span>${lk('message-circle')}</span> Message</div>
       <div class="srv-grid">
         <div class="srv-field">
           <div class="srv-label">Titre <span style="color:var(--red)">*</span></div>
-          <input class="form-control" id="cfgNotif_titre" placeholder="ex: Information maintenance" value="📢 Information Larka">
+          <input class="form-control" id="cfgNotif_titre" placeholder="ex: Information maintenance" value="Information Larka">
         </div>
         <div class="srv-field">
           <div class="srv-label">Page cible au clic <span style="font-weight:400;font-size:11px;color:var(--gray-text)">(optionnel)</span></div>
@@ -3107,11 +3248,11 @@ async function _renderTabNotifications() {
     </div>
 
     <div class="srv-section" style="margin-bottom:16px">
-      <div class="srv-section-title"><span>🎯</span> Destinataires</div>
+      <div class="srv-section-title"><span>${lk('target')}</span> Destinataires</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        ${modeBtn('roles', '🏷️', 'Par rôle')}
-        ${modeBtn('services', '🏢', 'Par service')}
-        ${modeBtn('custom', '👤', 'Sélection personnalisée')}
+        ${modeBtn('roles', lk('tag'), 'Par rôle')}
+        ${modeBtn('services', lk('building-complex'), 'Par service')}
+        ${modeBtn('custom', lk('user'), 'Sélection personnalisée')}
       </div>
       <div id="cfgNotifTargetSection"></div>
     </div>
@@ -3120,10 +3261,10 @@ async function _renderTabNotifications() {
 
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <button class="btn" onclick="_cfgNotifPreview()" style="padding:9px 22px;font-size:13px;background:var(--blue);color:white;border:none;border-radius:8px;cursor:pointer">
-        👁️ Aperçu
+        ${lk('eye')} Aperçu
       </button>
       <button class="btn" onclick="_cfgNotifSend()" style="padding:9px 22px;font-size:13px;background:var(--green,#16a34a);color:white;border:none;border-radius:8px;cursor:pointer">
-        📤 Envoyer
+        ${lk('upload')} Envoyer
       </button>
       <div id="cfgNotifSendResult" style="font-size:12px"></div>
     </div>
@@ -3178,7 +3319,7 @@ function _cfgNotifRenderTargets(users, roles, services) {
     c.innerHTML = `
       <div style="font-size:13px;color:var(--gray-text);margin-bottom:10px">Cochez les utilisateurs :</div>
       <div style="margin-bottom:10px;display:flex;gap:10px;align-items:center">
-        <input class="form-control" id="cfgNotifSearch" placeholder="🔍 Rechercher..."
+        <input class="form-control" id="cfgNotifSearch" placeholder="Rechercher..."
           oninput="_cfgNotifFilterUsers()" style="max-width:300px;font-size:12px">
         <button class="btn btn-sm" onclick="_cfgNotifSelectAll(true)" style="font-size:11px;padding:5px 10px">Tout cocher</button>
         <button class="btn btn-sm" onclick="_cfgNotifSelectAll(false)" style="font-size:11px;padding:5px 10px">Tout décocher</button>
@@ -3270,7 +3411,7 @@ function _cfgNotifPreview() {
   if (t.error) { toast(t.error,'error'); c.innerHTML=''; return; }
   c.innerHTML=`
   <div class="srv-section" style="border:2px solid var(--blue)">
-    <div class="srv-section-title"><span>👁️</span> Aperçu</div>
+    <div class="srv-section-title"><span>${lk('eye')}</span> Aperçu</div>
     <div style="display:flex;gap:14px;align-items:flex-start">
       <img src="/icon.png" style="width:40px;height:40px;border-radius:10px;flex-shrink:0">
       <div style="flex:1">
@@ -3292,17 +3433,17 @@ async function _cfgNotifSend() {
   const t=_cfgNotifGetTarget();
   if (t.error) { toast(t.error,'error'); return; }
   if (!confirm('Envoyer la notification à '+t.count+' utilisateur(s) ?\n\n« '+titre+' »\n'+corps)) return;
-  if (r) r.innerHTML='<span style="color:var(--gray-text)">⏳ Envoi…</span>';
+  if (r) r.innerHTML=('<span style="color:var(--gray-text)">' + lk('hourglass') + ' Envoi…</span>');
   try {
     const payload={title:titre,body:corps,page:page||''};
     if (t.roles) payload.roles=t.roles;
     if (t.userIds) payload.userIds=t.userIds;
     const resp=await apiRequest('push_send','POST',payload);
-    let html=`<span style="color:var(--green,#16a34a)">✅ ${resp.sent}/${resp.total} appareil(s)</span>`;
+    let html=`<span style="color:var(--green,#16a34a)">${lk('circle-check', 'ok')} ${resp.sent}/${resp.total} appareil(s)</span>`;
     if (resp.failed>0) html+=` <span style="color:var(--orange,#d97706)">(${resp.failed} échec(s))</span>`;
     if (r) r.innerHTML=html;
     toast('Notification envoyée à '+resp.sent+' appareil(s) !','success');
-  } catch(e) { if (r) r.innerHTML=`<span style="color:var(--red)">❌ ${_escCfg(e.message)}</span>`; toast(e.message,'error'); }
+  } catch(e) { if (r) r.innerHTML=`<span style="color:var(--red)">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</span>`; toast(e.message,'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3315,9 +3456,9 @@ function _renderTabInventaire(config) {
   return `
   <div style="padding:0 4px">
     <div class="srv-section">
-      <div class="srv-section-title"><span>📦</span> Inventaire par les agents (demandeurs)</div>
+      <div class="srv-section-title"><span>${lk('package')}</span> Inventaire par les agents (demandeurs)</div>
       <div class="srv-alert srv-alert-info" style="margin-bottom:16px">
-        ℹ️ Lorsqu'activé, un onglet <strong>« Mes biens »</strong> apparaît pour les demandeurs.
+        ${lk('info')} Lorsqu'activé, un onglet <strong>« Mes biens »</strong> apparaît pour les demandeurs.
         Ils peuvent <strong>déclarer la présence</strong> d'un bien dans leur bureau (saisie ou scan)
         ou <strong>signaler un départ</strong>. Chaque déclaration remonte ici pour <strong>validation</strong>
         avant de modifier la fiche du bien.
@@ -3339,15 +3480,15 @@ function _renderTabInventaire(config) {
       ${actif ? `
       <div style="margin-top:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-size:14px;font-weight:700">📋 Déclarations des agents</div>
+          <div style="font-size:14px;font-weight:700">${lk('clipboard-list')} Déclarations des agents</div>
           <div style="display:flex;gap:6px">
-            <button class="decl-filter-btn active" data-filter="en_attente" onclick="_declFilterClick(this)">⏳ En attente</button>
-            <button class="decl-filter-btn" data-filter="valide" onclick="_declFilterClick(this)">✅ Validées</button>
-            <button class="decl-filter-btn" data-filter="refuse" onclick="_declFilterClick(this)">❌ Refusées</button>
+            <button class="decl-filter-btn active" data-filter="en_attente" onclick="_declFilterClick(this)">${lk('hourglass')} En attente</button>
+            <button class="decl-filter-btn" data-filter="valide" onclick="_declFilterClick(this)">${lk('circle-check', 'ok')} Validées</button>
+            <button class="decl-filter-btn" data-filter="refuse" onclick="_declFilterClick(this)">${lk('circle-x', 'ko')} Refusées</button>
             <button class="decl-filter-btn" data-filter="" onclick="_declFilterClick(this)">Toutes</button>
           </div>
         </div>
-        <div id="cfg_declarations_list"><div style="text-align:center;padding:20px;color:var(--gray-text)">⏳ Chargement…</div></div>
+        <div id="cfg_declarations_list"><div style="text-align:center;padding:20px;color:var(--gray-text)">${lk('hourglass')} Chargement…</div></div>
       </div>
       <style>
         .decl-filter-btn{padding:5px 12px;border:1px solid var(--gray-border);border-radius:6px;background:var(--card-bg,#fff);cursor:pointer;font-size:11px;font-weight:600;color:var(--gray-text);transition:all .2s}
@@ -3374,7 +3515,7 @@ function _renderTabInventaire(config) {
         <div style="font-size:13px;font-weight:700;margin-bottom:10px">Ce que les demandeurs peuvent faire :</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div style="padding:12px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px">
-            <div style="font-weight:700;color:#15803d;margin-bottom:4px">✅ Autorisé</div>
+            <div style="font-weight:700;color:#15803d;margin-bottom:4px">${lk('circle-check', 'ok')} Autorisé</div>
             <div style="color:#166534;line-height:1.6">
               Voir les biens qui leur sont affectés<br>
               Déclarer un bien par numéro ou scan<br>
@@ -3383,7 +3524,7 @@ function _renderTabInventaire(config) {
             </div>
           </div>
           <div style="padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px">
-            <div style="font-weight:700;color:#dc2626;margin-bottom:4px">❌ Interdit</div>
+            <div style="font-weight:700;color:#dc2626;margin-bottom:4px">${lk('circle-x', 'ko')} Interdit</div>
             <div style="color:#991b1b;line-height:1.6">
               Modifier directement un bien<br>
               Modifier la famille / sous-famille<br>
@@ -3419,9 +3560,9 @@ function _renderTabPlans(config) {
   return `
   <div style="padding:0 4px">
     <div class="srv-section">
-      <div class="srv-section-title"><span>🗺️</span> Plans / annuaire (demandeurs)</div>
+      <div class="srv-section-title"><span>${lk('map')}</span> Plans / annuaire (demandeurs)</div>
       <div class="srv-alert srv-alert-info" style="margin-bottom:16px">
-        ℹ️ Lorsqu'activé, un onglet <strong>« Plans »</strong> apparaît pour les demandeurs : ils peuvent
+        ${lk('info')} Lorsqu'activé, un onglet <strong>« Plans »</strong> apparaît pour les demandeurs : ils peuvent
         localiser une personne / un service sur le plan d'un étage et consulter sa fiche.
         Le partage de la présence et de l'agenda reste soumis au consentement individuel de chaque personne.
       </div>
@@ -3442,9 +3583,9 @@ function _renderTabPlans(config) {
 
     <!-- ── Mots-clés du comptage de présence ─────────────────────────────── -->
     <div class="srv-section">
-      <div class="srv-section-title"><span>👥</span> Comptage de présence — mots-clés d'agenda</div>
+      <div class="srv-section-title"><span>${lk('users')}</span> Comptage de présence — mots-clés d'agenda</div>
       <div class="srv-alert srv-alert-info" style="margin-bottom:16px">
-        ℹ️ Le bandeau du tableau de bord estime combien de personnes sont <strong>sur place</strong>
+        ${lk('info')} Le bandeau du tableau de bord estime combien de personnes sont <strong>sur place</strong>
         en retirant, parmi les personnes connectées, celles qui ont déclaré du télétravail ou une absence
         dans leur agenda du jour. Ces listes définissent les intitulés reconnus.<br>
         <span style="color:var(--gray-text)">Séparez par des virgules. Les mots de 4 caractères ou moins
@@ -3453,14 +3594,14 @@ function _renderTabPlans(config) {
       </div>
       <div class="srv-grid-1" style="display:flex;flex-direction:column;gap:14px">
         <div>
-          <label class="form-label" style="font-size:12px;font-weight:700">🏠 Télétravail</label>
+          <label class="form-label" style="font-size:12px;font-weight:700">${lk('house')} Télétravail</label>
           <input class="form-control" id="cfgMotsTT" ${canManage ? '' : 'disabled'}
             placeholder="TT,télétravail,teletravail,remote,home office,distanciel"
             value="${_cfgEsc((config.find(r => r.Cle === 'presence_mots_teletravail')?.Valeur) || '')}">
           <div style="font-size:11px;color:var(--gray-text);margin-top:3px">Vide = liste par défaut</div>
         </div>
         <div>
-          <label class="form-label" style="font-size:12px;font-weight:700">🌴 Absence</label>
+          <label class="form-label" style="font-size:12px;font-weight:700">${lk('tree-palm')} Absence</label>
           <input class="form-control" id="cfgMotsAbs" ${canManage ? '' : 'disabled'}
             placeholder="congé,CP,RTT,JRTT,absent,vacances,arrêt,maladie,repos,récup,plage fixe"
             value="${_cfgEsc((config.find(r => r.Cle === 'presence_mots_absence')?.Valeur) || '')}">
@@ -3468,7 +3609,7 @@ function _renderTabPlans(config) {
             Ajoutez ici vos usages internes (ex. « plage fixe » pour une récupération d'heures)
           </div>
         </div>
-        ${canManage ? `<div><button class="btn btn-primary btn-sm" onclick="_cfgSaveMotsPresence()">💾 Enregistrer les mots-clés</button></div>` : ''}
+        ${canManage ? `<div><button class="btn btn-primary btn-sm" onclick="_cfgSaveMotsPresence()">${lk('save')} Enregistrer les mots-clés</button></div>` : ''}
       </div>
     </div>
   </div>`;
@@ -3523,13 +3664,13 @@ async function _cfgSavePlansDemandeur(checked) {
 let _urgState = null; // { actif:bool, categories: [...] }
 
 const URG_CATEGORIES_DEFAUT_CONFIG = [
-  { id:'incendie',    icon:'🔥', titre:'Incendie / fumée',         description:'Feu, fumée suspecte, déclenchement alarme incendie' },
-  { id:'medical',     icon:'🚑', titre:'Urgence médicale',         description:'Blessure, malaise, accident corporel' },
-  { id:'intrusion',   icon:'🚔', titre:'Intrusion / sécurité',     description:'Personne suspecte, vol, agression, violence' },
-  { id:'plomberie',   icon:'💧', titre:'Plomberie / fuite d\'eau', description:'Fuite, dégât des eaux, canalisation bouchée' },
-  { id:'electricite', icon:'⚡', titre:'Électricité / panne',       description:'Coupure générale, court-circuit, étincelles' },
-  { id:'gaz',         icon:'🟡', titre:'Fuite de gaz',             description:'Odeur de gaz, sifflement suspect' },
-  { id:'autre',       icon:'❓', titre:'Autre problème',            description:'Cas non listés ci-dessus' },
+  { id:'incendie',    icon:'flame', titre:'Incendie / fumée',         description:'Feu, fumée suspecte, déclenchement alarme incendie' },
+  { id:'medical',     icon:'ambulance', titre:'Urgence médicale',         description:'Blessure, malaise, accident corporel' },
+  { id:'intrusion',   icon:'shield-exclamation-point', titre:'Intrusion / sécurité',     description:'Personne suspecte, vol, agression, violence' },
+  { id:'plomberie',   icon:'droplet', titre:'Plomberie / fuite d\'eau', description:'Fuite, dégât des eaux, canalisation bouchée' },
+  { id:'electricite', icon:'zap', titre:'Électricité / panne',       description:'Coupure générale, court-circuit, étincelles' },
+  { id:'gaz',         icon:'wind', titre:'Fuite de gaz',             description:'Odeur de gaz, sifflement suspect' },
+  { id:'autre',       icon:'circle-question-mark', titre:'Autre problème',            description:'Cas non listés ci-dessus' },
 ];
 
 async function _loadUrgencesConfig() {
@@ -3559,7 +3700,7 @@ async function _loadUrgencesConfig() {
 }
 
 function _renderTabUrgences() {
-  if (!_urgState) return '<div style="padding:30px;text-align:center">⏳</div>';
+  if (!_urgState) return ('<div style="padding:30px;text-align:center">' + lk('hourglass') + '</div>');
   const role = App.currentUser?.Role;
   const editable = (role === 'Admin' || role === 'Gestionnaire');
   const actif = !!_urgState.actif;
@@ -3578,10 +3719,16 @@ function _renderTabUrgences() {
       padding-bottom:10px; margin-bottom:10px;
       border-bottom:1px solid var(--gray-border);
     }
+    .urgc-cat-icone {
+      width:48px; height:48px; display:flex; align-items:center; justify-content:center; font-size:26px;
+      border:1px solid var(--gray-border); border-radius:8px; background:var(--gray-bg); flex-shrink:0; color:var(--text);
+      cursor:pointer; padding:0; font-family:inherit;
+    }
+    button.urgc-cat-icone:hover:not(:disabled) { border-color:var(--blue); background:var(--blue-pale); }
+    button.urgc-cat-icone:disabled { cursor:default; }
     .urgc-cat-icon-input {
-      width:48px; height:48px; text-align:center; font-size:24px;
-      border:1px solid var(--gray-border); border-radius:8px;
-      background:var(--gray-bg); flex-shrink:0;
+      width:auto; max-width:150px; height:34px; font-size:12.5px; padding:4px 6px;
+      border:1px solid var(--gray-border); border-radius:6px; background:var(--card-bg,#fff); color:var(--text); flex-shrink:0;
     }
     .urgc-cat-fields { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
     .urgc-cat-titre {
@@ -3735,9 +3882,9 @@ function _renderTabUrgences() {
 
     <!-- Visibilité globale de l'onglet -->
     <div class="urgc-section">
-      <div class="urgc-section-title"><span>🚨</span> Qui voit l'onglet « Procédures d'urgence » ?</div>
+      <div class="urgc-section-title"><span>${lk('siren')}</span> Qui voit l'onglet « Procédures d'urgence » ?</div>
       <div class="srv-alert srv-alert-info" style="margin-bottom:16px">
-        ℹ️ Ce réglage pilote l'affichage de l'onglet dans le menu latéral.
+        ${lk('info')} Ce réglage pilote l'affichage de l'onglet dans le menu latéral.
         Les <strong>Gestionnaires et Admins</strong> y ont toujours accès, quel que soit le choix —
         c'est ce qui vous permet de préparer les procédures avant de les publier.<br>
         Vous pouvez ensuite affiner <strong>catégorie par catégorie</strong> plus bas :
@@ -3749,7 +3896,7 @@ function _renderTabUrgences() {
           <input type="radio" name="urgc_visibilite" value="tous" ${actif ? 'checked' : ''}
             ${editable ? '' : 'disabled'} onchange="_urgSetVisibiliteGlobale('tous')">
           <span class="urgc-vis-choice-txt">
-            <span class="urgc-vis-choice-titre">👥 Tout le monde</span>
+            <span class="urgc-vis-choice-titre">${lk('users')} Tout le monde</span>
             <span class="urgc-vis-choice-desc">
               Demandeurs, Visionneurs et Techniciens voient l'onglet dans leur menu,
               en plus des gestionnaires.
@@ -3761,7 +3908,7 @@ function _renderTabUrgences() {
           <input type="radio" name="urgc_visibilite" value="gestionnaires" ${actif ? '' : 'checked'}
             ${editable ? '' : 'disabled'} onchange="_urgSetVisibiliteGlobale('gestionnaires')">
           <span class="urgc-vis-choice-txt">
-            <span class="urgc-vis-choice-titre">🔒 Gestionnaires uniquement</span>
+            <span class="urgc-vis-choice-titre">${lk('lock')} Gestionnaires uniquement</span>
             <span class="urgc-vis-choice-desc">
               Seuls les Gestionnaires et Admins voient l'onglet. Les autres rôles
               n'en reçoivent aucune donnée.
@@ -3773,7 +3920,7 @@ function _renderTabUrgences() {
 
     <!-- Éditeur de catégories -->
     <div class="urgc-section">
-      <div class="urgc-section-title"><span>📋</span> Catégories et contacts</div>
+      <div class="urgc-section-title"><span>${lk('clipboard-list')}</span> Catégories et contacts</div>
       <div style="font-size:12px;color:var(--gray-text);margin-bottom:14px;line-height:1.5">
         Pour chaque type de problème, renseignez les contacts à joindre (nom, fonction, téléphone, mail).
         Les utilisateurs pourront appeler ou envoyer un mail en un clic depuis l'onglet d'urgence.
@@ -3786,7 +3933,7 @@ function _renderTabUrgences() {
 
       ${editable ? `
         <button class="urgc-add-cat-btn" onclick="_urgAddCategorie()">
-          ➕ Ajouter une catégorie personnalisée
+          ${lk('plus')} Ajouter une catégorie personnalisée
         </button>
       ` : ''}
     </div>
@@ -3812,8 +3959,49 @@ function _urgSetupActionBar() {
   setPageActionBar(`
     <span class="page-action-info">Les procédures d'urgence ne sont publiées qu'après enregistrement.</span>
     <button class="btn btn-ghost" onclick="_loadUrgencesConfig()">↺ Annuler les modifications</button>
-    <button class="btn btn-primary" onclick="_urgSave()">💾 Enregistrer</button>
+    <button class="btn btn-primary" onclick="_urgSave()">${lk('save')} Enregistrer</button>
   `);
+}
+
+/** Icônes d'origine des catégories d'urgence (noms Lucide) : leur libellé sert à l'accessibilité. */
+const URG_ICONES = [
+  ['flame', 'Feu'], ['fire-extinguisher', 'Extincteur'], ['ambulance', 'Secours'], ['heart-pulse', 'Malaise'],
+  ['shield-exclamation-point', 'Sécurité'], ['siren', 'Alarme'], ['lock', 'Accès'], ['droplet', 'Eau'], ['droplets', 'Fuite'],
+  ['zap', 'Électricité'], ['zap-off', 'Coupure'], ['wind', 'Gaz / odeur'], ['thermometer', 'Chauffage'], ['thermometer-snowflake', 'Froid'],
+  ['snowflake', 'Gel'], ['cloud-lightning', 'Orage'], ['biohazard', 'Biologique'], ['radiation', 'Radiologique'], ['construction', 'Travaux'],
+  ['door-closed', 'Porte'], ['house', 'Bâtiment'], ['trees', 'Espaces verts'], ['dog', 'Animal'], ['baby', 'Enfant'], ['users-round', 'Personnes'],
+  ['phone', 'Téléphone'], ['pin', 'Repère'], ['circle-question-mark', 'Autre'],
+];
+
+/** Libellé d'une icône de catégorie (pour l'accessibilité) : celui de la liste, du catalogue, ou l'emoji. */
+function _urgLibelleIcone(v) {
+  const c = String(v || '');
+  const connu = URG_ICONES.find(([n]) => n === c);
+  if (connu) return connu[1];
+  return (typeof IconePicker !== 'undefined') ? IconePicker.decrire(c) : c;
+}
+
+/**
+ * Icône d'une catégorie : une icône Lucide OU un emoji (js/icone-picker.js).
+ * La liste courte d'avant (URG_ICONES) reste en tête du catalogue des
+ * pictogrammes : rien de ce qu'on choisissait n'a disparu.
+ */
+function _urgChoisirIcone(idx, bouton) {
+  const cat = _urgState?.categories?.[idx];
+  if (!cat || typeof IconePicker === 'undefined') return;
+  IconePicker.ouvrir({
+    valeur: cat.icon || '',
+    titre: 'Icône de « ' + (cat.titre || 'la catégorie') + ' »',
+    surChoix: v => {
+      _urgUpdateCat(idx, 'icon', v);
+      if (bouton) {
+        bouton.innerHTML = lkValeur(v, 'circle-question-mark');
+        bouton.setAttribute('aria-label', 'Icône : ' + _urgLibelleIcone(v));
+        const champ = bouton.parentElement && bouton.parentElement.querySelector('.urgc-cat-icon-input');
+        if (champ) champ.value = v;
+      }
+    },
+  });
 }
 
 function _urgRenderCategorieEditor(cat, idx, editable) {
@@ -3825,10 +4013,9 @@ function _urgRenderCategorieEditor(cat, idx, editable) {
   return `
     <div class="urgc-cat ${masquee ? 'masquee' : ''}" data-cat-idx="${idx}">
       <div class="urgc-cat-head">
-        <input type="text" class="urgc-cat-icon-input" maxlength="3"
-          value="${_urgEscapeAttr(cat.icon || '❓')}"
-          oninput="_urgUpdateCat(${idx}, 'icon', this.value)" ${disabled}
-          title="Emoji ou symbole">
+        <button type="button" class="urgc-cat-icone" title="Changer l'icône (Lucide ou emoji)" aria-label="Icône : ${_urgEscapeAttr(_urgLibelleIcone(cat.icon))}" ${disabled}
+          onclick="_urgChoisirIcone(${idx}, this)">${lkValeur(cat.icon, 'circle-question-mark')}</button>
+        <input type="hidden" class="urgc-cat-icon-input" value="${_urgEscapeAttr(cat.icon || '')}">
         <div class="urgc-cat-fields">
           <input type="text" class="urgc-cat-titre"
             value="${_urgEscapeAttr(cat.titre || '')}"
@@ -3843,10 +4030,10 @@ function _urgRenderCategorieEditor(cat, idx, editable) {
           <div class="urgc-cat-actions">
             <button class="urgc-mini-btn" onclick="_urgToggleMasquee(${idx})"
               title="${masquee ? 'Rendre visible' : 'Masquer cette catégorie'}">
-              ${masquee ? '👁️' : '🚫'}
+              ${masquee ? lk('eye') : lk('ban', 'ko')}
             </button>
             <button class="urgc-mini-btn danger" onclick="_urgDeleteCategorie(${idx})"
-              title="Supprimer cette catégorie">🗑️</button>
+              title="Supprimer cette catégorie">${lk('trash')}</button>
           </div>
         ` : ''}
       </div>
@@ -3855,8 +4042,8 @@ function _urgRenderCategorieEditor(cat, idx, editable) {
       <div class="urgc-cat-vis">
         <span class="urgc-cat-vis-label">Visible par</span>
         <select onchange="_urgUpdateCat(${idx}, 'visibilite', this.value); _urgRerenderList()" ${disabled}>
-          <option value="tous"          ${visibilite === 'tous' ? 'selected' : ''}>👥 Tout le monde</option>
-          <option value="gestionnaires" ${visibilite === 'gestionnaires' ? 'selected' : ''}>🔒 Gestionnaires uniquement</option>
+          <option value="tous"          ${visibilite === 'tous' ? 'selected' : ''}>Tout le monde</option>
+          <option value="gestionnaires" ${visibilite === 'gestionnaires' ? 'selected' : ''}>Gestionnaires uniquement</option>
         </select>
         ${visibilite === 'gestionnaires'
           ? '<span class="urgc-badge-resto">Réservé</span>'
@@ -3865,7 +4052,7 @@ function _urgRenderCategorieEditor(cat, idx, editable) {
 
       <!-- Procédure à suivre -->
       <div class="urgc-bloc">
-        <div class="urgc-bloc-titre"><span>📋</span> Procédure à suivre</div>
+        <div class="urgc-bloc-titre"><span>${lk('clipboard-list')}</span> Procédure à suivre</div>
         <textarea class="urgc-procedure" rows="5" ${disabled}
           placeholder="Décrivez les gestes à faire, une étape par ligne. Exemple :&#10;1. Déclencher l'alarme la plus proche&#10;2. Évacuer par la sortie la plus proche, sans emprunter l'ascenseur&#10;3. Rejoindre le point de rassemblement (parking nord)&#10;4. Ne jamais retourner dans le bâtiment"
           oninput="_urgUpdateCat(${idx}, 'procedure', this.value)">${_urgEscapeAttr(cat.procedure || '')}</textarea>
@@ -3877,14 +4064,14 @@ function _urgRenderCategorieEditor(cat, idx, editable) {
 
       <!-- Photos et vidéos -->
       <div class="urgc-bloc">
-        <div class="urgc-bloc-titre"><span>🖼️</span> Photos et vidéos</div>
+        <div class="urgc-bloc-titre"><span>${lk('image')}</span> Photos et vidéos</div>
         ${editable ? `
           <div class="urgc-media-actions">
             <button type="button" class="urgc-media-btn" onclick="_urgPickMedia(${idx}, 'photo')">
-              📷 Ajouter des photos
+              ${lk('camera')} Ajouter des photos
             </button>
             <button type="button" class="urgc-media-btn" onclick="_urgPickMedia(${idx}, 'video')">
-              🎬 Ajouter des vidéos
+              ${lk('clapperboard')} Ajouter des vidéos
             </button>
           </div>
           <div class="urgc-upload-bar" id="urgc_upload_${idx}" style="display:none"><span></span></div>
@@ -3896,14 +4083,14 @@ function _urgRenderCategorieEditor(cat, idx, editable) {
              </div>`}
       </div>
 
-      <div class="urgc-bloc-titre" style="margin-top:14px"><span>📞</span> Contacts</div>
+      <div class="urgc-bloc-titre" style="margin-top:14px"><span>${lk('phone')}</span> Contacts</div>
       <div data-contacts-for="${idx}">
         ${(cat.contacts || []).map((c, ci) => _urgRenderContactEditor(idx, ci, c, editable)).join('')}
       </div>
 
       ${editable ? `
         <button class="urgc-add-contact-btn" onclick="_urgAddContact(${idx})">
-          ➕ Ajouter un contact
+          ${lk('plus')} Ajouter un contact
         </button>
       ` : ''}
     </div>
@@ -3924,7 +4111,7 @@ function _urgRenderMediaEditor(catIdx, mediaIdx, m, editable) {
   // télécharger tout le fichier — suffisant comme vignette.
   const apercu = (m.type === 'video')
     ? `<video class="urgc-media-thumb" src="${url}#t=0.5" preload="metadata" muted playsinline></video>
-       <span class="urgc-media-video-badge">🎬 VIDÉO</span>`
+       <span class="urgc-media-video-badge">${lk('clapperboard')} VIDÉO</span>`
     : `<img class="urgc-media-thumb" src="${url}" alt="${nom}" loading="lazy">`;
 
   return `
@@ -3933,7 +4120,7 @@ function _urgRenderMediaEditor(catIdx, mediaIdx, m, editable) {
       ${editable ? `
         <button type="button" class="urgc-media-del"
           onclick="_urgDeleteMedia(${catIdx}, ${mediaIdx})"
-          title="Supprimer ce média">🗑️</button>
+          title="Supprimer ce média">${lk('trash')}</button>
       ` : ''}
       <input type="text" class="urgc-media-legende" placeholder="Légende (optionnelle)"
         value="${_urgEscapeAttr(m.legende || '')}"
@@ -3960,7 +4147,7 @@ function _urgRenderContactEditor(catIdx, contactIdx, c, editable) {
         oninput="_urgUpdateContact(${catIdx}, ${contactIdx}, 'mail', this.value)" ${disabled}>
       ${editable ? `
         <button class="urgc-mini-btn danger" onclick="_urgDeleteContact(${catIdx}, ${contactIdx})"
-          title="Supprimer ce contact">🗑️</button>
+          title="Supprimer ce contact">${lk('trash')}</button>
       ` : '<span></span>'}
       <input type="text" class="urgc-contact-note" placeholder="Note (optionnelle, ex: jours/heures de disponibilité)"
         value="${_urgEscapeAttr(c.note || '')}"
@@ -4091,7 +4278,7 @@ function _urgAddCategorie() {
   if (!_urgState) return;
   _urgState.categories.push({
     id: 'custom_' + Date.now(),
-    icon: '📌',
+    icon: 'pin',
     titre: '',
     description: '',
     visibilite: 'tous',
@@ -4153,10 +4340,14 @@ function _urgSyncFromDom() {
     const idx = parseInt(card.dataset.catIdx, 10);
     const cat = _urgState.categories[idx];
     if (!cat) return;
-    const inputs = card.querySelectorAll(':scope > .urgc-cat-head input');
-    if (inputs[0]) cat.icon        = inputs[0].value;
-    if (inputs[1]) cat.titre       = inputs[1].value;
-    if (inputs[2]) cat.description = inputs[2].value;
+    // L'icône (nom Lucide ou emoji) vit dans un champ caché, posé par le
+    // sélecteur ; titre et description, dans des champs.
+    const icone = card.querySelector(':scope > .urgc-cat-head .urgc-cat-icon-input');
+    if (icone) cat.icon = icone.value;
+    const titre = card.querySelector(':scope > .urgc-cat-head .urgc-cat-titre');
+    const desc  = card.querySelector(':scope > .urgc-cat-head .urgc-cat-desc');
+    if (titre) cat.titre       = titre.value;
+    if (desc)  cat.description = desc.value;
 
     // Visibilité de la catégorie
     const visSel = card.querySelector(':scope > .urgc-cat-vis select');
@@ -4232,7 +4423,7 @@ async function _urgSave() {
     const clean = {
       categories: _urgState.categories.map(cat => ({
         id:          cat.id || ('cat_' + Date.now()),
-        icon:        cat.icon || '❓',
+        icon:        cat.icon || 'circle-question-mark',
         titre:       (cat.titre || '').trim(),
         description: (cat.description || '').trim(),
         masquee:     !!cat.masquee,
@@ -4282,7 +4473,7 @@ function _declFilterClick(btn) {
 async function _loadDeclarations() {
   const container = document.getElementById('cfg_declarations_list');
   if (!container) return;
-  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gray-text)">⏳ Chargement…</div>';
+  container.innerHTML = ('<div style="text-align:center;padding:20px;color:var(--gray-text)">' + lk('hourglass') + ' Chargement…</div>');
 
   try {
     const url = _declCurrentFilter
@@ -4298,7 +4489,7 @@ async function _loadDeclarations() {
 function _renderDeclarationsList(container, decls) {
   if (!decls.length) {
     container.innerHTML = `<div style="text-align:center;padding:30px;color:var(--gray-text)">
-      <div style="font-size:28px;margin-bottom:8px">📭</div>
+      <div style="font-size:28px;margin-bottom:8px">${lk('mailbox')}</div>
       <div>Aucune déclaration ${_declCurrentFilter === 'en_attente' ? 'en attente' : _declCurrentFilter === 'valide' ? 'validée' : _declCurrentFilter === 'refuse' ? 'refusée' : ''}</div>
     </div>`;
     return;
@@ -4312,7 +4503,7 @@ function _renderDeclarationsList(container, decls) {
     }
   });
 
-  const statusLabel = { en_attente: '⏳ En attente', valide: '✅ Validée', refuse: '❌ Refusée' };
+  const statusLabel = { en_attente: 'En attente', valide: 'Validée', refuse: 'Refusée' };
   const typeLabel   = { presence: 'Présence', depart: 'Départ' };
   const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -4326,8 +4517,8 @@ function _renderDeclarationsList(container, decls) {
       <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:6px">
         <div>
           <span style="font-weight:700;font-size:15px">${esc(d.NumeroBien)}</span>
-          <span class="decl-badge ${escHtml(d.Type||'')}">${d.Type === 'depart' ? '📤 Départ / Mouvement' : '📦 Présence'}</span>
-          ${isDbl ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">⚠️ DOUBLON</span>' : ''}
+          <span class="decl-badge ${escHtml(d.Type||'')}">${d.Type === 'depart' ? (lk('upload') + ' Départ / Mouvement') : (lk('package') + ' Présence')}</span>
+          ${isDbl ? ('<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">' + lk('triangle-exclamation-point', 'warn') + ' DOUBLON</span>') : ''}
         </div>
         <span style="font-size:11px;color:var(--gray-text)">${esc(date)}</span>
       </div>
@@ -4341,9 +4532,9 @@ function _renderDeclarationsList(container, decls) {
 
       ${d.Type === 'depart' ? `
       <div style="margin-top:12px;padding:10px 14px;background:var(--gray-bg);border-radius:8px;border:1px solid var(--gray-border)">
-        <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text)">📤 Détail du mouvement</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text)">${lk('upload')} Détail du mouvement</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;color:var(--gray-text)">
-          <div><strong>Raison :</strong> ${esc({transfert_bureau:'📍 Transféré dans un autre bureau',donne_personne:'👤 Donné / prêté',retour_magasin:'📦 Retourné au stock',hors_service:'🔧 Hors service / en panne',autre:'❓ Autre'}[d.RaisonDepart] || d.RaisonDepart || '—')}</div>
+          <div><strong>Raison :</strong> ${esc({transfert_bureau:'Transféré dans un autre bureau',donne_personne:'Donné / prêté',retour_magasin:'Retourné au stock',hors_service:'Hors service / en panne',autre:'Autre'}[d.RaisonDepart] || d.RaisonDepart || '—')}</div>
           ${d.DestPersonne ? `<div><strong>Remis à :</strong> <span style="color:var(--blue);font-weight:600">${esc(d.DestPersonne)}</span></div>` : ''}
           ${d.DestBatiment ? `<div><strong>Nouveau bâtiment :</strong> ${esc(d.DestBatiment)}</div>` : ''}
           ${d.DestEtage ? `<div><strong>Nouvel étage :</strong> ${esc(d.DestEtage)}</div>` : ''}
@@ -4354,7 +4545,7 @@ function _renderDeclarationsList(container, decls) {
 
       ${d.Type === 'presence' ? `
       <div style="margin-top:12px;padding:10px 14px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
-        <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#1d4ed8">📍 Localisation déclarée</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#1d4ed8">${lk('map-pin')} Localisation déclarée</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;color:var(--gray-text)">
           ${d.Batiment ? `<div><strong>Bâtiment :</strong> ${esc(d.Batiment)}</div>` : ''}
           ${d.Etage ? `<div><strong>Étage :</strong> ${esc(d.Etage)}</div>` : ''}
@@ -4365,7 +4556,7 @@ function _renderDeclarationsList(container, decls) {
       ` : ''}
 
       <div style="margin-top:8px;padding:8px 14px;background:#f8fafc;border-radius:8px;border:1px solid var(--gray-border)">
-        <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--gray-text)">📋 Fiche actuelle du bien</div>
+        <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--gray-text)">${lk('clipboard-list')} Fiche actuelle du bien</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;font-size:11px;color:var(--gray-text)">
           <div><strong>Affecté à :</strong> ${esc(d.AffecteActuel || 'Non affecté')}</div>
           <div><strong>Bâtiment :</strong> ${esc(d.BatimentActuel || '—')}</div>
@@ -4378,12 +4569,12 @@ function _renderDeclarationsList(container, decls) {
 
       ${d.Statut === 'en_attente' ? `
         <div class="decl-actions">
-          <button class="decl-btn-ok" onclick="_declValider(${d.Id})">✅ Valider</button>
-          <button class="decl-btn-no" onclick="_declRefuser(${d.Id})">❌ Refuser</button>
+          <button class="decl-btn-ok" onclick="_declValider(${d.Id})">${lk('circle-check', 'ok')} Valider</button>
+          <button class="decl-btn-no" onclick="_declRefuser(${d.Id})">${lk('circle-x', 'ko')} Refuser</button>
         </div>
       ` : `
         <div style="margin-top:8px;font-size:11px;color:var(--gray-text)">
-          ${d.Statut === 'valide' ? '✅ Validée' : '❌ Refusée'} par ${esc(d.TraiteParNom || d.TraiteParLogin || '—')}
+          ${d.Statut === 'valide' ? (lk('circle-check', 'ok') + ' Validée') : (lk('circle-x', 'ko') + ' Refusée')} par ${esc(d.TraiteParNom || d.TraiteParLogin || '—')}
           le ${esc((d.DateTraitement || '').replace('T', ' ').slice(0, 16))}
           ${d.Statut === 'refuse' && d.MotifRefus ? ' — Motif : ' + esc(d.MotifRefus) : ''}
         </div>
@@ -4404,7 +4595,7 @@ async function _declValider(id) {
 }
 
 function _declRefuser(id) {
-  openModal('❌ Refuser la déclaration', `
+  openModal('Refuser la déclaration', `
     <div style="margin-bottom:12px;font-size:13px">Indiquez la raison du refus (sera visible par l'agent) :</div>
     <textarea class="form-control" id="decl_motif_refus" rows="3" placeholder="Ex: ce bien est déjà affecté à un autre service…" style="width:100%"></textarea>
   `, async () => {
@@ -4422,10 +4613,10 @@ function _declRefuser(id) {
 async function _pushTestNotif(mode) {
   const result = document.getElementById('push_test_result');
   const labels = { me: 'vos appareils', roles: 'les rôles configurés', all: 'tous les abonnés' };
-  if (result) result.innerHTML = `<span style="color:var(--gray-text)">⏳ Envoi à ${labels[mode] || mode}…</span>`;
+  if (result) result.innerHTML = `<span style="color:var(--gray-text)">${lk('hourglass')} Envoi à ${labels[mode] || mode}…</span>`;
   try {
     const resp = await apiRequest('push_test', 'POST', { mode });
-    let html = `<span style="color:var(--green,#16a34a)">✅ Envoyé à ${resp.sent}/${resp.total} appareil(s)</span>`;
+    let html = `<span style="color:var(--green,#16a34a)">${lk('circle-check', 'ok')} Envoyé à ${resp.sent}/${resp.total} appareil(s)</span>`;
     if (resp.failed > 0) html += ` <span style="color:var(--orange,#d97706)">(${resp.failed} échec${resp.failed>1?'s':''})</span>`;
     if (resp.cleaned > 0) html += ` <span style="color:var(--gray-text)">(${resp.cleaned} expiré${resp.cleaned>1?'s':''} supprimé${resp.cleaned>1?'s':''})</span>`;
     // Détails par appareil
@@ -4444,44 +4635,44 @@ async function _pushTestNotif(mode) {
     }
     if (result) result.innerHTML = html;
   } catch(e) {
-    if (result) result.innerHTML = `<span style="color:var(--red)">❌ ${_escCfg(e.message)}</span>`;
+    if (result) result.innerHTML = `<span style="color:var(--red)">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</span>`;
   }
 }
 
 async function _pushDiagnose() {
   const result = document.getElementById('push_test_result');
-  if (result) result.innerHTML = '<span style="color:var(--gray-text)">⏳ Diagnostic…</span>';
+  if (result) result.innerHTML = ('<span style="color:var(--gray-text)">' + lk('hourglass') + ' Diagnostic…</span>');
   try {
     const resp = await apiRequest('push_diagnose', 'GET');
     const ok = resp.ok;
     const errors = resp.errors || [];
     const info = resp.info || {};
     let html = ok
-      ? '<span style="color:var(--green,#16a34a)">✅ VAPID OK</span>'
-      : '<span style="color:var(--red)">❌ ' + errors.map(_escCfg).join(', ') + '</span>';
+      ? ('<span style="color:var(--green,#16a34a)">' + lk('circle-check', 'ok') + ' VAPID OK</span>')
+      : ('<span style="color:var(--red)">' + lk('circle-x', 'ko') + ' ') + errors.map(_escCfg).join(', ') + '</span>';
     html += ` — <span style="color:var(--gray-text)">${_escCfg(info.subscriptions_count || 0)} abonnement(s)</span>`;
     if (result) result.innerHTML = html;
   } catch(e) {
-    if (result) result.innerHTML = `<span style="color:var(--red)">❌ ${_escCfg(e.message)}</span>`;
+    if (result) result.innerHTML = `<span style="color:var(--red)">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</span>`;
   }
 }
 
 async function _pushRegenVapid() {
   const result = document.getElementById('push_test_result');
-  if (result) result.innerHTML = '<span style="color:var(--gray-text)">⏳ Génération…</span>';
+  if (result) result.innerHTML = ('<span style="color:var(--gray-text)">' + lk('hourglass') + ' Génération…</span>');
   try {
     await apiRequest('push_generate_vapid', 'POST');
-    if (result) result.innerHTML = '<span style="color:var(--green,#16a34a)">✅ Nouvelles clés générées. Rechargez la page.</span>';
+    if (result) result.innerHTML = ('<span style="color:var(--green,#16a34a)">' + lk('circle-check', 'ok') + ' Nouvelles clés générées. Rechargez la page.</span>');
     toast('Clés VAPID régénérées. Les utilisateurs devront se réabonner.', 'success');
   } catch(e) {
-    if (result) result.innerHTML = `<span style="color:var(--red)">❌ ${_escCfg(e.message)}</span>`;
+    if (result) result.innerHTML = `<span style="color:var(--red)">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</span>`;
   }
 }
 
 async function _pushShowSubscriptions() {
   const container = document.getElementById('push_subs_list');
   if (!container) return;
-  container.innerHTML = '<span style="color:var(--gray-text);font-size:12px">⏳ Chargement…</span>';
+  container.innerHTML = ('<span style="color:var(--gray-text);font-size:12px">' + lk('hourglass') + ' Chargement…</span>');
   try {
     const resp = await apiRequest('push_subscriptions', 'GET');
     const subs = resp.subscriptions || [];
@@ -4489,11 +4680,11 @@ async function _pushShowSubscriptions() {
       container.innerHTML = '<div style="font-size:12px;color:var(--gray-text);padding:8px 0">Aucun abonnement push enregistré.</div>';
       return;
     }
-    const platformIcons = { ios: '🍎', android: '🤖', desktop: '💻', unknown: '❓' };
+    const platformIcons = { ios: lk('apple'), android: lk('bot'), desktop: lk('laptop'), unknown: lk('circle-question-mark') };
     let html = '<table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:6px">';
     html += '<tr style="background:var(--gray-bg);text-align:left"><th style="padding:6px 8px">Utilisateur</th><th style="padding:6px 8px">Rôle</th><th style="padding:6px 8px">Appareil</th><th style="padding:6px 8px">Inscrit le</th><th style="padding:6px 8px">Dernière activité</th></tr>';
     subs.forEach(s => {
-      const icon = platformIcons[s.platform] || '❓';
+      const icon = platformIcons[s.platform] || lk('circle-question-mark');
       html += `<tr style="border-bottom:1px solid var(--gray-border)">
         <td style="padding:6px 8px">${_escCfg(s.nom)}</td>
         <td style="padding:6px 8px"><span style="background:var(--gray-bg);padding:2px 8px;border-radius:4px;font-size:11px">${_escCfg(s.role)}</span></td>
@@ -4505,7 +4696,7 @@ async function _pushShowSubscriptions() {
     html += '</table>';
     container.innerHTML = html;
   } catch(e) {
-    container.innerHTML = `<span style="color:var(--red);font-size:12px">❌ ${_escCfg(e.message)}</span>`;
+    container.innerHTML = `<span style="color:var(--red);font-size:12px">${lk('circle-x', 'ko')} ${_escCfg(e.message)}</span>`;
   }
 }
 
@@ -4516,7 +4707,7 @@ async function _pushShowSubscriptions() {
 async function _loadComptesTab() {
   const slot = document.getElementById('cfg_comptes_slot');
   if (!slot) return;
-  slot.innerHTML = '<div style="padding:30px;text-align:center;color:var(--gray-text)">⏳ Chargement…</div>';
+  slot.innerHTML = ('<div style="padding:30px;text-align:center;color:var(--gray-text)">' + lk('hourglass') + ' Chargement…</div>');
 
   try {
     const data = await UtilisateursApi.getAll();
@@ -4524,7 +4715,7 @@ async function _loadComptesTab() {
 
     data.forEach(u => {
       const p = u.Provider || 'local';
-      u._type = p === 'google' ? '🔴 Google' : p === 'microsoft' ? '🔵 Microsoft' : '🔑 Local';
+      u._type = p === 'google' ? 'Google' : p === 'microsoft' ? 'Microsoft' : 'Local';
       // Cette liste est un doublon de renderUtilisateurs() : toute colonne
       // ajoutée là-bas doit l'être ici aussi, sinon l'écran Configuration
       // n'affiche pas la même chose que l'écran Utilisateurs.
@@ -4537,7 +4728,10 @@ async function _loadComptesTab() {
       }
     });
 
-    slot.innerHTML = '<div id="cfg_comptes_table"></div>';
+    // (Chacun relie ses appareils depuis « Mon profil » ; ici, la liste de tous, pour délier.)
+    slot.innerHTML = (canManage && typeof ouvrirAppareilsEtablissement === 'function'
+      ? '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-ghost" id="btnAppareilsMobilesCfg" onclick="ouvrirAppareilsEtablissement()" title="Appareils mobiles reliés à ce serveur : voir, délier">' + lk('smartphone') + ' Appareils mobiles</button></div>'
+      : '') + '<div id="cfg_comptes_table"></div>';
 
     renderTable({
       container: document.getElementById('cfg_comptes_table'), data,
@@ -4547,12 +4741,12 @@ async function _loadComptesTab() {
         { key:'Prenom',  label:'Prénom' },
         { key:'Nom',     label:'Nom' },
         { key:'Email',   label:'Email' },
-        { key:'TelMobile', label:'📱 Mobile' },
-        { key:'TelPro',   label:'📞 Pro' },
+        { key:'TelMobile', label:(lk('smartphone') + ' Mobile'), nowrap:true },
+        { key:'TelPro',   label:(lk('phone') + ' Pro'), nowrap:true },
         { key:'Service', label:'Service' },
         { key:'Poste',   label:'Poste' },
         { key:'Role',    label:'Rôle',  badge:true },
-        { key:'_acces',  label:'👁️ Consultation', render: (v) => v || '' },
+        { key:'_acces',  label:(lk('eye') + ' Consultation'), render: (v) => v || '' },
         { key:'_type',   label:'Type' },
       ],
       addBtnFn: canManage ? 'editUser' : null,
@@ -4571,7 +4765,7 @@ async function _dbResyncSequences() {
   if (!confirm('Cette opération va réajuster les compteurs d\'auto-incrémentation de toutes les tables.\n\nElle est sans risque pour vos données mais peut prendre quelques secondes.\n\nContinuer ?')) return;
   btn.disabled = true;
   const oldLbl = btn.textContent;
-  btn.textContent = '⏳ Resync en cours…';
+  btn.textContent = 'Resync en cours…';
   result.innerHTML = '';
   try {
     const res = await fetch('api/index.php?action=db_resync_sequences', {
@@ -4580,7 +4774,7 @@ async function _dbResyncSequences() {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || 'Erreur inconnue');
     const data = json.data || {};
-    let html = '<div style="color:#16a34a;font-weight:600;margin-bottom:8px">✅ ' + (data.message || 'Resync terminé.') + '</div>';
+    let html = ('<div style="color:#16a34a;font-weight:600;margin-bottom:8px">' + lk('circle-check', 'ok') + ' ') + (data.message || 'Resync terminé.') + '</div>';
 
     // Détail des modifications effectuées
     if (Array.isArray(data.changed) && data.changed.length > 0) {
@@ -4604,7 +4798,7 @@ async function _dbResyncSequences() {
     result.innerHTML = html;
     if (typeof toast === 'function') toast(data.message || 'Resync terminé', 'success');
   } catch(e) {
-    result.innerHTML = '<span style="color:#e74c3c">❌ ' + (e.message || 'Erreur') + '</span>';
+    result.innerHTML = ('<span style="color:#e74c3c">' + lk('circle-x', 'ko') + ' ') + (e.message || 'Erreur') + '</span>';
     if (typeof toast === 'function') toast(e.message, 'error');
   } finally {
     btn.disabled = false;
@@ -4615,7 +4809,7 @@ async function _dbResyncSequences() {
 /* ── Facteurs carbone ADEME : test de connexion et purge du cache ────────── */
 async function _testerCarbone() {
   const out = document.getElementById('cb_test_result');
-  if (out) { out.textContent = '⏳ Test en cours…'; out.style.color = 'var(--gray-text)'; }
+  if (out) { out.textContent = 'Test en cours…'; out.style.color = 'var(--gray-text)'; }
   try {
     // Une clé saisie mais pas encore enregistrée est testée telle quelle.
     const saisie = _readField('cb_key','');
@@ -4623,14 +4817,14 @@ async function _testerCarbone() {
     const r = await apiRequest('facteurs_carbone_test', 'POST', body);
     if (!out) return;
     if (r && r.ok) {
-      out.textContent = '✅ ' + (r.message || 'Connexion établie') + ' — ' + (r.nbFacteurs || 0) + ' modes récupérés.';
+      out.textContent = '' + (r.message || 'Connexion établie') + ' — ' + (r.nbFacteurs || 0) + ' modes récupérés.';
       out.style.color = r.anonyme ? '#d97706' : '#16a34a';
     } else {
-      out.textContent = '❌ ' + ((r && r.message) || 'Échec de la connexion.');
+      out.textContent = '' + ((r && r.message) || 'Échec de la connexion.');
       out.style.color = '#dc2626';
     }
   } catch (e) {
-    if (out) { out.textContent = '❌ ' + e.message; out.style.color = '#dc2626'; }
+    if (out) { out.textContent = '' + e.message; out.style.color = '#dc2626'; }
   }
 }
 
@@ -4639,9 +4833,9 @@ async function _purgerCacheCarbone() {
   try {
     await apiRequest('facteurs_carbone_cache', 'DELETE');
     try { localStorage.removeItem('larka_facteurs_carbone'); } catch (e) {}
-    if (out) { out.textContent = '✅ Cache vidé — le prochain calcul interrogera l\'ADEME.'; out.style.color = '#16a34a'; }
+    if (out) { out.textContent = 'Cache vidé — le prochain calcul interrogera l\'ADEME.'; out.style.color = '#16a34a'; }
   } catch (e) {
-    if (out) { out.textContent = '❌ ' + e.message; out.style.color = '#dc2626'; }
+    if (out) { out.textContent = '' + e.message; out.style.color = '#dc2626'; }
   }
 }
 
@@ -4672,13 +4866,13 @@ async function _figerMillesimeCarbone(ecraser) {
   const annee = parseInt(document.getElementById('cb_sync_annee')?.value) || new Date().getFullYear();
   if (ecraser && !confirm(
     `Refiger ${annee} remplacera des facteurs peut-être déjà utilisés dans un bilan publié.\n\nContinuer ?`)) return;
-  if (out) { out.textContent = '⏳ Interrogation de l’ADEME…'; out.style.color = 'var(--gray-text)'; }
+  if (out) { out.textContent = 'Interrogation de l’ADEME…'; out.style.color = 'var(--gray-text)'; }
   try {
     const r = await apiRequest('facteurs_carbone_sync', 'POST', { annee, ecraser: !!ecraser });
-    if (out) { out.textContent = '✅ ' + (r.message || 'Millésime figé.'); out.style.color = '#16a34a'; }
+    if (out) { out.textContent = '' + (r.message || 'Millésime figé.'); out.style.color = '#16a34a'; }
     _chargerMillesimesCarbone();
   } catch (e) {
-    if (out) { out.textContent = '❌ ' + e.message; out.style.color = '#dc2626'; }
+    if (out) { out.textContent = '' + e.message; out.style.color = '#dc2626'; }
   }
 }
 
@@ -4707,7 +4901,7 @@ async function _ouvrirGrilleCarbone() {
         </td>`).join('')}
     </tr>`).join('');
 
-  openModal(`✏️ Millésime ${annee} — facteurs en kgCO₂e/km`, `
+  openModal(`Millésime ${annee} — facteurs en kgCO₂e/km`, `
     <div style="display:flex;flex-direction:column;gap:12px">
       <div style="font-size:12px;color:var(--gray-text);line-height:1.6">
         La colonne <strong>ACV</strong> est obligatoire ; les trois autres se recalculent
@@ -4715,7 +4909,7 @@ async function _ouvrirGrilleCarbone() {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <label class="btn" style="cursor:pointer;margin:0">
-          📄 Importer un CSV
+          ${lk('file-text')} Importer un CSV
           <input type="file" accept=".csv,text/csv" style="display:none" onchange="_importerCsvCarbone(this)">
         </label>
         <span style="font-size:11px;color:var(--gray-text)">
@@ -4778,12 +4972,12 @@ function _importerCsvCarbone(input) {
         appliques++;
       });
       if (info) {
-        info.textContent = `✅ ${appliques} ligne(s) appliquée(s)`
+        info.textContent = `${appliques} ligne(s) appliquée(s)`
           + (inconnus.length ? ` — ignorées : ${inconnus.slice(0,5).join(', ')}` : '');
         info.style.color = inconnus.length ? '#d97706' : '#16a34a';
       }
     } catch (e) {
-      if (info) { info.textContent = '❌ CSV illisible : ' + e.message; info.style.color = '#dc2626'; }
+      if (info) { info.textContent = 'CSV illisible : ' + e.message; info.style.color = '#dc2626'; }
     }
   };
   reader.readAsText(f, 'UTF-8');

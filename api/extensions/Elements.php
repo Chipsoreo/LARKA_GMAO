@@ -17,7 +17,7 @@
  *
  * Un module peut désormais MASQUER, RENOMMER ou REDIRIGER une entrée de menu.
  *
- * ⚠️ LA RÈGLE QUI GOUVERNE CE FICHIER, ET QUI A DÉJÀ ÉTÉ APPRISE
+ * LA RÈGLE QUI GOUVERNE CE FICHIER, ET QUI A DÉJÀ ÉTÉ APPRISE
  * `Ancrages.php` porte cet avertissement, payé par trois entrées retirées :
  * « N'inscrire ici que ce que le cœur rend vraiment. Un emplacement au
  * catalogue que personne ne rend est pire qu'un emplacement absent : l'auteur

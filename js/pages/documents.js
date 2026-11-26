@@ -128,7 +128,7 @@ async function renderDocumentsPanel(entiteType, entiteId, container, pendingKey)
   // Pending docs
   const pending = _getPending(pk);
   if (pending.length > 0) {
-    html += `<div style="margin-top:4px;font-size:11px;color:var(--orange);font-weight:600">⏳ ${pending.length} fichier${pending.length>1?'s':''} en attente d'enregistrement</div>`;
+    html += `<div style="margin-top:4px;font-size:11px;color:var(--orange);font-weight:600">${lk('hourglass')} ${pending.length} fichier${pending.length>1?'s':''} en attente d'enregistrement</div>`;
     html += `<div style="display:flex;flex-wrap:wrap;gap:10px">`;
     pending.forEach((p, i) => { html += _renderPendingCard(p, i, pk); });
     html += `</div>`;
@@ -182,29 +182,29 @@ function _renderDocCard(d, entiteType, entiteId) {
     // Lien SharePoint : icône SP distinctive, clic = aperçu intégré
     const spKind = isImg ? 'image' : isPdf ? 'pdf' : 'other';
     thumbHtml = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#e8f4f8;border-radius:6px 6px 0 0;cursor:pointer" onclick="_spPreviewSPDoc(${d.Id},'${spKind}',${nomArg})" title="Cliquer pour prévisualiser">
-      <span style="font-size:28px">📌</span>
+      <span style="font-size:28px">${lk('pin')}</span>
       <span style="font-size:8px;color:#0078d4;font-weight:700;margin-top:2px;letter-spacing:.3px">SHAREPOINT</span>
     </div>`;
   } else if (isImg) {
     thumbHtml = `<img src="${previewUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px 6px 0 0;cursor:pointer" onclick="previewDocModal(${d.Id},'image',${nomArg})" loading="lazy" alt="${nomTxt}">`;
   } else if (isPdf) {
     thumbHtml = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fef2f2;border-radius:6px 6px 0 0;cursor:pointer" onclick="previewDocModal(${d.Id},'pdf',${nomArg})" title="Cliquer pour prévisualiser">
-      <span style="font-size:32px">📄</span>
+      <span style="font-size:32px">${lk('file-text')}</span>
       <span style="font-size:9px;color:var(--red);font-weight:600;margin-top:2px">PDF</span>
     </div>`;
   } else {
-    thumbHtml = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--gray-bg);border-radius:6px 6px 0 0;font-size:28px">📎</div>`;
+    thumbHtml = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--gray-bg);border-radius:6px 6px 0 0;font-size:28px">${lk('paperclip')}</div>`;
   }
 
   // Action bouton bas : ouvrir SP ou télécharger
   let actionBtn;
   if (isSP) {
     actionBtn = `<span style="display:inline-flex;gap:8px;align-items:center">
-      <button onclick="ouvrirDocSharePoint(${d.Id})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0" title="Ouvrir dans SharePoint">🔗</button>
-      ${_spLectureSeule ? `<span style="font-size:12px;opacity:.5" title="Consultation seule — téléchargement désactivé">👁️</span>` : `<button data-sp-dl onclick="_spTelecharger(${d.Id},${nomArg},${aCopie})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0" title="Télécharger">⬇️</button>`}
+      <button onclick="ouvrirDocSharePoint(${d.Id})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0" title="Ouvrir dans SharePoint">${lk('link')}</button>
+      ${_spLectureSeule ? `<span style="font-size:12px;opacity:.5" title="Consultation seule — téléchargement désactivé">${lk('eye')}</span>` : `<button data-sp-dl onclick="_spTelecharger(${d.Id},${nomArg},${aCopie})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0" title="Télécharger">${lk('arrow-down')}</button>`}
     </span>`;
   } else {
-    actionBtn = `<button onclick="DocumentsApi.download(${d.Id},${nomArg})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0" title="Télécharger">⬇️</button>`;
+    actionBtn = `<button onclick="DocumentsApi.download(${d.Id},${nomArg})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0" title="Télécharger">${lk('arrow-down')}</button>`;
   }
 
   return `
@@ -216,7 +216,7 @@ function _renderDocCard(d, entiteType, entiteId) {
     <div style="padding:6px 8px">
       <div style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${nomTxt}">${nomTxt || '—'}</div>
       <div style="font-size:10px;color:var(--gray-text);display:flex;justify-content:space-between;align-items:center;margin-top:2px">
-        <span>${isSP ? `📌 SP${aCopie ? ` <button onclick="_spMenuCopie(${d.Id},${nomArg},${jsArg(d.CopieLocaleMime || '')},${jsArg(d.CopieLocaleDate || '')})" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0" title="${copieTip}">💾</button>` : ''}` : fmtTaille(d.Taille)}</span>
+        <span>${isSP ? `${lk('pin')} SP${aCopie ? ` <button onclick="_spMenuCopie(${d.Id},${nomArg},${jsArg(d.CopieLocaleMime || '')},${jsArg(d.CopieLocaleDate || '')})" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0" title="${copieTip}">${lk('save')}</button>` : ''}` : fmtTaille(d.Taille)}</span>
         ${actionBtn}
       </div>
     </div>
@@ -225,6 +225,20 @@ function _renderDocCard(d, entiteType, entiteId) {
 
 // ── Carte d'un fichier pending (avec preview locale) ─────────────────────────
 function _renderPendingCard(p, idx, pendingKey) {
+  if (p.sp) {
+    return `
+  <div style="width:130px;border:1px dashed #0078d4;border-radius:8px;overflow:hidden;background:#f3f9fd;flex-shrink:0">
+    <div style="width:100%;height:90px;overflow:hidden;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <span style="font-size:30px">${lk('pin')}</span>
+      <span style="font-size:9px;color:#0078d4;font-weight:700">SHAREPOINT${p.copie ? ' + COPIE' : ''}</span>
+      <button onclick="event.stopPropagation();removePendingDoc('${pendingKey}',${idx})" style="position:absolute;top:4px;right:4px;background:rgba(220,53,69,.85);color:white;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Retirer">×</button>
+      <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,120,212,.85);color:white;text-align:center;font-size:9px;font-weight:600;padding:2px 0">LIÉ À L'ENREGISTREMENT</div>
+    </div>
+    <div style="padding:6px 8px">
+      <div style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(p.name)}">${escHtml(p.name)}</div>
+    </div>
+  </div>`;
+  }
   const isImg = _isPhoto(p.mime);
   const isPdf = _isPdf(p.mime);
 
@@ -238,11 +252,11 @@ function _renderPendingCard(p, idx, pendingKey) {
     thumbHtml = `<img src="${p._blobUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px 6px 0 0;cursor:pointer" onclick="previewPendingDoc('${pendingKey}',${idx})" loading="lazy">`;
   } else if (isPdf) {
     thumbHtml = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff3cd;border-radius:6px 6px 0 0;cursor:pointer" onclick="previewPendingDoc('${pendingKey}',${idx})" title="Cliquer pour prévisualiser">
-      <span style="font-size:32px">📄</span>
+      <span style="font-size:32px">${lk('file-text')}</span>
       <span style="font-size:9px;color:var(--orange);font-weight:600;margin-top:2px">PDF</span>
     </div>`;
   } else {
-    thumbHtml = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#fff3cd;border-radius:6px 6px 0 0;font-size:28px">📎</div>`;
+    thumbHtml = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#fff3cd;border-radius:6px 6px 0 0;font-size:28px">${lk('paperclip')}</div>`;
   }
 
   return `
@@ -262,9 +276,9 @@ function _renderPendingCard(p, idx, pendingKey) {
 function _renderUploadZones(counts, entiteType, entiteId, pendingKey) {
   if (!canEdit()) return '';
   const categories = [
-    { key: 'pdf',   label: 'PDF',    accept: '.pdf,application/pdf', icon: '📄' },
-    { key: 'photo', label: 'Photos', accept: 'image/*',              icon: '🖼️' },
-    { key: 'autre', label: 'Autres', accept: '*',                    icon: '📎' },
+    { key: 'pdf',   label: 'PDF',    accept: '.pdf,application/pdf', icon: lk('file-text') },
+    { key: 'photo', label: 'Photos', accept: 'image/*',              icon: lk('image') },
+    { key: 'autre', label: 'Autres', accept: '*',                    icon: lk('paperclip') },
   ];
 
   let html = `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">`;
@@ -283,18 +297,20 @@ function _renderUploadZones(counts, entiteType, entiteId, pendingKey) {
     </label>`;
   });
 
-  // Bouton SharePoint (uniquement si entité existante — on a besoin de l'ID pour lier)
-  if (entiteId) {
+  // Bouton SharePoint. Sur une fiche pas encore enregistrée, le fichier choisi
+  // attend avec les autres et n'est lié qu'à l'enregistrement (avant, le bouton
+  // n'apparaissait qu'une fois la fiche créée).
+  {
+    const btnId = entiteId ? `btnSharePoint_${entiteType}_${entiteId}` : `btnSharePoint_pending_${pendingKey}`;
     html += `
-    <button type="button" id="btnSharePoint_${entiteType}_${entiteId}"
+    <button type="button" id="${btnId}"
       style="display:none;align-items:center;gap:6px;padding:6px 12px;border:1px dashed #0078d4;border-radius:6px;font-size:12px;cursor:pointer;color:#0078d4;background:white;transition:background .15s"
       onmouseover="this.style.background='#e8f4f8'" onmouseout="this.style.background='white'"
-      onclick="ouvrirNavigateurSharePoint('${entiteType}',${entiteId})"
       title="Lier un fichier depuis SharePoint (raccourci, sans copie)">
-      📌 Lier depuis SharePoint
+      ${lk('pin')} Lier depuis SharePoint
     </button>`;
     // Vérifier si SharePoint est disponible (async, le bouton s'affiche si oui)
-    setTimeout(() => _checkSharePointAvailable(entiteType, entiteId), 200);
+    setTimeout(() => _checkSharePointAvailable(entiteType, entiteId, entiteId ? '' : pendingKey), 200);
   }
 
   html += `</div>`;
@@ -308,7 +324,7 @@ let _spLectureSeule = false;
 let _spHasToken = false;
 
 // ── Vérifier si SharePoint est activé pour afficher le bouton ─────────────────
-async function _checkSharePointAvailable(entiteType, entiteId) {
+async function _checkSharePointAvailable(entiteType, entiteId, pendingKey = '') {
   try {
     const status = await SharePointApi.status();
     _spLectureSeule = !!status.lectureSeule;
@@ -317,12 +333,13 @@ async function _checkSharePointAvailable(entiteType, entiteId) {
       // Retirer les boutons de téléchargement déjà rendus dans les cartes.
       document.querySelectorAll('[data-sp-dl]').forEach(a => a.remove());
     }
-    const btn = document.getElementById(`btnSharePoint_${entiteType}_${entiteId}`);
+    const btn = document.getElementById(entiteId ? `btnSharePoint_${entiteType}_${entiteId}` : `btnSharePoint_pending_${pendingKey}`);
     if (status.enabled && status.hasToken) {
       if (btn) {
         btn.style.display = 'inline-flex';
-        btn.title = 'Lier un fichier depuis SharePoint (raccourci, sans copie)';
-        btn.onclick = () => ouvrirNavigateurSharePoint(entiteType, entiteId);
+        btn.title = entiteId ? 'Lier un fichier depuis SharePoint (raccourci, sans copie)'
+                             : 'Choisir un fichier SharePoint : il sera lié à l\'enregistrement de la fiche';
+        btn.onclick = () => ouvrirNavigateurSharePoint(entiteType, entiteId, pendingKey);
       }
     } else if (btn && status.actif && !status.hasToken) {
       // SharePoint est activé, mais la session n'a pas de jeton Microsoft
@@ -330,8 +347,8 @@ async function _checkSharePointAvailable(entiteType, entiteId) {
       // et propose de reprendre la connexion Microsoft au lieu de disparaître.
       btn.style.display = 'inline-flex';
       btn.title = 'SharePoint demande votre connexion Microsoft : cliquez pour la reprendre';
-      btn.onclick = () => reconnecterMicrosoft(() => _checkSharePointAvailable(entiteType, entiteId)
-        .then(() => { if (_spHasToken) ouvrirNavigateurSharePoint(entiteType, entiteId); }));
+      btn.onclick = () => reconnecterMicrosoft(() => _checkSharePointAvailable(entiteType, entiteId, pendingKey)
+        .then(() => { if (_spHasToken) ouvrirNavigateurSharePoint(entiteType, entiteId, pendingKey); }));
     }
   } catch(_) { /* SharePoint non dispo, on n'affiche rien */ }
 }
@@ -402,9 +419,13 @@ async function uploadPendingDocs(pendingKey, entiteType, newId) {
   let success = 0;
   for (const p of pending) {
     try {
-      await DocumentsApi.upload(entiteType, newId, p.name, p.mime, p.cat || docCategorie(p.mime), p.data);
+      if (p.sp) await SharePointApi.link(entiteType, newId, p.sp, !!p.copie);
+      else await DocumentsApi.upload(entiteType, newId, p.name, p.mime, p.cat || docCategorie(p.mime), p.data);
       success++;
-    } catch(e) { console.warn('Doc upload error:', p.name, e); }
+    } catch(e) {
+      console.warn('Doc upload error:', p.name, e);
+      toast(`${escHtml(p.name)} : ${escHtml(e.message || 'non joint')}`, 'error');
+    }
   }
   // Libérer blob URLs
   pending.forEach(p => { if (p._blobUrl) URL.revokeObjectURL(p._blobUrl); });
@@ -430,28 +451,34 @@ async function supprimerDoc(docId, entiteType, entiteId) {
 // donc une modale dédiée qui se superpose ; la fermer revient à la fiche.
 // `title` est du TEXTE (souvent un nom de fichier venu d'un autre utilisateur
 // ou de SharePoint) : il est échappé ici, une fois pour tous les appelants.
-function _spOpenViewer(title, bodyHTML) {
-  _spCloseViewer();
+function _spOpenViewer(title, bodyHTML, idFenetre = 'spViewerOverlay') {
+  _spCloseViewer(idFenetre);
   const ov = document.createElement('div');
-  ov.id = 'spViewerOverlay';
+  ov.id = idFenetre;
   ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(6,18,34,.6);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)';
   ov.innerHTML = `
     <div style="background:#fff;border-radius:14px;width:min(1000px,96vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.4);overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 18px;border-bottom:1px solid var(--gray-border)">
         <div style="font-size:15px;font-weight:700;color:#0d2137;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(title)}</div>
-        <button id="spViewerCloseBtn" title="Fermer" style="background:#eef2f6;border:none;border-radius:8px;width:32px;height:32px;min-width:32px;cursor:pointer;font-size:15px;color:#33475b">✕</button>
+        <button data-fermer title="Fermer" style="background:#eef2f6;border:none;border-radius:8px;width:32px;height:32px;min-width:32px;cursor:pointer;font-size:15px;color:#33475b">✕</button>
       </div>
       <div style="padding:16px;overflow:auto;flex:1">${bodyHTML}</div>
     </div>`;
-  ov.addEventListener('click', e => { if (e.target === ov) _spCloseViewer(); });
+  const fermer = () => _spCloseViewer(idFenetre);
+  ov.addEventListener('click', e => { if (e.target === ov) fermer(); });
   document.body.appendChild(ov);
-  const cb = document.getElementById('spViewerCloseBtn');
-  if (cb) cb.onclick = _spCloseViewer;
-  ov._escHandler = (e) => { if (e.key === 'Escape') _spCloseViewer(); };
+  const cb = ov.querySelector('[data-fermer]');
+  if (cb) cb.onclick = fermer;
+  // Échap ne ferme que la fenêtre du dessus (aperçu ouvert depuis le navigateur SharePoint).
+  ov._escHandler = (e) => {
+    if (e.key !== 'Escape') return;
+    const fenetres = document.querySelectorAll('#spViewerOverlay, #spNavOverlay');
+    if (fenetres[fenetres.length - 1] === ov) { e.stopPropagation(); fermer(); }
+  };
   document.addEventListener('keydown', ov._escHandler);
 }
-function _spCloseViewer() {
-  const ov = document.getElementById('spViewerOverlay');
+function _spCloseViewer(idFenetre = 'spViewerOverlay') {
+  const ov = document.getElementById(idFenetre);
   if (ov) {
     if (ov._escHandler) document.removeEventListener('keydown', ov._escHandler);
     ov.remove();
@@ -465,7 +492,7 @@ function _spCloseViewer() {
 function previewDocModal(docId, type, filename) {
   const url = _previewUrl(docId);
   if (type === 'image') {
-    _spOpenViewer(`👁️ ${filename||'Document'}`, `<div style="display:flex;align-items:center;justify-content:center;height:70vh;overflow:auto">
+    _spOpenViewer(`${filename||'Document'}`, `<div style="display:flex;align-items:center;justify-content:center;height:70vh;overflow:auto">
       <img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.15)">
     </div>`);
   } else {
@@ -510,9 +537,9 @@ async function _spPreviewSPDoc(docId, kind, name) {
   const safe   = (name||'Document');
   const barre  = `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
         ${lectureSeule
-          ? `<span style="font-size:11px;color:var(--gray-text);align-self:center">👁️ Consultation seule — téléchargement désactivé</span>`
-          : `<a href="api/index.php?action=sharepoint_download&id=${docId}" class="btn btn-ghost btn-sm" style="text-decoration:none">⬇️ Télécharger</a>`}
-        <button class="btn btn-ghost btn-sm" onclick="ouvrirDocSharePoint(${docId})">🔗 Ouvrir dans SharePoint</button>
+          ? `<span style="font-size:11px;color:var(--gray-text);align-self:center">${lk('eye')} Consultation seule — téléchargement désactivé</span>`
+          : `<a href="api/index.php?action=sharepoint_download&id=${docId}" class="btn btn-ghost btn-sm" style="text-decoration:none">${lk('arrow-down')} Télécharger</a>`}
+        <button class="btn btn-ghost btn-sm" onclick="ouvrirDocSharePoint(${docId})">${lk('link')} Ouvrir dans SharePoint</button>
         ${_spBoutonsCopie(docId, etat)}
       </div>`;
 
@@ -521,7 +548,7 @@ async function _spPreviewSPDoc(docId, kind, name) {
         <img src="${rawUrl}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.15)" alt="${escHtml(safe)}">
       </div>
       ${barre}`;
-    _spOpenViewer(`👁️ ${safe}`, content);
+    _spOpenViewer(`${safe}`, content);
   } else if (isOffice) {
     // Office → converti en PDF par Graph, ouvert dans un nouvel onglet.
     window.open(`${rawUrl}&format=pdf`, '_blank');
@@ -565,9 +592,9 @@ function _spBoutonsCopie(docId, etat) {
   if (!canEdit() || (etat && etat.lectureSeule)) return '';
   const date = etat && etat.copieLocale;
   return date
-    ? `<button class="btn btn-ghost btn-sm" onclick="_spCopierLocal(${docId})" title="Copie du ${escHtml(_spDateFr(date))}">🔄 Mettre à jour la copie Larka</button>
-       <button class="btn btn-ghost btn-sm" onclick="_spRetirerCopie(${docId})">🗑️ Retirer la copie</button>`
-    : `<button class="btn btn-ghost btn-sm" onclick="_spCopierLocal(${docId})" title="Consultable ensuite par les comptes sans Microsoft">💾 Copier dans Larka</button>`;
+    ? `<button class="btn btn-ghost btn-sm" onclick="_spCopierLocal(${docId})" title="Copie du ${escHtml(_spDateFr(date))}">${lk('refresh-cw')} Mettre à jour la copie Larka</button>
+       <button class="btn btn-ghost btn-sm" onclick="_spRetirerCopie(${docId})">${lk('trash')} Retirer la copie</button>`
+    : `<button class="btn btn-ghost btn-sm" onclick="_spCopierLocal(${docId})" title="Consultable ensuite par les comptes sans Microsoft">${lk('save')} Copier dans Larka</button>`;
 }
 
 // Fichier ouvert dans un onglet et pas encore copié : on propose la copie
@@ -576,7 +603,7 @@ function _spProposerCopie(docId, name, etat) {
   if (etat && etat.copieLocale) return;
   const boutons = _spBoutonsCopie(docId, etat);
   if (!boutons) return;
-  _spOpenViewer(`📌 ${name}`, `<div style="font-size:13px;line-height:1.5">
+  _spOpenViewer(`${name}`, `<div style="font-size:13px;line-height:1.5">
       Le document s'ouvre dans un nouvel onglet.<br>
       <span style="color:var(--gray-text)">Les comptes sans connexion Microsoft ne peuvent pas l'ouvrir. Une copie dans Larka le leur rend consultable.</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${boutons}</div>
@@ -587,14 +614,14 @@ function _spProposerCopie(docId, name, etat) {
 // modifier la fiche ont en plus « mettre à jour » et « retirer ».
 function _spMenuCopie(docId, name, mime, date) {
   if (!canEdit() || _spLectureSeule) { _spOuvrirCopie(docId, name, mime); return; }
-  _spOpenViewer(`💾 ${name}`, `<div style="font-size:13px;line-height:1.5">
+  _spOpenViewer(`${name}`, `<div style="font-size:13px;line-height:1.5">
       Copie enregistrée dans Larka le ${escHtml(_spDateFr(date))} : consultable sans compte Microsoft.
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button class="btn btn-primary btn-sm" onclick="_spCloseViewer();_spOuvrirCopie(${docId},${jsArg(name)},${jsArg(mime)})">👁️ Voir la copie</button>
+        <button class="btn btn-primary btn-sm" onclick="_spCloseViewer();_spOuvrirCopie(${docId},${jsArg(name)},${jsArg(mime)})">${lk('eye')} Voir la copie</button>
         ${_spHasToken
-          ? `<button class="btn btn-ghost btn-sm" onclick="_spCopierLocal(${docId})">🔄 Mettre à jour depuis SharePoint</button>`
+          ? `<button class="btn btn-ghost btn-sm" onclick="_spCopierLocal(${docId})">${lk('refresh-cw')} Mettre à jour depuis SharePoint</button>`
           : `<span style="font-size:11px;color:var(--gray-text);align-self:center">Mise à jour : connexion Microsoft requise.</span>`}
-        <button class="btn btn-ghost btn-sm" onclick="_spRetirerCopie(${docId})">🗑️ Retirer la copie</button>
+        <button class="btn btn-ghost btn-sm" onclick="_spRetirerCopie(${docId})">${lk('trash')} Retirer la copie</button>
       </div>
     </div>`);
 }
@@ -604,7 +631,7 @@ async function _spCopierLocal(docId) {
   toast('Copie du fichier dans Larka…', 'info');
   try {
     await SharePointApi.copieLocale(docId);
-    toast('💾 Copie enregistrée : le document est consultable sans compte Microsoft.', 'success');
+    toast('Copie enregistrée : le document est consultable sans compte Microsoft.', 'success');
     _spRafraichirPanneaux();
   } catch (e) { toast(e.message || 'Copie impossible.', 'error'); }
 }
@@ -644,13 +671,13 @@ function _spFicheHorsLigne(docId, name, etat) {
   const content = `
     <div style="display:flex;flex-direction:column;gap:14px">
       <div style="padding:12px 14px;background:var(--gray-bg);border-radius:8px;border-left:3px solid var(--orange);font-size:13px;line-height:1.5">
-        ⚠️ <strong>Aperçu indisponible</strong><br>
+        ${lk('triangle-exclamation-point', 'warn')} <strong>Aperçu indisponible</strong><br>
         <span style="color:var(--gray-text)">${escHtml(etat.raison || 'SharePoint est injoignable.')}
         Le contenu du fichier n'est pas stocké dans Larka — il reste sur SharePoint — donc il ne peut pas être affiché tant que le service ne répond pas.</span>
       </div>
 
       <div style="font-size:13px">
-        <div style="font-weight:600;margin-bottom:6px">📌 Ce que Larka sait de ce fichier</div>
+        <div style="font-weight:600;margin-bottom:6px">${lk('pin')} Ce que Larka sait de ce fichier</div>
         ${ligne('Nom',        nom)}
         ${ligne('Type',       d.TypeMime)}
         ${ligne('Taille',     d.Taille ? _fmtTaille(d.Taille) : '')}
@@ -661,17 +688,17 @@ function _spFicheHorsLigne(docId, name, etat) {
       </div>
 
       ${(etat.copieLocale || d.CopieLocaleDate) ? `<div>
-        <button class="btn btn-primary btn-sm" onclick="closeModal();_spOuvrirCopie(${docId},${jsArg(nom)},${jsArg(etat.copieMime || d.CopieLocaleMime || '')})">👁️ Voir la copie enregistrée dans Larka</button>
+        <button class="btn btn-primary btn-sm" onclick="closeModal();_spOuvrirCopie(${docId},${jsArg(nom)},${jsArg(etat.copieMime || d.CopieLocaleMime || '')})">${lk('eye')} Voir la copie enregistrée dans Larka</button>
         <div style="font-size:11px;color:var(--gray-text);margin-top:5px">Copie du ${escHtml(_spDateFr(etat.copieLocale || d.CopieLocaleDate))}.</div>
       </div>` : ''}
 
       ${url ? `<div>
-        <a href="${escHtml(url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="text-decoration:none">🔗 Tenter l'ouverture directe dans SharePoint</a>
+        <a href="${escHtml(url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="text-decoration:none">${lk('link')} Tenter l'ouverture directe dans SharePoint</a>
         <div style="font-size:11px;color:var(--gray-text);margin-top:5px">L'adresse est conservée localement : elle fonctionnera dès que SharePoint sera de nouveau joignable.</div>
       </div>` : ''}
     </div>`;
 
-  openModal(`📄 ${nom}`, content, null, null, 'Fermer');
+  openModal(`${nom}`, content, null, null, 'Fermer');
 }
 
 // Taille lisible (repli local, sans dépendance à SharePoint).
@@ -699,7 +726,7 @@ function previewPendingDoc(pendingKey, idx) {
   } else {
     contentHtml = `<div style="padding:40px;text-align:center;color:var(--gray-text)">Prévisualisation non disponible.</div>`;
   }
-  _spOpenViewer(`👁️ ${p.name||'Document'}`, contentHtml);
+  _spOpenViewer(`${p.name||'Document'}`, contentHtml);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -715,8 +742,8 @@ function previewPendingDoc(pendingKey, idx) {
 
 let _spContext = {};
 
-async function ouvrirNavigateurSharePoint(entiteType, entiteId) {
-  _spContext = { entiteType, entiteId, siteId: '', driveId: '', breadcrumb: [] };
+async function ouvrirNavigateurSharePoint(entiteType, entiteId, pendingKey = '') {
+  _spContext = { entiteType, entiteId, pendingKey: entiteId ? '' : (pendingKey || entiteType), siteId: '', driveId: '', breadcrumb: [] };
 
   const content = `
     <div id="spNav" style="min-height:300px">
@@ -725,7 +752,7 @@ async function ouvrirNavigateurSharePoint(entiteType, entiteId) {
         <div id="spSearchBox" style="position:relative;flex:0 0 220px;display:none">
           <input type="text" id="spSearchInput" class="form-control" placeholder="Rechercher…"
             style="font-size:12px;padding:6px 10px 6px 30px" onkeydown="if(event.key==='Enter')rechercherSharePoint()">
-          <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none">🔍</span>
+          <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none">${lk('search')}</span>
         </div>
       </div>
       ${_spLectureSeule ? '' : `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:0 0 10px;padding:8px 10px;background:var(--gray-bg);border-radius:6px;cursor:pointer">
@@ -735,13 +762,15 @@ async function ouvrirNavigateurSharePoint(entiteType, entiteId) {
       </label>`}
       <div id="spContent" style="display:flex;align-items:center;justify-content:center;min-height:200px">
         <div style="text-align:center;color:var(--gray-text)">
-          <div style="font-size:24px;margin-bottom:8px">⏳</div>
+          <div style="font-size:24px;margin-bottom:8px">${lk('hourglass')}</div>
           <div style="font-size:13px">Connexion à SharePoint…</div>
         </div>
       </div>
     </div>`;
 
-  openModal('📌 Lier depuis SharePoint', content, null, null, 'Fermer');
+  // Fenêtre empilée au-dessus de la fiche : avant, le navigateur remplaçait la
+  // fiche dans la modale commune (une fiche en cours de saisie était perdue).
+  _spOpenViewer('Lier depuis SharePoint', content, 'spNavOverlay');
 
   try {
     await _spLoadHome();
@@ -753,7 +782,7 @@ async function ouvrirNavigateurSharePoint(entiteType, entiteId) {
 function _spShowError(msg) {
   const el = document.getElementById('spContent');
   if (el) el.innerHTML = `<div style="text-align:center;padding:30px;color:#e74c3c">
-    <div style="font-size:24px;margin-bottom:8px">❌</div>
+    <div style="font-size:24px;margin-bottom:8px">${lk('circle-x', 'ko')}</div>
     <div style="font-size:13px">${escHtml(msg)}</div>
     <div style="font-size:11px;color:var(--gray-text);margin-top:8px">Vérifiez votre connexion Microsoft.</div>
   </div>`;
@@ -762,7 +791,7 @@ function _spShowError(msg) {
 function _spShowLoading(msg = 'Chargement…') {
   const el = document.getElementById('spContent');
   if (el) el.innerHTML = `<div style="text-align:center;color:var(--gray-text)">
-    <div style="font-size:24px;margin-bottom:8px">⏳</div>
+    <div style="font-size:24px;margin-bottom:8px">${lk('hourglass')}</div>
     <div style="font-size:13px">${escHtml(msg)}</div>
   </div>`;
 }
@@ -770,7 +799,7 @@ function _spShowLoading(msg = 'Chargement…') {
 function _spUpdateBreadcrumb() {
   const el = document.getElementById('spBreadcrumb');
   if (!el) return;
-  let html = `<span style="cursor:pointer;color:var(--blue)" onclick="_spLoadHome()">📌 SharePoint</span>`;
+  let html = `<span style="cursor:pointer;color:var(--blue)" onclick="_spLoadHome()">${lk('pin')} SharePoint</span>`;
   _spContext.breadcrumb.forEach((b, i) => {
     html += ` <span style="color:var(--gray-text)">›</span> `;
     if (i < _spContext.breadcrumb.length - 1) {
@@ -816,7 +845,7 @@ async function _spLoadHome(top) {
   // 0) Recherche de site — EN HAUT et bien visible. C'est le moyen fiable de
   //    trouver un site précis (ex. « BATIMENTS ») sans dérouler tout le tenant.
   html += `<div>
-    <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🔎 Rechercher</div>
+    <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('search')} Rechercher</div>
     <div style="display:flex;gap:8px;align-items:center">
       <input type="text" id="spSiteSearch" class="form-control" placeholder="Nom d'un fichier, dossier ou site…"
         style="font-size:13px;flex:1" onkeydown="if(event.key==='Enter')_spSearchAll()">
@@ -833,7 +862,7 @@ async function _spLoadHome(top) {
     const myDrives = await SharePointApi.mydrives();
     if (myDrives.length > 0) {
       html += `<div>
-        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">💾 Mon OneDrive</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('save')} Mon OneDrive</div>
         <div style="display:flex;flex-direction:column;gap:4px">`;
       myDrives.forEach(d => { html += _spDriveItem(d, ''); });
       html += `</div></div>`;
@@ -849,7 +878,7 @@ async function _spLoadHome(top) {
   const _favCount = _spFavGet().length;
   if (_favCount > 0) {
     html += `<div style="margin-top:2px">
-      <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="_spShowAllSites()">🌐 Parcourir tous les sites disponibles…</button>
+      <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="_spShowAllSites()">${lk('globe')} Parcourir tous les sites disponibles…</button>
     </div>`;
   } else {
     try {
@@ -943,7 +972,7 @@ function _spFavToggleFolder(driveId, itemId, name, siteId, siteName, starEl) {
 function _spFavSectionInner() {
   const favs = _spFavGet();
   if (!favs.length) return '';
-  let h = `<div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">⭐ Vos favoris</div>
+  let h = `<div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('star', 'p jaune')} Vos favoris</div>
     <div style="display:flex;flex-direction:column;gap:4px">`;
   favs.forEach(f => {
     if (f.kind === 'folder') h += _spFavFolderItem(f);
@@ -965,7 +994,7 @@ function _spFavFolderItem(f) {
   return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--gray-border);background:white;transition:background .15s"
     onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background='white'"
     onclick="_spOpenFavFolder(${eD},${eI},${eN},${eS})">
-    <span style="font-size:20px">📁</span>
+    <span style="font-size:20px">${lk('folder')}</span>
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nm)}</div>
       <div style="font-size:10px;color:var(--gray-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(sub)}</div>
@@ -1007,13 +1036,13 @@ function _spRenderSiteGroups(sites) {
   sites.forEach(s => { (_spHostOf(s.url) === th ? internal : external).push(s); });
   let h = '';
   if (internal.length) {
-    h += `<div><div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🏢 Sites internes${domain ? ' — ' + domain : ''}</div>
+    h += `<div><div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('building-complex')} Sites internes${domain ? ' — ' + domain : ''}</div>
       <div style="display:flex;flex-direction:column;gap:4px">`;
     internal.forEach(s => { h += _spSiteItem(s); });
     h += `</div></div>`;
   }
   if (external.length) {
-    h += `<div style="margin-top:8px"><div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🌐 Autres sites (externes / invités)</div>
+    h += `<div style="margin-top:8px"><div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('globe')} Autres sites (externes / invités)</div>
       <div style="display:flex;flex-direction:column;gap:4px">`;
     external.forEach(s => { h += _spSiteItem(s); });
     h += `</div></div>`;
@@ -1036,7 +1065,7 @@ function _spSiteItem(s) {
   return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--gray-border);background:white;transition:background .15s"
     onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background='white'"
     onclick="_spSelectSite(${safeId},${safeName})">
-    <span style="font-size:20px">${s.followed ? '⭐' : '🌐'}</span>
+    <span style="font-size:20px">${s.followed ? lk('star', 'p jaune') : lk('globe')}</span>
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.name||'Sans nom')}</div>
       ${s.description ? `<div style="font-size:10px;color:var(--gray-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.description)}</div>` : ''}
@@ -1052,7 +1081,7 @@ function _spDriveItem(d, siteId) {
   return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--gray-border);background:white;transition:background .15s"
     onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background='white'"
     onclick="_spSelectDrive(${jsArg(d.id || '')},${safeName},${jsArg(siteId || '')})">
-    <span style="font-size:20px">${d.type==='personal' ? '💾' : '📚'}</span>
+    <span style="font-size:20px">${d.type==='personal' ? lk('save') : lk('library')}</span>
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:600">${escHtml(d.name||'Bibliothèque')}</div>
       <div style="font-size:10px;color:var(--gray-text)">${escHtml(d.type||'')}</div>
@@ -1118,13 +1147,13 @@ async function _spSearchAll(top) {
       </div>`;
     if (files.length) {
       html += `<div>
-        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">📄 Fichiers &amp; dossiers (${files.length})</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('file-text')} Fichiers &amp; dossiers (${files.length})</div>
         ${_spRenderGlobalFiles(files)}
       </div>`;
     }
     if (sites.length) {
       html += `<div>
-        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🏢 Sites</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gray-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${lk('building-complex')} Sites</div>
         ${_spRenderSiteGroups(sites)}
       </div>`;
     }
@@ -1154,7 +1183,7 @@ function _spReadableLoc(webUrl, parentPath) {
 function _spRenderGlobalFiles(items) {
   let html = `<div style="display:flex;flex-direction:column;gap:4px">`;
   items.forEach(f => {
-    const icon = f.isFolder ? '📁' : _spFileIcon(f.mimeType, f.name);
+    const icon = f.isFolder ? lk('folder') : _spFileIcon(f.mimeType, f.name);
     // Noms, chemins et identifiants viennent de SharePoint (écrits par
     // d'autres utilisateurs) : jsArg pour les gestionnaires, escHtml pour le texte.
     const eN   = jsArg(f.name || '');
@@ -1162,7 +1191,7 @@ function _spRenderGlobalFiles(items) {
     const loc  = _spReadableLoc(f.webUrl, f.parentPath);
     const meta = f.isFolder ? 'Dossier' : fmtTaille(f.size);
     const locLine = loc
-      ? `<div style="font-size:10px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(loc||'')}">📍 ${escHtml(loc)}</div>`
+      ? `<div style="font-size:10px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(loc||'')}">${lk('map-pin')} ${escHtml(loc)}</div>`
       : '';
     // Lien externe : https uniquement (jamais « javascript: » ni autre schéma).
     const openLink = /^https:\/\//i.test(f.webUrl || '')
@@ -1176,7 +1205,7 @@ function _spRenderGlobalFiles(items) {
       html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--gray-border);background:white;transition:background .15s"
         onmouseover="this.style.background='var(--gray-bg)'" onmouseout="this.style.background='white'"
         onclick="_spOpenFavFolder(${eD},${eId},${eN},${eS})">
-        <span style="font-size:20px">📁</span>
+        <span style="font-size:20px">${lk('folder')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(f.name)}</div>
           <div style="font-size:10px;color:var(--gray-text)">${escHtml(meta)}</div>
@@ -1199,7 +1228,7 @@ function _spRenderGlobalFiles(items) {
         </div>
         ${openLink}
         <button data-sp-linkbtn style="background:#0078d4;color:white;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap"
-          onclick="event.stopPropagation();_spSelectFile(${jsArg(safeData)}, this)">📌 Lier</button>
+          onclick="event.stopPropagation();_spSelectFile(${jsArg(safeData)}, this)">${lk('pin')} Lier</button>
       </div>`;
     }
   });
@@ -1271,11 +1300,11 @@ function _spRenderFileList(items, isSearch) {
 
   let html = `<div style="display:flex;flex-direction:column;gap:2px;width:100%;max-height:55vh;overflow-y:auto">`;
   sorted.forEach(f => {
-    const icon = f.isFolder ? '📁' : _spFileIcon(f.mimeType, f.name);
+    const icon = f.isFolder ? lk('folder') : _spFileIcon(f.mimeType, f.name);
     const sizeStr = f.isFolder ? (f.childCount != null ? f.childCount+' éléments' : '') : fmtTaille(f.size);
     const dateStr = f.modified ? new Date(f.modified).toLocaleDateString('fr-FR') : '';
     // En recherche, on montre l'emplacement (chemin du dossier parent).
-    const subLine = (isSearch && f.parentPath) ? ('📁 ' + f.parentPath) : sizeStr;
+    const subLine = (isSearch && f.parentPath) ? ('' + f.parentPath) : sizeStr;
     const eN  = jsArg(f.name || '');
     const eId = jsArg(f.id || '');
 
@@ -1306,7 +1335,7 @@ function _spRenderFileList(items, isSearch) {
         </div>
         <span style="font-size:11px;color:var(--gray-text)">${dateStr}</span>
         <button data-sp-linkbtn style="background:#0078d4;color:white;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap"
-          onclick="event.stopPropagation();_spSelectFile(${jsArg(safeData)}, this)">📌 Lier</button>
+          onclick="event.stopPropagation();_spSelectFile(${jsArg(safeData)}, this)">${lk('pin')} Lier</button>
       </div>`;
     }
   });
@@ -1317,20 +1346,20 @@ function _spRenderFileList(items, isSearch) {
 function _spFileIcon(mime, name) {
   if (!mime) {
     const ext = (name||'').split('.').pop().toLowerCase();
-    if (['pdf'].includes(ext)) return '📄';
-    if (['doc','docx'].includes(ext)) return '📝';
-    if (['xls','xlsx'].includes(ext)) return '📊';
-    if (['ppt','pptx'].includes(ext)) return '📽️';
-    if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return '🖼️';
-    if (['zip','rar','7z'].includes(ext)) return '📦';
-    return '📎';
+    if (['pdf'].includes(ext)) return lk('file-text');
+    if (['doc','docx'].includes(ext)) return lk('file-pen-line');
+    if (['xls','xlsx'].includes(ext)) return lk('chart-column');
+    if (['ppt','pptx'].includes(ext)) return lk('projector');
+    if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return lk('image');
+    if (['zip','rar','7z'].includes(ext)) return lk('package');
+    return lk('paperclip');
   }
-  if (mime === 'application/pdf') return '📄';
-  if (mime.startsWith('image/')) return '🖼️';
-  if (mime.includes('word') || mime.includes('document')) return '📝';
-  if (mime.includes('sheet') || mime.includes('excel')) return '📊';
-  if (mime.includes('presentation') || mime.includes('powerpoint')) return '📽️';
-  return '📎';
+  if (mime === 'application/pdf') return lk('file-text');
+  if (mime.startsWith('image/')) return lk('image');
+  if (mime.includes('word') || mime.includes('document')) return lk('file-pen-line');
+  if (mime.includes('sheet') || mime.includes('excel')) return lk('chart-column');
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return lk('projector');
+  return lk('paperclip');
 }
 
 async function _spOpenFolder(itemId, folderName) {
@@ -1349,19 +1378,32 @@ function _spCopieParDefaut(valeur) {
 async function _spSelectFile(encodedData, el) {
   let file;
   try { file = JSON.parse(decodeURIComponent(encodedData)); } catch(_) { return; }
-  const { entiteType, entiteId } = _spContext;
+  const { entiteType, entiteId, pendingKey } = _spContext;
 
   // Ligne cliquée (pour la griser une fois liée).
   const row = el ? (el.closest('div') || el) : null;
   if (row) { row.style.opacity = '0.55'; row.style.pointerEvents = 'none'; }
 
   const copie = !!document.getElementById('spCopieLocale')?.checked;
+  // Fiche pas encore enregistrée : le fichier attend avec les autres.
+  if (!entiteId) {
+    const sp = Object.assign({}, file, { driveId: file.driveId || _spContext.driveId || '', siteId: file.siteId || _spContext.siteId || '' });
+    _getPending(pendingKey).push({ sp, copie, name: file.name || 'Fichier SharePoint', mime: file.mimeType || 'application/octet-stream', cat: _spCategorie(file.mimeType) });
+    _refreshPendingPanel(pendingKey);
+    toast(`${escHtml(file.name || '')} sera lié à l'enregistrement de la fiche.`, 'success');
+    if (row) {
+      row.style.opacity = '1'; row.style.background = '#eef7ee'; row.style.borderColor = '#2e7d32'; row.style.cursor = 'default'; row.onclick = null;
+      const btn = row.querySelector('[data-sp-linkbtn]');
+      if (btn) btn.outerHTML = `<span style="color:#2e7d32;font-size:11px;font-weight:700;white-space:nowrap">✓ Ajouté</span>`;
+    }
+    return;
+  }
   try {
     const r = await SharePointApi.link(entiteType, entiteId, file, copie);
     if (copie && r && r.copieLocale === false) {
-      toast(`📌 ${escHtml(file.name)} lié, mais sans copie : ${escHtml(r.avertissement || 'copie impossible')}`, 'warning');
+      toast(`${escHtml(file.name)} lié, mais sans copie : ${escHtml(r.avertissement || 'copie impossible')}`, 'warning');
     } else {
-      toast(`📌 ${escHtml(file.name)} lié${copie ? ' et copié dans Larka' : ''}.`, 'success');
+      toast(`${escHtml(file.name)} lié${copie ? ' et copié dans Larka' : ''}.`, 'success');
     }
     if (row) {
       row.style.opacity = '1';
@@ -1403,7 +1445,7 @@ async function ouvrirDocSharePoint(docId) {
         '<!doctype html><meta charset="utf-8"><title>Ouverture…</title>' +
         '<body style="font-family:system-ui,Segoe UI,sans-serif;background:#0d2137;color:#e2eaf4;' +
         'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-        '<div style="text-align:center"><div style="font-size:34px">📌</div>' +
+        ('<div style="text-align:center"><div style="font-size:34px">' + lk('pin') + '</div>') +
         '<p style="opacity:.85">Récupération du fichier SharePoint…</p></div>'
       );
     }
@@ -1507,7 +1549,7 @@ function _spCloseWaitOverlay() {
 function _spShowGoneMessage(serverMsg) {
   if (!_spWaitEl()) _spShowWaitOverlay(() => _spCloseWaitOverlay());
   _spSetOverlayMessage(
-    '🗑️', 'Fichier introuvable',
+    lk('trash'), 'Fichier introuvable',
     serverMsg || 'Ce fichier n’existe plus sur SharePoint (déplacé ou supprimé). Vous pouvez supprimer ce raccourci.',
     '#c0392b'
   );
@@ -1515,7 +1557,7 @@ function _spShowGoneMessage(serverMsg) {
 
 function _spShowErrorMessage(msg) {
   if (!_spWaitEl()) _spShowWaitOverlay(() => _spCloseWaitOverlay());
-  _spSetOverlayMessage('⚠️', 'Ouverture impossible', msg, '#b7791f');
+  _spSetOverlayMessage(lk('triangle-exclamation-point', 'warn'), 'Ouverture impossible', msg, '#b7791f');
 }
 
 function _spSetOverlayMessage(icon, title, msg, color) {

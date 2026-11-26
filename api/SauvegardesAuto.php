@@ -11,7 +11,7 @@
  *  Larka — sauvegardes automatiques
  * ═══════════════════════════════════════════════════════════════════════════
  *
- *  ⚠️ ELLES N'AVAIENT JAMAIS EU LIEU.
+ *  ELLES N'AVAIENT JAMAIS EU LIEU.
  *  Le réglage existait (case « Sauvegardes automatiques activées », intervalle,
  *  rotation) et l'écran disait « doit être déclenchée par un cron qui appelle
  *  l'API » — mais aucune route ne le permettait et rien ne la déclenchait. Une

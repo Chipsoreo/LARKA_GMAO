@@ -6,7 +6,7 @@
  * Larka — épreuve du schéma et de la migration entre moteurs
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Défauts reproduits (2.1.1) sur une base de démonstration complète, migrée de
+ * Défauts reproduits (3.0.0) sur une base de démonstration complète, migrée de
  * SQLite vers PostgreSQL puis comparée route par route à l'originale :
  *
  *   #1  migration    la liste des tables migrées était écrite en dur : factures,
@@ -23,7 +23,9 @@
  * SQLite jetable, serveur intégré sur un port libre.
  *
  * Facultatif : LARKA_EPREUVE_PG="host=127.0.0.1;port=5432;dbname=…;user=…;password=…"
- * (base VIDE dédiée) ajoute la migration vers PostgreSQL et le contrôle des types.
+ * (base VIDE dédiée) ajoute la migration vers PostgreSQL et le contrôle des types ;
+ * LARKA_EPREUVE_MYSQL="host=127.0.0.1;port=3306;dbname=…;user=…;password=…" (base
+ * VIDE dédiée) ajoute la migration vers MariaDB / MySQL et un module qui y travaille.
  *
  *   php outils/epreuves/test-schema.php
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -100,9 +102,12 @@ $inventaire = function (PDO $pdo): array {
     $pilote = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     $tables = $pilote === 'pgsql'
         ? $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")->fetchAll(PDO::FETCH_COLUMN)
-        : $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_COLUMN);
+        : ($pilote === 'mysql'
+            ? $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN)
+            : $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_COLUMN));
+    $q = $pilote === 'mysql' ? '`' : '"';
     $out = [];
-    foreach ($tables as $t) $out[strtolower((string)$t)] = (int)$pdo->query('SELECT COUNT(*) FROM "' . $t . '"')->fetchColumn();
+    foreach ($tables as $t) $out[strtolower((string)$t)] = (int)$pdo->query('SELECT COUNT(*) FROM ' . $q . $t . $q)->fetchColumn();
     ksort($out);
     return $out;
 };
@@ -228,6 +233,65 @@ try {
         verifier('PostgreSQL : aucune colonne float4 (REAL)', $reels === 0, "$reels colonne(s) real", $ok, $ko);
         $montant = $pgPdo->query('SELECT montant FROM "ext_epreuve_jeu" WHERE nom = \'a\'')->fetchColumn();
         verifier('PostgreSQL : 300 000,45 garde ses centimes', abs((float)$montant - 300000.45) < 0.001, (string)$montant, $ok, $ko);
+    }
+
+    // ── 5. Facultatif : MariaDB / MySQL ──────────────────────────────────────
+    // ⚠️ Les modules y étaient TOUS en échec, puis suspendus : leurs requêtes
+    // mettaient les noms entre "…", qui sont des chaînes pour MySQL / MariaDB
+    // (api/extensions/securite/Requete.php, Securite.php). On migre, puis un
+    // module crée sa table, écrit, lit, modifie — sur la base migrée.
+    $my = getenv('LARKA_EPREUVE_MYSQL') ?: '';
+    if ($my === '' || !extension_loaded('pdo_mysql')) {
+        echo "\n  ⏭️  MariaDB / MySQL : LARKA_EPREUVE_MYSQL non défini — volet sauté.\n";
+    } else {
+        echo "\n  Migration vers MariaDB / MySQL, et un module dessus\n";
+        parse_str(str_replace(';', '&', $my), $m);
+        $cfg['base_de_donnees'] = ['driver' => 'sqlite', 'path' => 'data/gmao.db'];
+        file_put_contents($dir . '/config.json', json_encode($cfg, JSON_PRETTY_PRINT));
+        $api('POST', 'login', ['login' => 'admin', 'password' => 'Epreuve-Schema-1']);
+        [$c, $j] = $api('POST', 'db_migrate', ['destination' => ['driver' => 'mariadb',
+            'host' => $m['host'] ?? '127.0.0.1', 'port' => (int)($m['port'] ?? 3306), 'dbname' => $m['dbname'] ?? '',
+            'user' => $m['user'] ?? '', 'password' => $m['password'] ?? '']]);
+        $rapport = $j['data']['report'] ?? [];
+        $erreurs = array_values(array_filter($rapport, fn($l) => ($l['status'] ?? '') === 'error'));
+        verifier('migration SQLite → MariaDB réussie', $c === 200 && $erreurs === [],
+            "HTTP $c " . ($erreurs ? json_encode($erreurs[0], JSON_UNESCAPED_UNICODE) : (is_array($j) ? ($j['error'] ?? '') : substr((string)$j, 0, 160))), $ok, $ko);
+        $myPdo = new PDO(sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $m['host'] ?? '127.0.0.1', (int)($m['port'] ?? 3306), $m['dbname'] ?? ''),
+                         $m['user'] ?? '', $m['password'] ?? '');
+        $apresMy = $inventaire($myPdo);
+        $perdues = [];
+        foreach ($avant as $t => $n) {
+            if (!array_key_exists($t, $apresMy)) $perdues[] = "$t (absente)";
+            elseif ($apresMy[$t] < $n && $t !== 'journal') $perdues[] = "$t ({$apresMy[$t]}/$n)";
+        }
+        verifier('MariaDB : toutes les tables et lignes ont suivi', $perdues === [],
+            $perdues ? implode(', ', $perdues) : count($apresMy) . ' tables', $ok, $ko);
+
+        // Un module, par la même porte que le moteur déclaratif (ExtSecurite).
+        $script = $dir . '/epreuve-module-mysql.php';
+        file_put_contents($script, '<?php
+            chdir(__DIR__);
+            require "api/config.php"; require_once "api/Database.php"; require_once "api/Journal.php";
+            require_once "api/extensions/Registre.php";
+            $db = new Database();
+            $caps = ["donnees.table_privee"];
+            $s = new ExtSecurite($db, "epreuve.mysql", $caps, ["Login" => "epreuve", "Role" => "Gestionnaire"]);
+            $t = $s->creerTable("essai", ["nom" => "texte", "montant" => "decimal", "quantite" => "entier"]);
+            $s->declarer("donnees.inserer");
+            $s->requeter(["action" => "INSERT", "table" => $t["table"], "valeurs" => ["nom" => "a", "montant" => 12.5, "quantite" => 3]]);
+            $s->declarer("donnees.modifier");
+            $s->requeter(["action" => "UPDATE", "table" => $t["table"], "ou" => ["nom" => "a"], "valeurs" => ["quantite" => 4]]);
+            $s->completerTable("essai", ["nom" => "texte", "montant" => "decimal", "quantite" => "entier", "note" => "texte"]);
+            $s->declarer("donnees.lire");
+            $r = $s->requeter(["action" => "SELECT", "table" => $t["table"], "colonnes" => ["nom", "montant", "quantite", "note"], "ou" => ["nom" => "a"]]);
+            echo json_encode([$db->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME), $r["lignes"] ?? $r]);');
+        $sortie = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+        $res = json_decode(trim(substr($sortie, (int)strrpos($sortie, "\n[") ?: 0)), true) ?: json_decode(trim($sortie), true);
+        $ligne = $res[1][0] ?? [];
+        verifier('MariaDB : un module crée sa table, écrit, modifie, ajoute une colonne, relit',
+            ($res[0] ?? '') === 'mysql' && ($ligne['nom'] ?? '') === 'a' && (int)($ligne['quantite'] ?? 0) === 4
+            && abs((float)($ligne['montant'] ?? 0) - 12.5) < 0.001 && array_key_exists('note', $ligne),
+            mb_substr(trim($sortie), 0, 200), $ok, $ko);
     }
 } catch (\Throwable $e) {
     $ko[] = 'exception';

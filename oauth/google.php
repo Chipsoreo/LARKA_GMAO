@@ -131,6 +131,7 @@ function closeOk(array $user): void {
     if (session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
     unset($_SESSION['forced_tenant']);
     $_SESSION['user'] = $user;
+    $_SESSION['_authentifie_le'] = time();   // confirmation d'identité récente (Larka Connect)
     session_write_close();
 
     if (isMobileRequest()) {
@@ -207,6 +208,12 @@ if (!isset($_GET['code'])) {
 
 /* ── Erreur Google directe ───────────────────────────────────────────────── */
 if (isset($_GET['error'])) {
+    // Confirmation d'identité abandonnée : c'est sa fenêtre qui répond (cf. oauth/microsoft.php).
+    if (str_starts_with((string)($_GET['state'] ?? ''), 'ra_')) {
+        require_once __DIR__ . '/../api/IdentiteConfirmee.php';
+        echo IdentiteConfirmee::page(false, 'Confirmation abandonnée chez Google.');
+        exit;
+    }
     closeError($_GET['error_description'] ?? $_GET['error']);
 }
 
@@ -233,6 +240,44 @@ unset($_SESSION['google_oauth_state']);
 oauth_nonce_effacer();
 if (!$received || !$stateValid) {
     closeError('Sécurité : state invalide, veuillez réessayer.');
+}
+
+/* ── Confirmation d'identité (« retaper son mot de passe ») ──────────────────
+ * Voir oauth/microsoft.php : flux d'une session déjà connectée, qui ne touche
+ * pas à la session ; état seulement sur le disque. */
+if (str_starts_with($received, 'ra_')) {
+    require_once __DIR__ . '/../api/IdentiteConfirmee.php';
+    $raRefus = function (string $m) {
+        SecurityLog::audit('connect_reauth_failure', ['login' => (string)($_SESSION['user']['Login'] ?? ''), 'oauth_provider' => 'google',
+                                                      'reason' => mb_substr($m, 0, 160)]);
+        echo IdentiteConfirmee::page(false, $m);
+        exit;
+    };
+    if (!is_array($sd ?? null) || empty($sd['reauth'])) $raRefus('Confirmation invalide : recommencez depuis Larka.');
+    $code = (string)($_GET['code'] ?? '');
+    if ($code === '') $raRefus('Code d\'autorisation manquant.');
+    $ch = curl_init('https://oauth2.googleapis.com/token');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_TIMEOUT => 15,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_POSTFIELDS => http_build_query([
+            'client_id' => GOOGLE_CLIENT_ID, 'client_secret' => GOOGLE_CLIENT_SECRET, 'code' => $code,
+            'redirect_uri' => GOOGLE_REDIRECT_URI, 'grant_type' => 'authorization_code',
+        ]),
+    ]);
+    $raJeton = json_decode((string)curl_exec($ch), true);
+    if (!is_array($raJeton) || empty($raJeton['id_token'])) $raRefus('Google n\'a pas confirmé le compte.');
+    // id_token reçu directement de Google (TLS) : ses revendications font foi.
+    $raRev = IdentiteConfirmee::revendications((string)$raJeton['id_token']);
+    $raVerifie = $raRev['email_verified'] ?? false;
+    $raCourriel = ($raVerifie === true || $raVerifie === 'true') ? (string)($raRev['email'] ?? '') : '';
+    if (($raRev['aud'] ?? '') !== GOOGLE_CLIENT_ID) $raCourriel = '';
+    [$raOk, $raRes] = IdentiteConfirmee::conclure($sd, 'google', $raCourriel, $raRev);
+    if (!$raOk) $raRefus((string)$raRes);
+    SecurityLog::audit('connect_reauth', ['login' => (string)($_SESSION['user']['Login'] ?? ''), 'oauth_provider' => 'google']);
+    session_write_close();
+    echo IdentiteConfirmee::page(true, 'Vous pouvez revenir à Larka.');
+    exit;
 }
 
 /* ── Échange code → token ────────────────────────────────────────────────── */

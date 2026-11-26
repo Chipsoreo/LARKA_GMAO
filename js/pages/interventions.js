@@ -24,15 +24,135 @@
  *   - Auto-numérotation (INT-YYYYMM-NNNN)
  *   - Documents joints
  *
- * POINTS D'ENTRÉE : renderInterventions(), editInterv(id)
+ * POINTS D'ENTRÉE : renderInterventions(), editInterv(id[, { type }])
+ *
+ * Préventive et Contrôle réglementaire ont leurs écrans (menu Maintenance →
+ * Préventif, Contrôle réglementaire : js/pages/maintenance-plans.js). Cette
+ * liste ne les montre plus et le type ne s'y choisit plus ; la fiche reste la
+ * même pour tous (un passage de plan s'ouvre ici, type verrouillé).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+
+/** Types qui ont leur propre écran (plans de passages) dans le menu Maintenance. */
+const INTERV_NATURES_PLANS = ['Préventive', 'Contrôle réglementaire'];
+const INTERV_PAGE_NATURE = { 'Préventive': 'preventif', 'Contrôle réglementaire': 'controles' };
+
+/** Après une action sur une fiche : redessiner l'écran où l'on est (liste, plan, tableau de bord…). */
+function _intervRafraichir() {
+  if (App.currentPage === 'interventions' || typeof App.renderCurrentPage !== 'function') return renderInterventions();
+  return App.renderCurrentPage();
+}
 
 function joursDepuisDate(d) {
   return d ? Math.floor((Date.now() - new Date(d).getTime()) / 864e5) : 0;
 }
 const fmtMon = v => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v||0);
 const fmtD   = d => d ? new Date(d).toLocaleDateString('fr-FR') : '—';
+
+// ══ Affichage de la liste : fond coloré, délai demande → réalisation ═════════
+// Deux options, ÉTEINTES par défaut, réglées par chacun sur son poste (bouton
+// « Affichage » de la liste) :
+//   - fond coloré selon l'état : vert c'est fait, orange c'est en cours, bleu
+//     c'est planifié, rouge la date prévue est dépassée, gris c'est archivé ;
+//   - délai demande → réalisation, calculé (jamais saisi), dans la liste et
+//     dans la fiche.
+// Rangées dans les préférences d'interface (localStorage, js/ui-prefs.js), à
+// côté de la couleur et de la densité : c'est une façon de LIRE la liste, pas
+// une donnée de l'intervention. Seules les interventions sont concernées.
+const INTERV_ETATS_FOND = {
+  fait:      { couleur: '#16a34a',          libelle: 'Réalisée ou terminée' },
+  encours:   { couleur: 'var(--orange)',    libelle: 'En cours' },
+  planifiee: { couleur: 'var(--blue)',      libelle: 'Planifiée' },
+  retard:    { couleur: 'var(--red)',       libelle: 'Planifiée, date prévue dépassée' },
+  archivee:  { couleur: 'var(--gray-text)', libelle: 'Archivée' },
+};
+
+function intervAffichage() {
+  let p = {};
+  try { p = (typeof uiPrefsGet === 'function' ? uiPrefsGet() : {}) || {}; } catch (_) { p = {}; }
+  return { couleurs: p.intervCouleurs === true, delai: p.intervDelai === true };
+}
+
+/**
+ * Jour calendaire d'une date de la base (« 2026-03-15 » ou « 2026-03-15 10:00:00 »),
+ * à minuit HEURE LOCALE. new Date('2026-03-15') se lit en UTC : à Paris, le
+ * 15 à minuit UTC, c'est encore le 15 ; mais à l'ouest de Greenwich ce serait
+ * le 14 au soir, et un délai calculé de cette façon perdrait un jour.
+ */
+function _intervJour(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
+/** État pour le fond de la ligne : 'fait' | 'encours' | 'planifiee' | 'retard' | 'archivee' | ''. */
+function intervEtatFond(inv) {
+  const s = inv && inv.Statut;
+  if (s === 'Réalisée' || s === 'Validée') return 'fait';
+  if (s === 'En cours') return 'encours';
+  if (s === 'Archivée') return 'archivee';
+  if (s === 'Planifiée') {
+    const prevue = _intervJour(inv.DateIntervention);
+    const auj = new Date(); auj.setHours(0, 0, 0, 0);
+    return prevue && prevue < auj ? 'retard' : 'planifiee';
+  }
+  return '';
+}
+
+/**
+ * Jours entre la demande et la réalisation (calendaires, pas ouvrés), ou null
+ * s'il manque une des deux dates. Négatif si la réalisation précède la demande :
+ * c'est une erreur de saisie, que l'on montre au lieu de la cacher.
+ * Math.round, et non floor : un passage à l'heure d'été fait une journée de 23 h.
+ */
+function intervDelaiJours(demande, realisation) {
+  const a = _intervJour(demande), b = _intervJour(realisation);
+  if (!a || !b) return null;
+  return Math.round((b - a) / 864e5);
+}
+
+/**
+ * Délai lisible, en HTML : chaque mot fixe dans son <span>, pour que la
+ * traduction de l'interface (qui travaille nœud de texte par nœud de texte)
+ * le trouve — « 4 jours » d'un seul tenant ne correspondrait à aucun libellé.
+ */
+function intervDelaiHtml(n) {
+  if (n === null || n === undefined) return '';
+  if (n < 0) return '<span>réalisée avant la demande : dates à vérifier</span>';
+  if (n === 0) return '<span>le jour même</span>';
+  return n.toLocaleString('fr-FR') + ' <span>' + (n > 1 ? 'jours' : 'jour') + '</span>';
+}
+
+/** Fenêtre « Affichage de la liste » : les deux options, enregistrées sur ce poste. */
+function ouvrirAffichageInterventions() {
+  const a = intervAffichage();
+  const legende = Object.values(INTERV_ETATS_FOND).map(e =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;margin:0 12px 4px 0;font-size:12px">
+       <span style="width:14px;height:14px;border-radius:3px;border-left:4px solid ${e.couleur};background:color-mix(in srgb, ${e.couleur} 14%, var(--card-bg))"></span>${escHtml(e.libelle)}</span>`).join('');
+  openModal('Affichage des interventions', `
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" id="iaf_couleurs" ${a.couleurs ? 'checked' : ''} style="width:16px;height:16px;margin-top:2px;accent-color:var(--blue)">
+        <span><strong>Fond coloré selon l'état</strong>
+          <div style="font-size:12px;color:var(--gray-text);margin-top:4px">${legende}</div></span>
+      </label>
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" id="iaf_delai" ${a.delai ? 'checked' : ''} style="width:16px;height:16px;margin-top:2px;accent-color:var(--blue)">
+        <span><strong>Délai demande → réalisation</strong>
+          <div style="font-size:12px;color:var(--gray-text);margin-top:2px">Calculé d'après la date de demande et la date de réalisation (jours calendaires), dans la liste et dans la fiche.</div></span>
+      </label>
+      <div style="font-size:11px;color:var(--gray-text)">${lk('info')} Réglage personnel, gardé sur ce poste : il ne change rien pour les autres utilisateurs.</div>
+    </div>`, () => {
+    try {
+      if (typeof uiPrefsSet === 'function') uiPrefsSet({
+        intervCouleurs: !!document.getElementById('iaf_couleurs')?.checked,
+        intervDelai:    !!document.getElementById('iaf_delai')?.checked,
+      });
+    } catch (_) { toast("Réglage non enregistré : le stockage du navigateur est indisponible.", 'error'); return; }
+    closeModal();
+    const el = document.getElementById('intervListBody');
+    if (el) el.innerHTML = _buildIntervListBody(); else _intervRafraichir();
+  }, 'Appliquer');
+}
 
 // Cache des données de la liste (évite un re-fetch à chaque frappe de recherche).
 // `equipements` sert à afficher la famille/sous-famille d'une intervention liée
@@ -67,7 +187,7 @@ function _optAssetText(a) {
     a.Numero || '—',
     lbl    ? '— ' + lbl    : '',
     detail ? '· ' + detail : '',
-    a.Batiment ? '(📍 ' + a.Batiment + ')' : '',
+    a.Batiment ? '(' + a.Batiment + ')' : '',
   ].filter(Boolean).join(' ');
 }
 
@@ -89,7 +209,7 @@ async function renderInterventions() {
     <div class="card" style="padding:0;margin-bottom:16px">
       <div class="search-bar" style="gap:8px">
         <div class="search-input-wrap" style="flex:1;max-width:480px">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon">${lk('search')}</span>
           <input class="search-input" type="text" placeholder="Rechercher (n°, type, CBDC, description…)"
             value="${App.searchTerm||''}" oninput="liveSearchInterv(this.value)">
         </div>
@@ -114,7 +234,10 @@ async function renderInterventions() {
           <option value="all" ${perPage==='all'?'selected':''}>Tout</option>
         </select>
         <div style="flex:1"></div>
-        ${canEdit() ? `<button class="btn btn-primary" onclick="editInterv(0)">+ Nouvelle</button>` : ''}
+        <button class="btn btn-ghost" onclick="ouvrirAffichageInterventions()" title="Fond coloré selon l'état, délai demande → réalisation">${lk('palette')} Options d'affichage</button>
+        ${canEdit() ? `<button class="btn btn-ghost" onclick="ChampsPerso.ouvrirGestion('interventions', renderInterventions)" title="Cases ajoutées aux fiches (section « Informations complémentaires »)">${lk('folders')} Cases des fiches</button>
+        <button class="btn btn-ghost" onclick="openImportInterventions('interventions')" title="Importer des interventions depuis un fichier Excel ou CSV">${lk('download')} Importer</button>
+        <button class="btn btn-primary" onclick="editInterv(0)">+ Nouvelle</button>` : ''}
       </div>
       ${FiltresEngine.renderPanel('interventions')}
     </div>
@@ -151,22 +274,22 @@ function _buildIntervListBody() {
     return first ? equipById.get(first) : null;
   };
 
-  let filtered = data.filter(r => FiltresEngine.matchRow('interventions', r));
+  let filtered = data.filter(r => !INTERV_NATURES_PLANS.includes(r.Type) && FiltresEngine.matchRow('interventions', r));
   if (search) filtered = filtered.filter(r => {
     const eq = equipDeInterv(r);
     return [r.Numero, r.Type, r.Description, r.SocieteManuelle, r.BienNumero, r.DemandeTitre,
-            r.ContratSociete, r.TypeBudget, r.CbdcFactures,
+            r.ContratSociete, r.TypeBudget, r.CbdcFactures, r.CodeNumeroDemande, r.Lieu,
             r.BienFamille, r.BienSousFamille,
-            eq && eq.Numero, eq && eq.Famille, eq && eq.SousFamille]
+            eq && eq.Numero, eq && eq.Famille, eq && eq.SousFamille,
+            r.ChampsPerso ? Object.values(ChampsPerso.valeurs(r)).join(' ') : '']
       .some(v => (v||'').toLowerCase().includes(search));
   });
   // Tri
   if (App._sortKey) {
     const k = App._sortKey, d = App._sortDir === 'asc' ? 1 : -1;
     filtered.sort((a,b) => {
-      let va = a[k]??'', vb = b[k]??'';
-      if (!isNaN(parseFloat(va)) && !isNaN(parseFloat(vb))) return (parseFloat(va)-parseFloat(vb))*d;
-      return String(va).localeCompare(String(vb),'fr',{sensitivity:'base'})*d;
+      // comparerValeurs (js/ui.js) : les dates ne se triaient que par année.
+      return comparerValeurs(a[k], b[k]) * d;
     });
   }
 
@@ -187,7 +310,14 @@ function _buildIntervListBody() {
   const statutLabels = {Planifiée:'Planifiée','En cours':'En cours','Réalisée':'Réalisée',Validée:'Terminée',Archivée:'Archivée'};
   const typeColors   = {Préventive:'blue',Curative:'orange','Contrôle réglementaire':'purple',Divers:'gray'};
 
-  let html = `<div style="display:flex;flex-direction:column;gap:10px">`;
+  const aff = intervAffichage();
+  let html = '';
+  if (aff.couleurs) {
+    html += `<div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 8px 2px;font-size:11px;color:var(--gray-text)">`
+      + Object.values(INTERV_ETATS_FOND).map(e => `<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:${e.couleur}"></span>${escHtml(e.libelle)}</span>`).join('')
+      + `</div>`;
+  }
+  html += `<div style="display:flex;flex-direction:column;gap:10px">`;
     pageData.forEach(inv => {
       const coutTotal = (parseFloat(inv.MontantPieces)||0) + (parseFloat(inv.MontantMainOeuvre)||0) + (parseFloat(inv.Montant)||0) + (parseFloat(inv.MontantHT)||0);
       const estValidee = inv.Statut === 'Validée';
@@ -197,15 +327,23 @@ function _buildIntervListBody() {
       const bSt = s => `<span class="badge badge-${statutColors[s]||'gray'}">${statutLabels[s]||s}</span>`;
       const bTy = t => `<span class="badge badge-${typeColors[t]||'gray'}">${t ? escHtml(t) : '—'}</span>`;
 
+      // Fond coloré (option) : teinte légère + liseré, posée sur --card-bg pour
+      // rester lisible en mode sombre (un fond clair opaque y découperait un
+      // rectangle blanc).
+      const etat = aff.couleurs ? INTERV_ETATS_FOND[intervEtatFond(inv)] : null;
+      const fond = etat ? `;background:color-mix(in srgb, ${etat.couleur} 10%, var(--card-bg));border-left:4px solid ${etat.couleur}` : '';
+      const delai = aff.delai ? intervDelaiJours(inv.DateDemande, inv.DateRealisation) : null;
       html += `
-      <div class="card" style="padding:14px 18px">
+      <div class="card" style="padding:14px 18px${fond}"${etat ? ` title="${escHtml(etat.libelle)}"` : ''}>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
           <div style="flex:1;min-width:0">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px">
               ${bSt(inv.Statut)} ${bTy(inv.Type)}
               ${inv.Priorite?`<span class="badge badge-red">${escHtml(inv.Priorite)}</span>`:''}
               <code style="font-size:12px;color:var(--blue);background:var(--gray-bg);padding:2px 6px;border-radius:4px">${escHtml(inv.Numero)}</code>
-              ${inv.DateRealisation?`<span style="font-size:11px;color:var(--gray-text)">${fmtD(inv.DateRealisation)}</span>`:''}
+              ${inv.DateRealisation?`<span style="font-size:11px;color:var(--gray-text)" title="Date de réalisation">${fmtD(inv.DateRealisation)}</span>`
+                : inv.DateIntervention?`<span style="font-size:11px;color:${etat && intervEtatFond(inv) === 'retard' ? 'var(--red)' : 'var(--gray-text)'}" title="Date prévue">${lk('calendar')} <span>prévue le</span> ${fmtD(inv.DateIntervention)}</span>`:''}
+              ${delai !== null ? `<span style="font-size:11px;color:${delai < 0 ? 'var(--red)' : 'var(--text-mid)'};background:var(--gray-bg);padding:1px 7px;border-radius:10px" title="Délai entre la date de demande et la date de réalisation">${lk('timer')} <span>Demande → réalisation :</span> ${intervDelaiHtml(delai)}</span>` : ''}
             </div>
             <div style="font-size:14px;font-weight:600;margin-bottom:4px">${escHtml(inv.Description)}</div>
             <div style="font-size:12px;color:var(--gray-text);display:flex;gap:14px;flex-wrap:wrap">
@@ -215,36 +353,36 @@ function _buildIntervListBody() {
                 // depuis le cache local puisque la table n'est pas jointe.
                 if (inv.BienNumero) {
                   const lbl = inv.BienLabel || '';
-                  return `<span title="Bien lié">🏢 ${escHtml(inv.BienNumero)}${lbl?' — '+escHtml(lbl):''}</span>`;
+                  return `<span title="Bien lié">${lk('building-complex')} ${escHtml(inv.BienNumero)}${lbl?' — '+escHtml(lbl):''}</span>`;
                 }
                 if (inv.EquipementsIds) {
                   const eq  = equipDeInterv(inv);
                   const lbl = _assetLabel(eq);
-                  if (!eq) return `<span>⚙️ Équipement lié</span>`;
-                  return `<span title="Équipement lié">⚙️ ${escHtml(eq.Numero||'')}${lbl?' — '+escHtml(lbl):''}</span>`;
+                  if (!eq) return `<span>${lk('settings')} Équipement lié</span>`;
+                  return `<span title="Équipement lié">${lk('settings')} ${escHtml(eq.Numero||'')}${lbl?' — '+escHtml(lbl):''}</span>`;
                 }
                 return '';
               })()}
-              ${inv.ContratSociete?`<span>📋 ${escHtml(inv.ContratSociete)}</span>`:inv.SocieteManuelle?`<span>🏭 ${escHtml(inv.SocieteManuelle)}</span>`:''}
-              ${inv.DemandeTitre?`<span title="Demande liée">📝 ${escHtml(inv.DemandeTitre)}</span>`:''}
+              ${inv.ContratSociete?`<span>${lk('clipboard-list')} ${escHtml(inv.ContratSociete)}</span>`:inv.SocieteManuelle?`<span>${lk('factory')} ${escHtml(inv.SocieteManuelle)}</span>`:''}
+              ${inv.DemandeTitre?`<span title="Demande liée">${lk('file-pen-line')} ${escHtml(inv.DemandeTitre)}</span>`:''}
               ${coutTotal>0?`<span style="color:var(--blue);font-weight:600">${fmtMon(coutTotal)}</span>`:''}
-              ${inv.TypeBudget?`<span title="Suivi administratif" style="color:var(--teal);font-weight:600">📄 ${escHtml(inv.TypeBudget)}${inv.DateEnvoiMail?` <span style="color:var(--gray-text);font-weight:400">(envoyé le ${fmtD(inv.DateEnvoiMail)})</span>`:''}</span>`:''}
-              ${(!inv.TypeBudget && inv.SansSuiviAdmin)?`<span title="Cette intervention ne nécessite pas de CBDC/CHMA ni de dates de suivi" style="color:var(--gray-text)">🚫 Sans suivi admin.</span>`:''}
-              ${(parseFloat(inv.MontantHT)||0)>0?`<span title="Prix HT (suivi administratif)" style="color:var(--teal);font-weight:600">💶 ${fmtMon(inv.MontantHT)} HT</span>`:''}
-              ${(parseInt(inv.NbFactures)||0)>0?`<span title="Total facturé — ${escHtml(inv.NbFactures)} facture${(parseInt(inv.NbFactures)||0)>1?'s':''} rattachée${(parseInt(inv.NbFactures)||0)>1?'s':''}" style="color:var(--purple,#7c3aed);font-weight:600">🧾 ${fmtMon(inv.TotalFacture)}${inv.CbdcFactures?` · ${escHtml([...new Set((inv.CbdcFactures||'').split(', ').filter(Boolean))].join(', '))}`:''}</span>`:''}
-              ${(parseInt(inv.NbInterventionsLiees)||0)>0?`<span title="Partage une facture avec ${escHtml(inv.NbInterventionsLiees)} autre(s) intervention(s)" style="color:var(--purple,#7c3aed);font-weight:600">🔗 liée à ${escHtml(inv.NbInterventionsLiees)} interv.</span>`:''}
+              ${inv.TypeBudget?`<span title="Suivi administratif" style="color:var(--teal);font-weight:600">${lk('file-text')} ${escHtml(inv.TypeBudget)}${inv.DateEnvoiMail?` <span style="color:var(--gray-text);font-weight:400">(envoyé le ${fmtD(inv.DateEnvoiMail)})</span>`:''}</span>`:''}
+              ${(!inv.TypeBudget && inv.SansSuiviAdmin)?`<span title="Cette intervention ne nécessite pas de CBDC/CHMA ni de dates de suivi" style="color:var(--gray-text)">${lk('ban', 'ko')} Sans suivi admin.</span>`:''}
+              ${(parseFloat(inv.MontantHT)||0)>0?`<span title="Prix HT (suivi administratif)" style="color:var(--teal);font-weight:600">${lk('euro')} ${fmtMon(inv.MontantHT)} HT</span>`:''}
+              ${(parseInt(inv.NbFactures)||0)>0?`<span title="Total facturé — ${escHtml(inv.NbFactures)} facture${(parseInt(inv.NbFactures)||0)>1?'s':''} rattachée${(parseInt(inv.NbFactures)||0)>1?'s':''}" style="color:var(--purple,#7c3aed);font-weight:600">${lk('receipt')} ${fmtMon(inv.TotalFacture)}${inv.CbdcFactures?` · ${escHtml([...new Set((inv.CbdcFactures||'').split(', ').filter(Boolean))].join(', '))}`:''}</span>`:''}
+              ${(parseInt(inv.NbInterventionsLiees)||0)>0?`<span title="Partage une facture avec ${escHtml(inv.NbInterventionsLiees)} autre(s) intervention(s)" style="color:var(--purple,#7c3aed);font-weight:600">${lk('link')} liée à ${escHtml(inv.NbInterventionsLiees)} interv.</span>`:''}
             </div>
-            ${estValidee && !peutArchiver?`<div style="font-size:11px;color:var(--orange);margin-top:3px">⏱ Archivable dans ${7-joursValid}j</div>`:''}
+            ${estValidee && !peutArchiver?`<div style="font-size:11px;color:var(--orange);margin-top:3px">${lk('timer')} Archivable dans ${7-joursValid}j</div>`:''}
             ${inv.Statut === 'En cours' && (inv.AgentPrenom || inv.AgentNom) ? `
               <div style="font-size:11px;color:var(--blue);margin-top:3px;display:flex;align-items:center;gap:4px">
-                👤 Pris en charge par <strong>${[inv.AgentPrenom,inv.AgentNom].filter(Boolean).join(' ')}</strong>
+                ${lk('user')} Pris en charge par <strong>${escHtml([inv.AgentPrenom,inv.AgentNom].filter(Boolean).join(' '))}</strong>
                 ${inv.AgentEmail ? `<span style="color:var(--gray-text)">(${escHtml(inv.AgentEmail||'')})</span>` : ''}
               </div>` : ''}
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">
             <div style="display:flex;gap:6px">
-              ${canEdit()?`<button class="icon-btn" onclick="editInterv(${inv.Id})" title="Modifier">✏️</button>`:''}
-              ${canDelete()?`<button class="icon-btn delete" onclick="deleteInterv(${inv.Id})" title="Supprimer">🗑️</button>`:''}
+              ${canEdit()?`<button class="icon-btn" onclick="editInterv(${inv.Id})" title="Modifier">${lk('pencil')}</button>`:''}
+              ${canDelete()?`<button class="icon-btn delete" onclick="deleteInterv(${inv.Id})" title="Supprimer">${lk('trash')}</button>`:''}
             </div>
             ${(function(){
               if (!canEdit() || !['En cours','Réalisée'].includes(inv.Statut)) return '';
@@ -263,26 +401,26 @@ function _buildIntervListBody() {
               if (manquants.length) {
                 return `<button class="btn btn-ghost btn-sm" disabled
                   style="color:var(--gray-text);border-color:var(--gray-border);cursor:not-allowed;opacity:.55"
-                  title="Clôture impossible — manque : ${manquants.join(', ')}. Modifiez l'intervention pour renseigner ces champs, ou cochez « Pas de suivi administratif » si elle n'en nécessite pas.">🏁 Clôturer</button>`;
+                  title="Clôture impossible — manque : ${manquants.join(', ')}. Modifiez l'intervention pour renseigner ces champs, ou cochez « Pas de suivi administratif » si elle n'en nécessite pas.">${lk('flag')} Clôturer</button>`;
               }
               return `<button class="btn btn-ghost btn-sm" style="color:var(--teal);border-color:var(--teal)"
-                onclick="cloturerIntervention(${inv.Id})" title="${inv.DemandeId ? 'Clôture aussi la demande liée' : 'Clôturer l’intervention'}">🏁 Clôturer${inv.DemandeId ? ' + demande' : ''}</button>`;
+                onclick="cloturerIntervention(${inv.Id})" title="${inv.DemandeId ? 'Clôture aussi la demande liée' : 'Clôturer l’intervention'}">${lk('flag')} Clôturer${inv.DemandeId ? ' + demande' : ''}</button>`;
             })()}
             ${canEdit() && inv.Statut === 'En cours' ? `
               <button class="btn btn-ghost btn-sm" style="color:var(--orange);border-color:var(--orange);font-size:11px"
-                onclick="deleguerIntervention(${inv.Id})">🔄 Déléguer</button>` : ''}
+                onclick="deleguerIntervention(${inv.Id})">${lk('refresh-cw')} Déléguer</button>` : ''}
             ${canEdit() && inv.Statut === 'En cours' && (inv.AgentNom || inv.AgentPrenom) ? `
               <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red);font-size:11px"
-                onclick="delaissserIntervention(${inv.Id})">✋ Délaisser</button>` : ''}
+                onclick="delaissserIntervention(${inv.Id})">${lk('hand')} Délaisser</button>` : ''}
             ${canEdit() && !['Validée','Archivée'].includes(inv.Statut) && !(inv.AgentNom || inv.AgentPrenom) ? `
               <button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:var(--blue)"
-                onclick="prendreEnChargeIntervention(${inv.Id})">👁️ Je prends en charge</button>` : ''}
+                onclick="prendreEnChargeIntervention(${inv.Id})">${lk('eye')} Je prends en charge</button>` : ''}
             ${canEdit() && peutArchiver ? `
-              <button class="btn btn-ghost btn-sm" onclick="archiverIntervention(${inv.Id})">📁 Archiver</button>` : ''}
+              <button class="btn btn-ghost btn-sm" onclick="archiverIntervention(${inv.Id})">${lk('folder')} Archiver</button>` : ''}
             ${canEdit() && peutArchiverManuel ? `
               <button class="btn btn-ghost btn-sm" style="color:var(--gray-text);border-color:var(--gray-border);font-size:11px"
                 title="Archivage anticipé (délai normal : ${7-joursValid}j restant)"
-                onclick="archiverIntervention(${inv.Id}, true)">📁 Archiver manuellement</button>` : ''}
+                onclick="archiverIntervention(${inv.Id}, true)">${lk('folder')} Archiver manuellement</button>` : ''}
           </div>
         </div>
       </div>`;
@@ -304,7 +442,7 @@ function _buildIntervListBody() {
   return html;
 }
 
-async function editInterv(id) {
+async function editInterv(id, options = {}) {
   const isNew = !id;
   _pendingStockLignes = []; // Reset des pièces en attente
   const [inv, types, priorites, biens, equipements, contrats, allDemandes, allInterventions, stock, _rf] = await Promise.all([
@@ -320,6 +458,9 @@ async function editInterv(id) {
     getRequiredFields('interventions'),
   ]);
   const rf = _rf || [];
+  // Cases complémentaires (créées à la main ou par l'import) et options d'affichage.
+  const _cpDefs = await ChampsPerso.charger('interventions', true).catch(() => []) || [];
+  const _affFiche = intervAffichage();
   // Demandes déjà liées à une intervention (sauf celle en cours d'édition)
   const demandesDejaLiees = new Set(allInterventions.filter(i => i.DemandeId && i.Id !== (inv.Id||0)).map(i => i.DemandeId));
   // Filtrer : non traitées/refusées ET non déjà liées (sauf la demande actuellement liée à cette intervention)
@@ -338,6 +479,11 @@ async function editInterv(id) {
   // Auto-numéro
   const autoNumero = isNew ? await apiRequest('interv_autonumero').then(r=>r.numero||'').catch(()=>'') : '';
 
+  // Type : Préventive / Contrôle réglementaire verrouillés (ils viennent de
+  // leur écran) ; ailleurs, la liste sans eux.
+  const natureFixe = INTERV_NATURES_PLANS.includes(inv.Type) ? inv.Type
+                   : (isNew && INTERV_NATURES_PLANS.includes(options && options.type) ? options.type : '');
+  const typesChoix = natureFixe ? [{ Valeur: natureFixe }] : types.filter(t => !INTERV_NATURES_PLANS.includes(t.Valeur));
   const opts = (liste, val, inclEmpty=false) =>
     (inclEmpty?'<option value="">—</option>':'') +
     liste.map(x=>`<option ${val===x.Valeur?'selected':''}>${escHtml(x.Valeur)}</option>`).join('');
@@ -346,10 +492,10 @@ async function editInterv(id) {
   const currentEquipIds = (inv.EquipementsIds||'').split(',').map(x=>parseInt(x)).filter(Boolean);
   const currentAssetKey = inv.BienId ? `bien_${inv.BienId}` : (currentEquipIds.length===1 ? `equip_${currentEquipIds[0]}` : '');
   const optsAssets = `<option value="">— Aucun —</option>
-    <optgroup label="🏢 Biens">
+    <optgroup label="Biens">
       ${biens.map(b=>`<option value="bien_${b.Id}" ${currentAssetKey===('bien_'+b.Id)?'selected':''}>${escHtml(_optAssetText(b))}</option>`).join('')}
     </optgroup>
-    <optgroup label="⚙️ Équipements">
+    <optgroup label="Équipements">
       ${equipements.map(eq=>`<option value="equip_${eq.Id}" ${currentAssetKey===('equip_'+eq.Id)?'selected':''}>${escHtml(_optAssetText(eq))}</option>`).join('')}
     </optgroup>`;
   const optsContrats = `<option value=""></option>` +
@@ -358,7 +504,7 @@ async function editInterv(id) {
     demandesOuvertes.map(d=>`<option value="${d.Id}" data-desc="${escHtml(d.Description||'')}" data-titre="${escHtml(d.Titre||'')}" data-bat="${escHtml(d.Batiment||'')}" data-bur="${escHtml(d.Bureau||'')}" ${inv.DemandeId===d.Id?'selected':''}>${escHtml(d.Titre||'')}${d.Batiment?' — '+escHtml(d.Batiment):''}${d.Bureau?' / Bureau '+escHtml(d.Bureau):''}</option>`).join('');
 
   const stockDispo = stock.filter(s=>s.Quantite>0);
-  const optsStock  = stockDispo.map(s=>`<option value="${s.Id}" data-prix="${escHtml(s.PrixUnitaire||0)}" data-qte="${escHtml(s.Quantite)}">${escHtml(s.Designation||'')}${s.Marque?' ('+s.Marque+')':''} [${escHtml(s.Reference||'')}] — Stock: ${escHtml(s.Quantite)} — ${fmtMon(s.PrixUnitaire)}/u</option>`).join('');
+  const optsStock  = stockDispo.map(s=>`<option value="${s.Id}" data-prix="${escHtml(s.PrixUnitaire||0)}" data-qte="${escHtml(s.Quantite)}">${escHtml(s.Designation||'')}${escHtml(s.Marque?' ('+s.Marque+')':'')} [${escHtml(s.Reference||'')}] — Stock: ${escHtml(s.Quantite)} — ${fmtMon(s.PrixUnitaire)}/u</option>`).join('');
 
   const montantPieces = lignes.reduce((s,l)=>s+(parseFloat(l.PrixUnitaire)||0)*(parseInt(l.Quantite)||0),0);
   const lignesHtml = lignes.length ? lignes.map(l=>`
@@ -366,7 +512,7 @@ async function editInterv(id) {
       <span style="flex:1;font-weight:500">${escHtml(l.Designation||l.Reference)}</span>
       <span style="color:var(--gray-text)">${escHtml(l.Quantite)} × ${fmtMon(l.PrixUnitaire||0)}</span>
       <span style="font-weight:600;min-width:70px;text-align:right">${fmtMon((l.Quantite||0)*(l.PrixUnitaire||0))}</span>
-      ${canEdit()?`<button class="icon-btn delete" onclick="supprimerLigneStock(${l.Id},${id})" title="Retirer">🗑️</button>`:''}
+      ${canEdit()?`<button class="icon-btn delete" onclick="supprimerLigneStock(${l.Id},${id})" title="Retirer">${lk('trash')}</button>`:''}
     </div>`).join('') :
     `<div style="color:var(--gray-text);font-size:13px;padding:6px 0">Aucune pièce.</div>`;
 
@@ -378,12 +524,12 @@ async function editInterv(id) {
   const devisHtml = devisLignes.length ? devisLignes.map(d=>`
     <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-border);font-size:13px;flex-wrap:wrap">
       <span style="flex:1;min-width:90px;font-weight:500">${escHtml(d.NumeroDevis||'—')}</span>
-      ${d.DateReception?`<span style="color:var(--gray-text)" title="Date de réception du devis">📅 ${escHtml(_fmtDate(d.DateReception))}</span>`:''}
+      ${d.DateReception?`<span style="color:var(--gray-text)" title="Date de réception du devis">${lk('calendar')} ${escHtml(_fmtDate(d.DateReception))}</span>`:''}
       <span style="color:var(--gray-text)">HT: ${fmtMon(d.MontantHT)}</span>
       <span style="font-weight:600">TTC: ${fmtMon(d.MontantTTC)}</span>
       <span class="badge badge-${d.Accepte==='Oui'?'teal':d.Accepte==='Non'?'red':'gray'}">${escHtml(d.Accepte||'—')}</span>
-      ${d.Raison?`<span style="color:var(--gray-text);font-size:11px" title="${escHtml(d.Raison)}">💬</span>`:''}
-      ${canEdit()?`<button class="icon-btn delete" onclick="supprimerDevisLigne(${d.Id},${id})" title="Supprimer">🗑️</button>`:''}
+      ${d.Raison?`<span style="color:var(--gray-text);font-size:11px" title="${escHtml(d.Raison)}">${lk('message-circle')}</span>`:''}
+      ${canEdit()?`<button class="icon-btn delete" onclick="supprimerDevisLigne(${d.Id},${id})" title="Supprimer">${lk('trash')}</button>`:''}
     </div>`).join('') :
     `<div style="color:var(--gray-text);font-size:13px;padding:6px 0">Aucun devis.</div>`;
 
@@ -391,19 +537,19 @@ async function editInterv(id) {
   const facturesHtml = facturesLignes.length ? facturesLignes.map(f=>`
     <div style="padding:8px 0;border-bottom:1px solid var(--gray-border);font-size:13px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="flex:1;min-width:130px;font-weight:500">🧾 ${escHtml(f.Numero||'—')}</span>
+        <span style="flex:1;min-width:130px;font-weight:500">${lk('receipt')} ${escHtml(f.Numero||'—')}</span>
         <span class="badge badge-gray" title="CBDC / CHMA de la facture">${escHtml(f.TypeBudget||'—')}</span>
         ${f.NumeroEJ?`<span style="color:var(--gray-text)" title="N° engagement juridique">EJ ${escHtml(f.NumeroEJ)}</span>`:''}
         ${f.DateEJ?`<span style="color:var(--gray-text)" title="Date EJ">${escHtml(_fmtDate(f.DateEJ))}</span>`:''}
         <span style="color:var(--gray-text)" title="Montant total de la facture">Facture TTC: ${fmtMon(f.MontantTTC)}</span>
         <span style="font-weight:600;min-width:90px;text-align:right" title="Montant de cette facture pour cette intervention (peut être négatif : avoir / moins-value)">Pour cette interv. : ${fmtMon(f.MontantLigne)}</span>
-        ${canEdit()?`<button class="icon-btn" onclick="toggleEditFacture(${f.LiaisonId})" title="Modifier cette facture">✏️</button>`:''}
-        ${canEdit()?`<button class="icon-btn delete" onclick="detacherFacture(${f.LiaisonId},${id})" title="Détacher cette intervention de la facture">🗑️</button>`:''}
+        ${canEdit()?`<button class="icon-btn" onclick="toggleEditFacture(${f.LiaisonId})" title="Modifier cette facture">${lk('pencil')}</button>`:''}
+        ${canEdit()?`<button class="icon-btn delete" onclick="detacherFacture(${f.LiaisonId},${id})" title="Détacher cette intervention de la facture">${lk('trash')}</button>`:''}
       </div>
-      ${f.AutresInterventions?`<div style="font-size:11px;color:var(--purple,#7c3aed);margin-top:3px">🔗 Cette facture couvre aussi : ${escHtml(f.AutresInterventions)}</div>`:''}
+      ${f.AutresInterventions?`<div style="font-size:11px;color:var(--purple,#7c3aed);margin-top:3px">${lk('link')} Cette facture couvre aussi : ${escHtml(f.AutresInterventions)}</div>`:''}
       ${canEdit()?`
       <div id="editFacture_${escHtml(f.LiaisonId)}" style="display:none;margin-top:8px;padding:10px;border:1px solid var(--gray-border);border-radius:8px;background:var(--card-bg)">
-        <div style="font-size:11px;font-weight:600;color:var(--gray-text);margin-bottom:8px">✏️ Modifier la facture <span style="font-weight:400">— les champs ci-dessous s'appliquent à toutes les interventions qu'elle couvre</span></div>
+        <div style="font-size:11px;font-weight:600;color:var(--gray-text);margin-bottom:8px">${lk('pencil')} Modifier la facture <span style="font-weight:400">— les champs ci-dessous s'appliquent à toutes les interventions qu'elle couvre</span></div>
         <div class="form-grid">
           <div class="form-group"><label class="form-label">CBDC / CHMA</label><input class="form-control" id="ef_tb_${escHtml(f.LiaisonId)}" value="${escHtml(f.TypeBudget)}"></div>
           <div class="form-group"><label class="form-label">N° EJ</label><input class="form-control" id="ef_ej_${escHtml(f.LiaisonId)}" value="${escHtml(f.NumeroEJ)}"></div>
@@ -416,7 +562,7 @@ async function editInterv(id) {
           <div class="form-group"><label class="form-label">Montant pour cette intervention (€)</label><input class="form-control" type="number" step="0.01" id="ef_part_${escHtml(f.LiaisonId)}" value="${f.MontantLigne!=null?f.MontantLigne:''}"></div>
         </div>
         <div style="margin-top:8px;display:flex;gap:8px">
-          <button class="btn btn-primary btn-sm" onclick="enregistrerFacture(${f.LiaisonId}, ${f.Id}, ${id})">💾 Enregistrer</button>
+          <button class="btn btn-primary btn-sm" onclick="enregistrerFacture(${f.LiaisonId}, ${f.Id}, ${id})">${lk('save')} Enregistrer</button>
           <button class="btn btn-ghost btn-sm" onclick="toggleEditFacture(${f.LiaisonId})">Annuler</button>
         </div>
       </div>`:''}
@@ -445,52 +591,35 @@ async function editInterv(id) {
   openModal(isNew?'Nouvelle intervention':`Modifier — ${escHtml(inv.Numero||'')}`, `
   <div style="display:flex;flex-direction:column;gap:16px">
 
-    <!-- Agent créateur -->
-    <div>
-      <div class="section-label">Agent créateur de la fiche</div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Nom</label>
-          <input class="form-control" id="f_agentNom" value="${escHtml(_autoNom)}" placeholder="Nom">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Prénom</label>
-          <input class="form-control" id="f_agentPrenom" value="${escHtml(_autoPrenom)}" placeholder="Prénom">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Téléphone</label>
-          <input class="form-control" type="tel" id="f_agentTel" value="${escHtml(_autoTel)}" placeholder="N° téléphone">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Adresse e-mail</label>
-          <input class="form-control" type="email" id="f_agentEmail" value="${escHtml(_autoEmail)}" placeholder="email@exemple.fr">
-        </div>
-      </div>
-    </div>
+    <!-- Sommaire : la fiche est longue, chaque section est à un clic. Une seule
+         ligne qui défile de côté (« flex-flow », pas « flex-wrap:wrap » : la règle
+         mobile de responsive.css empilerait les boutons sur toute la hauteur). -->
+    <nav id="fiSommaire" aria-label="Sections de la fiche"
+      style="position:sticky;top:0;z-index:1;display:flex;flex-flow:row nowrap;overflow-x:auto;scrollbar-width:thin;gap:4px;padding:6px 0 8px;margin:-10px 0 -6px;background:var(--white);border-bottom:1px solid var(--gray-border)">
+      ${[['fi_general', 'Général'], ['fi_dates', 'Dates'], ['fi_liaisons', 'Liaisons'], ...(_cpDefs.length ? [['fi_cases', 'Compléments']] : []),
+         ['fi_notes', 'Notes'], ['fi_devis', 'Devis'], ['fi_admin', 'Suivi admin.'], ['fi_pieces', 'Pièces'], ['fi_docs', 'Documents'], ['fi_agent', 'Créateur']]
+        .map(([cible, l]) => `<button type="button" class="btn btn-ghost btn-sm" style="padding:2px 9px;font-size:11.5px;white-space:nowrap;flex:0 0 auto" onclick="_intervAllerSection('${cible}')">${l}</button>`).join('')}
+    </nav>
 
-    <!-- Origine : demande -->
-    <div>
-      <div class="section-label">Origine</div>
-      <div class="form-group">
-        <label class="form-label">Suite à une demande ?</label>
-        <select class="form-control" id="f_demandeId" onchange="importerDemande()">${optsDemandes}</select>
-      </div>
-    </div>
-
-    <!-- Infos générales -->
-    <div>
+    <!-- Informations générales : ce qu'est l'intervention -->
+    <div id="fi_general">
       <div class="section-label">Informations générales</div>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">${reqLabel("Numéro","Numero",rf)}</label>
           <div style="display:flex;gap:6px">
             <input class="form-control" id="f_numero" value="${escHtml(inv.Numero||autoNumero)}" placeholder="Auto-généré si vide">
-            ${isNew?`<button class="btn btn-ghost btn-sm" onclick="genererNumero()" title="Générer">🔄</button>`:''}
+            ${isNew?`<button class="btn btn-ghost btn-sm" onclick="genererNumero()" title="Générer">${lk('refresh-cw')}</button>`:''}
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label" title="Référence de la demande chez le demandeur ou le prestataire : n° de ticket, de bon de commande…">Code / n° de demande</label>
+          <input class="form-control" id="f_codeNumeroDemande" value="${escHtml(inv.CodeNumeroDemande||'')}" placeholder="N° de ticket, de bon…">
+        </div>
+        <div class="form-group">
           <label class="form-label">${reqLabel("Type","Type",rf)}</label>
-          <select class="form-control" id="f_type">${opts(types,inv.Type)}</select>
+          <select class="form-control" id="f_type" ${natureFixe ? 'disabled title="Passage préventif ou contrôle réglementaire : son type ne change pas"' : ''}>${opts(typesChoix, natureFixe || inv.Type)}</select>
+          ${inv.PlanId ? `<div style="font-size:11px;color:var(--gray-text);margin-top:2px">Passage d'un plan : <a href="#" onclick="closeModal();navigate('${INTERV_PAGE_NATURE[inv.Type] || 'preventif'}');return false">voir le plan</a></div>` : ''}
         </div>
         <div class="form-group">
           <label class="form-label">${reqLabel("Priorité","Priorite",rf)}</label>
@@ -502,63 +631,14 @@ async function editInterv(id) {
             ${['Planifiée','En cours','Réalisée'].map(s=>`<option value="${s}" ${(inv.Statut||'Planifiée')===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Date de demande</label>
-          <input class="form-control" type="date" id="f_dateDemande" value="${escHtml(inv.DateDemande||'')}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Date d'intervention</label>
-          <input class="form-control" type="date" id="f_dateIntervention" value="${escHtml(inv.DateIntervention||'')}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">${reqLabel("Date réalisation","DateRealisation",rf)}</label>
-          <input class="form-control" type="date" id="f_dateRealisation" value="${escHtml(inv.DateRealisation||'')}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Durée (heures)</label>
-          <input class="form-control" type="number" step="0.5" id="f_duree" value="${escHtml(inv.DureeHeures||0)}">
-        </div>
-        <div class="form-group">
-          <label class="form-label" title="Pour les curatives/divers : combien de jours avant la date d'intervention l'afficher sur le dashboard">Délai affichage dashboard (jours)</label>
-          <input class="form-control" type="number" min="0" id="f_delaiAffichage" value="${escHtml(inv.DelaiAffichageDashboard||0)}" placeholder="0 = dès maintenant">
-          <div style="font-size:11px;color:var(--gray-text);margin-top:2px">Curatif/Divers : affiché X jours avant sur le tableau de bord. Préventif : toujours affiché.</div>
-        </div>
-        ${(function(){
-          let hist = [];
-          try { hist = JSON.parse(inv.HistoriqueModifDates || '[]'); } catch(e){}
-          if (!hist.length) return '';
-          return '<div class="form-group span-2"><label class="form-label">📋 Historique des modifications de date</label><div style="max-height:120px;overflow-y:auto;border:1px solid var(--gray-border);border-radius:6px;padding:6px;font-size:12px">'
-            + hist.map(h => '<div style="padding:4px 0;border-bottom:1px solid var(--gray-border);display:flex;gap:8px;flex-wrap:wrap">'
-              + '<span style="color:var(--red);text-decoration:line-through">' + (h.ancienneDate ? new Date(h.ancienneDate).toLocaleDateString('fr-FR') : '—') + '</span>'
-              + ' → <span style="color:var(--teal);font-weight:600">' + (h.nouvelleDate ? new Date(h.nouvelleDate).toLocaleDateString('fr-FR') : '—') + '</span>'
-              + ' <span style="color:var(--gray-text)">par <strong>' + (h.qui||'?') + '</strong> — ' + (h.raison||'') + '</span>'
-              + ' <span style="color:var(--gray-text);font-size:10px">' + (h.dateModif ? new Date(h.dateModif).toLocaleString('fr-FR') : '') + '</span>'
-              + '</div>').join('')
-            + '</div></div>';
-        })()}
-        <!-- Notes libres (texte + date) -->
         <div class="form-group span-2">
-          <label class="form-label" style="display:flex;align-items:center;gap:8px">
-            Notes / Suivi libre
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:14px;line-height:1" onclick="ajouterNoteLine()" title="Ajouter une note">＋</button>
-          </label>
-          <div id="f_notesContainer">
-            ${(function(){
-              let notes = [];
-              try { notes = JSON.parse(inv.NotesJSON || '[]'); } catch(e){}
-              if (!notes.length) return '<div style="color:var(--gray-text);font-size:12px">Aucune note. Cliquez + pour en ajouter.</div>';
-              return notes.map((n,i) => '<div class="note-line" style="display:flex;gap:6px;align-items:center;margin-bottom:6px" data-idx="'+i+'">'
-                +'<input class="form-control note-text" value="'+(n.texte||'').replace(/"/g,'&quot;')+'" placeholder="Texte libre" style="flex:1;font-size:12px">'
-                +'<input class="form-control note-date" type="date" value="'+(n.date||'')+'" style="width:145px;font-size:12px">'
-                +'<button type="button" class="icon-btn delete" onclick="supprimerNoteLine(this)" title="Supprimer" style="flex-shrink:0">🗑️</button>'
-                +'</div>').join('');
-            })()}
-          </div>
+          <label class="form-label">Suite à une demande ?</label>
+          <select class="form-control" id="f_demandeId" onchange="importerDemande()">${optsDemandes}</select>
         </div>
         <div class="form-group span-2">
           <label class="form-label">${reqLabel("Description","Description",rf)}</label>
           <textarea class="form-control" id="f_description" rows="3">${escHtml(inv.Description||'')}</textarea>
-          <div id="infoImport" style="font-size:11px;color:var(--teal);margin-top:3px;display:none">✅ Importé depuis la demande</div>
+          <div id="infoImport" style="font-size:11px;color:var(--teal);margin-top:3px;display:none">${lk('circle-check', 'ok')} Importé depuis la demande</div>
         </div>
         <div class="form-group span-2">
           <label class="form-label">Commentaire</label>
@@ -567,90 +647,54 @@ async function editInterv(id) {
       </div>
     </div>
 
-    <!-- Suivi administratif -->
-    <div>
-      <div class="section-label">Suivi administratif</div>
-
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;padding:8px 10px;background:var(--gray-bg);border-radius:6px;margin-bottom:8px">
-        <input type="checkbox" id="f_sansSuiviAdmin" ${inv.SansSuiviAdmin?'checked':''} onchange="toggleSuiviAdmin()">
-        Cette intervention ne nécessite pas de suivi administratif
-        <span style="font-weight:400;color:var(--gray-text)">— ni CBDC/CHMA, ni dates</span>
-      </label>
-
-      <div id="hintSuiviAdmin" style="font-size:11px;color:var(--gray-text);margin-bottom:8px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;border-left:3px solid var(--teal)">
-        💡 Renseignez <strong>CHMA / CBDC</strong>, <strong>Date envoi mail</strong> et <strong>Date réalisation</strong> pour pouvoir clôturer cette intervention.
-      </div>
-      <div id="hintSansSuiviAdmin" style="display:none;font-size:11px;color:var(--gray-text);margin-bottom:8px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;border-left:3px solid var(--gray-border)">
-        🚫 Champs non requis : l'intervention pourra être clôturée sans CBDC/CHMA ni dates. Les valeurs déjà saisies sont conservées mais ignorées au contrôle.
-      </div>
-
-      <div class="form-grid" id="gridSuiviAdmin">
+    <!-- Dates et délais : quand -->
+    <div id="fi_dates">
+      <div class="section-label">Dates et délais</div>
+      <div class="form-grid">
         <div class="form-group">
-          <label class="form-label">CHMA / CBDC</label>
-          <input class="form-control" id="f_typeBudget" value="${escHtml(inv.TypeBudget||'')}" placeholder="Ex: CHMA, CBDC, autre…">
+          <label class="form-label">Date de demande</label>
+          <input class="form-control" type="date" id="f_dateDemande" onchange="_intervMajDelai()" value="${escHtml(inv.DateDemande||'')}">
         </div>
         <div class="form-group">
-          <label class="form-label">Date envoi mail</label>
-          <input class="form-control" type="date" id="f_dateEnvoiMail" value="${escHtml(inv.DateEnvoiMail||'')}">
+          <label class="form-label" title="Date à laquelle l'intervention est prévue : elle la range dans « Prévues » ou « En retard » au tableau de bord">Date prévue</label>
+          <input class="form-control" type="date" id="f_dateIntervention" value="${escHtml(inv.DateIntervention||'')}">
         </div>
         <div class="form-group">
-          <label class="form-label">Code n° demande</label>
-          <input class="form-control" id="f_codeNumeroDemande" value="${escHtml(inv.CodeNumeroDemande||'')}" placeholder="Référence">
+          <label class="form-label">${reqLabel("Date réalisation","DateRealisation",rf)}</label>
+          <input class="form-control" type="date" id="f_dateRealisation" onchange="_intervMajDelai()" value="${escHtml(inv.DateRealisation||'')}">
+        </div>
+        ${_affFiche.delai ? `<div class="form-group">
+          <label class="form-label" title="Calculé d'après la date de demande et la date de réalisation (jours calendaires)">Délai demande → réalisation</label>
+          <div id="f_delaiCalcule" class="form-control" style="background:var(--gray-bg);cursor:default" aria-live="polite">—</div>
+        </div>` : ''}
+        <div class="form-group">
+          <label class="form-label">Durée (heures)</label>
+          <input class="form-control" type="number" step="0.5" id="f_duree" value="${escHtml(inv.DureeHeures||0)}">
         </div>
         <div class="form-group">
-          <label class="form-label">Prix HT (€)</label>
-          <input class="form-control" type="number" step="0.01" min="0" id="f_montantHT" value="${inv.MontantHT!=null?inv.MontantHT:''}" placeholder="0.00">
+          <label class="form-label" title="Pour les curatives/divers : combien de jours avant la date prévue l'afficher sur le dashboard">Délai affichage dashboard (jours)</label>
+          <input class="form-control" type="number" min="0" id="f_delaiAffichage" value="${escHtml(inv.DelaiAffichageDashboard||0)}" placeholder="0 = dès maintenant">
+          <div style="font-size:11px;color:var(--gray-text);margin-top:2px">Curatif/Divers : affiché X jours avant sur le tableau de bord. Préventif : toujours affiché.</div>
         </div>
-      </div>
-
-      <!-- Facturation / EJ (sous le CBDC/CHMA du suivi administratif) -->
-      <div style="margin-top:14px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:6px">🧾 Facturation / EJ</div>
-        <div style="font-size:11px;color:var(--gray-text);margin-bottom:8px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;border-left:3px solid var(--teal)">
-          💡 Une facture (CBDC/CHMA, n° EJ, montant) peut couvrir plusieurs interventions. <strong>Ajouter une facturation</strong> = créer une nouvelle facture. <strong>Ajouter une intervention</strong> = rattacher une intervention (celle-ci ou une autre) à une facturation existante. Chaque ligne est modifiable (✏️) et détachable (🗑️). Les montants acceptent le négatif (avoir / moins-value).
-        </div>
-        <div id="facturesLignesContainer" style="margin-bottom:10px">${facturesHtml}</div>
-        ${!isNew && canEdit() ? `
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="toggleAjoutFacturation()">+ Ajouter une facturation</button>
-          <button class="btn btn-ghost btn-sm" style="border-color:var(--purple,#7c3aed);color:var(--purple,#7c3aed)" onclick="toggleAjoutIntervention()">+ Ajouter une intervention</button>
-        </div>
-
-        <!-- Formulaire A : nouvelle facturation -->
-        <div id="formAjoutFacturation" style="display:none;flex-direction:column;gap:10px;margin-top:10px;padding:12px;background:var(--gray-bg);border-radius:8px">
-          <div style="font-size:12px;font-weight:600;color:var(--gray-text)">🧾 Nouvelle facturation</div>
-          <div class="form-grid">
-            <div class="form-group"><label class="form-label">CBDC / CHMA</label><input class="form-control" id="f_factTypeBudget" value="${escHtml(inv.TypeBudget||'')}" placeholder="CBDC, CHMA…"></div>
-            <div class="form-group"><label class="form-label">N° engagement juridique (EJ)</label><input class="form-control" id="f_factNumeroEJ" placeholder="N° EJ"></div>
-            <div class="form-group"><label class="form-label">Date EJ</label><input class="form-control" type="date" id="f_factDateEJ"></div>
-            <div class="form-group"><label class="form-label">Date facture</label><input class="form-control" type="date" id="f_factDateFacture"></div>
-            <div class="form-group"><label class="form-label">Montant TTC (€)</label><input class="form-control" type="number" step="0.01" id="f_factMontantTTC" placeholder="0.00" oninput="syncMontantImpute()"></div>
-            <div class="form-group"><label class="form-label">Montant HT (€) <span style="color:var(--gray-text);font-weight:400">— option.</span></label><input class="form-control" type="number" step="0.01" id="f_factMontantHT" placeholder="0.00"></div>
-            <div class="form-group"><label class="form-label">N° facture <span style="color:var(--gray-text);font-weight:400">— auto si vide</span></label><input class="form-control" id="f_factNumero" placeholder="Réf. fournisseur"></div>
-            <div class="form-group span-2"><label class="form-label">Fournisseur</label><input class="form-control" id="f_factFournisseur" placeholder="Nom du prestataire"></div>
-            <div class="form-group span-2"><label class="form-label">Montant pour cette intervention (€)</label><input class="form-control" type="number" step="0.01" id="f_factMontantLigne" value="${inv.MontantHT!=null&&inv.MontantHT!==''?inv.MontantHT:''}" placeholder="0.00" oninput="this.dataset.touched='1'"><div style="font-size:10px;color:var(--gray-text);margin-top:3px">Se cale sur le montant TTC. Peut être négatif (avoir / moins-value). À diminuer si la facture couvre plusieurs interventions.</div></div>
-          </div>
-          <div><button class="btn btn-primary btn-sm" onclick="ajouterFacturation(${id})">Créer la facturation</button></div>
-        </div>
-
-        <!-- Formulaire B : rattacher une intervention à une facturation existante -->
-        <div id="formAjoutIntervention" style="display:none;flex-direction:column;gap:10px;margin-top:10px;padding:12px;background:var(--gray-bg);border-radius:8px">
-          <div style="font-size:12px;font-weight:600;color:var(--gray-text)">🔗 Rattacher une intervention à une facturation</div>
-          ${optsFacturesPures ? `
-          <div class="form-grid">
-            <div class="form-group span-2"><label class="form-label">Facturation</label><select class="form-control" id="f_linkFacture" onchange="syncLinkMontant()">${optsFacturesPures}</select></div>
-            <div class="form-group span-2"><label class="form-label">Intervention à rattacher</label><select class="form-control" id="f_linkInterv">${optsInterventions}</select><div style="font-size:10px;color:var(--gray-text);margin-top:3px">Par défaut l'intervention courante. Choisissez-en une autre pour la rattacher à cette facturation.</div></div>
-            <div class="form-group span-2"><label class="form-label">Montant pour cette intervention (€)</label><input class="form-control" type="number" step="0.01" id="f_linkMontant" placeholder="0.00"></div>
-          </div>
-          <div><button class="btn btn-primary btn-sm" onclick="lierIntervention(${id})">Rattacher</button></div>
-          ` : `<div style="font-size:12px;color:var(--gray-text)">Aucune facturation existante : créez-en une d'abord avec « + Ajouter une facturation ».</div>`}
-        </div>
-        ` : !isNew ? '' : `<div style="font-size:12px;color:var(--gray-text)">💡 Sauvegardez d'abord l'intervention pour pouvoir gérer sa facturation.</div>`}
+        ${(function(){
+          let hist = [];
+          try { hist = JSON.parse(inv.HistoriqueModifDates || '[]'); } catch(e){}
+          if (!hist.length) return '';
+          return ('<div class="form-group span-2"><label class="form-label">' + lk('clipboard-list') + ' Historique des modifications de date</label><div style="max-height:120px;overflow-y:auto;border:1px solid var(--gray-border);border-radius:6px;padding:6px;font-size:12px">')
+            + hist.map(h => '<div style="padding:4px 0;border-bottom:1px solid var(--gray-border);display:flex;gap:8px;flex-wrap:wrap">'
+              + '<span style="color:var(--red);text-decoration:line-through">' + (h.ancienneDate ? new Date(h.ancienneDate).toLocaleDateString('fr-FR') : '—') + '</span>'
+              + ' → <span style="color:var(--teal);font-weight:600">' + (h.nouvelleDate ? new Date(h.nouvelleDate).toLocaleDateString('fr-FR') : '—') + '</span>'
+              // Échappés : « qui » et « raison » sont saisis par les utilisateurs.
+              + ' <span style="color:var(--gray-text)">par <strong>' + escHtml(h.qui||'?') + '</strong> — ' + escHtml(h.raison||'') + '</span>'
+              + ' <span style="color:var(--gray-text);font-size:10px">' + (h.dateModif ? new Date(h.dateModif).toLocaleString('fr-FR') : '') + '</span>'
+              + '</div>').join('')
+            + '</div></div>';
+        })()}
       </div>
     </div>
 
-    <!-- Liaisons -->
-    <div>
+    <!-- Liaisons : sur quoi, avec qui, où -->
+    <div id="fi_liaisons">
       <div class="section-label">Liaisons</div>
       <div class="form-grid">
         <div class="form-group span-2">
@@ -665,11 +709,45 @@ async function editInterv(id) {
           <label class="form-label">Société externe (si pas de contrat)</label>
           <input class="form-control" id="f_societe" value="${escHtml(inv.SocieteManuelle||'')}" placeholder="Nom de l'entreprise prestataire">
         </div>
+        <div class="form-group span-2">
+          <label class="form-label">Lieu / bâtiment</label>
+          <input class="form-control" id="f_lieu" list="f_lieuListe" maxlength="120" value="${escHtml(inv.Lieu||'')}"
+            placeholder="${escHtml(inv.PlanLieu || inv.BienBatiment ? 'Sinon : ' + (inv.PlanLieu || inv.BienBatiment) : 'Site, bâtiment… (sinon : celui du bien ou de l\'équipement)')}">
+          <datalist id="f_lieuListe">${lieuxConnus(allInterventions.map(x => x.Lieu), biens.map(b => b.Batiment), equipements.map(e => e.Batiment))
+            .map(l => `<option value="${escHtml(l)}">`).join('')}</datalist>
+        </div>
+      </div>
+    </div>
+
+    ${_cpDefs.length ? `<div id="fi_cases">${ChampsPerso.sectionHtml(_cpDefs, ChampsPerso.valeurs(inv), !canEdit())}</div>` : ''}
+
+    <!-- Notes de suivi -->
+    <div id="fi_notes">
+      <div class="section-label">Notes de suivi</div>
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px">
+            Notes / Suivi libre
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:14px;line-height:1" onclick="ajouterNoteLine()" title="Ajouter une note">＋</button>
+          </label>
+          <div id="f_notesContainer">
+            ${(function(){
+              let notes = [];
+              try { notes = JSON.parse(inv.NotesJSON || '[]'); } catch(e){}
+              if (!notes.length) return '<div style="color:var(--gray-text);font-size:12px">Aucune note. Cliquez + pour en ajouter.</div>';
+              return notes.map((n,i) => '<div class="note-line" style="display:flex;gap:6px;align-items:center;margin-bottom:6px" data-idx="'+i+'">'
+                +'<input class="form-control note-text" value="'+escHtml(n.texte||'')+'" placeholder="Texte libre" style="flex:1;font-size:12px">'
+                +'<input class="form-control note-date" type="date" value="'+escHtml(n.date||'')+'" style="width:145px;font-size:12px">'
+                +('<button type="button" class="icon-btn delete" onclick="supprimerNoteLine(this)" title="Supprimer" style="flex-shrink:0">' + lk('trash') + '</button>')
+                +'</div>').join('');
+            })()}
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- Devis -->
-    <div>
+    <div id="fi_devis">
       <div class="section-label">Devis</div>
       <div id="devisLignesContainer" style="margin-bottom:10px">${devisHtml}</div>
       ${!isNew && canEdit() ? `
@@ -703,17 +781,89 @@ async function editInterv(id) {
           <input class="form-control" id="f_newDevisRaison" placeholder="Motif" style="font-size:12px">
         </div>
         <button class="btn btn-primary btn-sm" onclick="ajouterDevisLigne(${id})">+ Ajouter</button>
-      </div>` : !isNew ? '' : `<div style="font-size:12px;color:var(--gray-text)">💡 Sauvegardez d'abord pour ajouter des devis.</div>`}
+      </div>` : !isNew ? '' : `<div style="font-size:12px;color:var(--gray-text)">${lk('lightbulb')} Sauvegardez d'abord pour ajouter des devis.</div>`}
     </div>
 
-    <!-- Documents joints -->
-    <div>
-      <div class="section-label">Documents joints</div>
-      ${isNew ? docsPanelHtml('Intervention', 0, 'Intervention') : docsPanelHtml('Intervention', id)}
+    <!-- Suivi administratif et facturation -->
+    <div id="fi_admin">
+      <div class="section-label">Suivi administratif</div>
+
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;padding:8px 10px;background:var(--gray-bg);border-radius:6px;margin-bottom:8px">
+        <input type="checkbox" id="f_sansSuiviAdmin" ${inv.SansSuiviAdmin?'checked':''} onchange="toggleSuiviAdmin()">
+        Cette intervention ne nécessite pas de suivi administratif
+        <span style="font-weight:400;color:var(--gray-text)">— ni CBDC/CHMA, ni dates</span>
+      </label>
+
+      <div id="hintSuiviAdmin" style="font-size:11px;color:var(--gray-text);margin-bottom:8px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;border-left:3px solid var(--teal)">
+        ${lk('lightbulb')} Renseignez <strong>CHMA / CBDC</strong>, <strong>Date envoi mail</strong> et <strong>Date réalisation</strong> pour pouvoir clôturer cette intervention.
+      </div>
+      <div id="hintSansSuiviAdmin" style="display:none;font-size:11px;color:var(--gray-text);margin-bottom:8px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;border-left:3px solid var(--gray-border)">
+        ${lk('ban', 'ko')} Champs non requis : l'intervention pourra être clôturée sans CBDC/CHMA ni dates. Les valeurs déjà saisies sont conservées mais ignorées au contrôle.
+      </div>
+
+      <div class="form-grid" id="gridSuiviAdmin">
+        <div class="form-group">
+          <label class="form-label">CHMA / CBDC</label>
+          <input class="form-control" id="f_typeBudget" value="${escHtml(inv.TypeBudget||'')}" placeholder="Ex: CHMA, CBDC, autre…">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date envoi mail</label>
+          <input class="form-control" type="date" id="f_dateEnvoiMail" value="${escHtml(inv.DateEnvoiMail||'')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prix HT (€)</label>
+          <input class="form-control" type="number" step="0.01" min="0" id="f_montantHT" value="${inv.MontantHT!=null?inv.MontantHT:''}" placeholder="0.00">
+        </div>
+      </div>
+
+      <!-- Facturation / EJ (sous le CBDC/CHMA du suivi administratif) -->
+      <div style="margin-top:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">${lk('receipt')} Facturation / EJ</div>
+        <div style="font-size:11px;color:var(--gray-text);margin-bottom:8px;padding:6px 10px;background:var(--gray-bg);border-radius:6px;border-left:3px solid var(--teal)">
+          ${lk('lightbulb')} Une facture (CBDC/CHMA, n° EJ, montant) peut couvrir plusieurs interventions. <strong>Ajouter une facturation</strong> = créer une nouvelle facture. <strong>Ajouter une intervention</strong> = rattacher une intervention (celle-ci ou une autre) à une facturation existante. Chaque ligne est modifiable (${lk('pencil')}) et détachable (${lk('trash')}). Les montants acceptent le négatif (avoir / moins-value).
+        </div>
+        <div id="facturesLignesContainer" style="margin-bottom:10px">${facturesHtml}</div>
+        ${!isNew && canEdit() ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="border-color:var(--teal);color:var(--teal)" onclick="toggleAjoutFacturation()">+ Ajouter une facturation</button>
+          <button class="btn btn-ghost btn-sm" style="border-color:var(--purple,#7c3aed);color:var(--purple,#7c3aed)" onclick="toggleAjoutIntervention()">+ Ajouter une intervention</button>
+        </div>
+
+        <!-- Formulaire A : nouvelle facturation -->
+        <div id="formAjoutFacturation" style="display:none;flex-direction:column;gap:10px;margin-top:10px;padding:12px;background:var(--gray-bg);border-radius:8px">
+          <div style="font-size:12px;font-weight:600;color:var(--gray-text)">${lk('receipt')} Nouvelle facturation</div>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">CBDC / CHMA</label><input class="form-control" id="f_factTypeBudget" value="${escHtml(inv.TypeBudget||'')}" placeholder="CBDC, CHMA…"></div>
+            <div class="form-group"><label class="form-label">N° engagement juridique (EJ)</label><input class="form-control" id="f_factNumeroEJ" placeholder="N° EJ"></div>
+            <div class="form-group"><label class="form-label">Date EJ</label><input class="form-control" type="date" id="f_factDateEJ"></div>
+            <div class="form-group"><label class="form-label">Date facture</label><input class="form-control" type="date" id="f_factDateFacture"></div>
+            <div class="form-group"><label class="form-label">Montant TTC (€)</label><input class="form-control" type="number" step="0.01" id="f_factMontantTTC" placeholder="0.00" oninput="syncMontantImpute()"></div>
+            <div class="form-group"><label class="form-label">Montant HT (€) <span style="color:var(--gray-text);font-weight:400">— option.</span></label><input class="form-control" type="number" step="0.01" id="f_factMontantHT" placeholder="0.00"></div>
+            <div class="form-group"><label class="form-label">N° facture <span style="color:var(--gray-text);font-weight:400">— auto si vide</span></label><input class="form-control" id="f_factNumero" placeholder="Réf. fournisseur"></div>
+            <div class="form-group span-2"><label class="form-label">Fournisseur</label><input class="form-control" id="f_factFournisseur" placeholder="Nom du prestataire"></div>
+            <div class="form-group span-2"><label class="form-label">Montant pour cette intervention (€)</label><input class="form-control" type="number" step="0.01" id="f_factMontantLigne" value="${inv.MontantHT!=null&&inv.MontantHT!==''?inv.MontantHT:''}" placeholder="0.00" oninput="this.dataset.touched='1'"><div style="font-size:10px;color:var(--gray-text);margin-top:3px">Se cale sur le montant TTC. Peut être négatif (avoir / moins-value). À diminuer si la facture couvre plusieurs interventions.</div></div>
+          </div>
+          <div><button class="btn btn-primary btn-sm" onclick="ajouterFacturation(${id})">Créer la facturation</button></div>
+        </div>
+
+        <!-- Formulaire B : rattacher une intervention à une facturation existante -->
+        <div id="formAjoutIntervention" style="display:none;flex-direction:column;gap:10px;margin-top:10px;padding:12px;background:var(--gray-bg);border-radius:8px">
+          <div style="font-size:12px;font-weight:600;color:var(--gray-text)">${lk('link')} Rattacher une intervention à une facturation</div>
+          ${optsFacturesPures ? `
+          <div class="form-grid">
+            <div class="form-group span-2"><label class="form-label">Facturation</label><select class="form-control" id="f_linkFacture" onchange="syncLinkMontant()">${optsFacturesPures}</select></div>
+            <div class="form-group span-2"><label class="form-label">Intervention à rattacher</label><select class="form-control" id="f_linkInterv">${optsInterventions}</select><div style="font-size:10px;color:var(--gray-text);margin-top:3px">Par défaut l'intervention courante. Choisissez-en une autre pour la rattacher à cette facturation.</div></div>
+            <div class="form-group span-2"><label class="form-label">Montant pour cette intervention (€)</label><input class="form-control" type="number" step="0.01" id="f_linkMontant" placeholder="0.00"></div>
+          </div>
+          <div><button class="btn btn-primary btn-sm" onclick="lierIntervention(${id})">Rattacher</button></div>
+          ` : `<div style="font-size:12px;color:var(--gray-text)">Aucune facturation existante : créez-en une d'abord avec « + Ajouter une facturation ».</div>`}
+        </div>
+        ` : !isNew ? '' : `<div style="font-size:12px;color:var(--gray-text)">${lk('lightbulb')} Sauvegardez d'abord l'intervention pour pouvoir gérer sa facturation.</div>`}
+      </div>
     </div>
 
     <!-- Pièces stock -->
-    <div>
+    <div id="fi_pieces">
       <div class="section-label">Pièces consommées (stock)</div>
       <div id="lignesStock" style="margin-bottom:10px">${lignesHtml}</div>
       ${canEdit() && stockDispo.length > 0 ? `
@@ -738,6 +888,35 @@ async function editInterv(id) {
       </div>` : ''}
       ${isNew ? '<div id="pendingStockLignes" style="margin-top:8px"></div>' : ''}
     </div>
+
+    <!-- Documents joints -->
+    <div id="fi_docs">
+      <div class="section-label">Documents joints</div>
+      ${isNew ? docsPanelHtml('Intervention', 0, 'Intervention') : docsPanelHtml('Intervention', id)}
+    </div>
+
+    <!-- Agent créateur : rempli d'office avec l'utilisateur connecté, donc en dernier -->
+    <div id="fi_agent">
+      <div class="section-label">Agent créateur de la fiche</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Nom</label>
+          <input class="form-control" id="f_agentNom" value="${escHtml(_autoNom)}" placeholder="Nom">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prénom</label>
+          <input class="form-control" id="f_agentPrenom" value="${escHtml(_autoPrenom)}" placeholder="Prénom">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Téléphone</label>
+          <input class="form-control" type="tel" id="f_agentTel" value="${escHtml(_autoTel)}" placeholder="N° téléphone">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Adresse e-mail</label>
+          <input class="form-control" type="email" id="f_agentEmail" value="${escHtml(_autoEmail)}" placeholder="email@exemple.fr">
+        </div>
+      </div>
+    </div>
   </div>`, async () => {
     let description = gv('f_description').trim();
     if (!description) { toast('La description est requise.', 'error'); return; }
@@ -757,6 +936,7 @@ async function editInterv(id) {
       priorite:          gv('f_priorite'),
       statut:            gv('f_statut'),
       societeManuelle:   gv('f_societe'),
+      lieu:              gv('f_lieu'),
       description,
       dateRealisation:   gv('f_dateRealisation') || null,
       dureeHeures:       parseFloat(gv('f_duree'))||0,
@@ -785,6 +965,7 @@ async function editInterv(id) {
       delaiAffichageDashboard: parseInt(gv('f_delaiAffichage'))||0,
       historiqueModifDates: inv.HistoriqueModifDates || '[]',
       sansSuiviAdmin:    document.getElementById('f_sansSuiviAdmin')?.checked ? 1 : 0,
+      champsPerso:       ChampsPerso.lireFormulaire(_cpDefs),
     };
     try {
       if (isNew) {
@@ -795,7 +976,7 @@ async function editInterv(id) {
       }
       else       await InterventionsApi.update(id, payload);
       toast(isNew?'Intervention créée.':'Intervention modifiée.', 'success');
-      closeModal(); renderInterventions();
+      closeModal(); _intervRafraichir();
     } catch(e) { toast(e.message, 'error'); }
   });
 
@@ -806,9 +987,38 @@ async function editInterv(id) {
     if (window.enhanceSelectTypeahead) enhanceSelectTypeahead('f_contratId', { placeholder: 'Rechercher un contrat…', allowEmpty: true });
     prefillPrixStock();
     toggleSuiviAdmin(); // applique l'état de la case au chargement de la fiche
+    _intervMajDelai();
+    // Sommaire collé sous l'en-tête de la fenêtre (lui-même collant) : sa
+    // hauteur dépend du titre, on la lit plutôt que de la deviner.
+    const nav = document.getElementById('fiSommaire');
+    const entete = nav && nav.closest('.modal') && nav.closest('.modal').querySelector('.modal-header');
+    if (nav && entete) nav.style.top = entete.offsetHeight + 'px';
     if (isNew) { window._docsPending['Intervention'] = []; }
     initDocsPanel('Intervention', id, 'Intervention');
   }, 150);
+}
+
+/** Délai demande → réalisation de la fiche ouverte, recalculé à chaque changement de date. */
+function _intervMajDelai() {
+  const el = document.getElementById('f_delaiCalcule');
+  if (!el) return;
+  const n = intervDelaiJours(gv('f_dateDemande'), gv('f_dateRealisation'));
+  el.innerHTML = n === null ? '<span>— (date de demande et date de réalisation requises)</span>' : intervDelaiHtml(n);
+  el.style.color = n !== null && n < 0 ? 'var(--red)' : '';
+}
+
+/**
+ * Sommaire de la fiche : amène la section juste sous l'en-tête et le sommaire,
+ * collants tous deux. scrollIntoView la glissait DESSOUS ; on calcule donc la
+ * place qu'ils occupent une fois collés (hauteur de l'en-tête + du sommaire).
+ */
+function _intervAllerSection(id) {
+  const el = document.getElementById(id), nav = document.getElementById('fiSommaire');
+  const boite = el && el.closest('.modal');
+  if (!el || !boite) return;
+  const entete = boite.querySelector('.modal-header');
+  const haut = boite.getBoundingClientRect().top + (entete ? entete.offsetHeight : 0) + (nav ? nav.offsetHeight : 0);
+  boite.scrollBy({ top: el.getBoundingClientRect().top - haut - 10, behavior: 'smooth' });
 }
 
 /**
@@ -997,7 +1207,7 @@ function ajouterNoteLine() {
   div.dataset.idx = idx;
   div.innerHTML = `<input class="form-control note-text" value="" placeholder="Texte libre" style="flex:1;font-size:12px">
     <input class="form-control note-date" type="date" value="" style="width:145px;font-size:12px">
-    <button type="button" class="icon-btn delete" onclick="supprimerNoteLine(this)" title="Supprimer" style="flex-shrink:0">🗑️</button>`;
+    <button type="button" class="icon-btn delete" onclick="supprimerNoteLine(this)" title="Supprimer" style="flex-shrink:0">${lk('trash')}</button>`;
   container.appendChild(div);
   div.querySelector('.note-text').focus();
 }
@@ -1108,14 +1318,14 @@ function _renderPendingStockLignes() {
   }
   var fmtMon = function(v) { return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v||0); };
   var html = '<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:8px 12px;margin-top:4px">';
-  html += '<div style="font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:6px">📦 Pièces en attente de sauvegarde (' + _pendingStockLignes.length + ')</div>';
+  html += ('<div style="font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:6px">' + lk('package') + ' Pièces en attente de sauvegarde (') + _pendingStockLignes.length + ')</div>';
   for (var i = 0; i < _pendingStockLignes.length; i++) {
     var l = _pendingStockLignes[i];
     html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #bfdbfe;font-size:12px">';
     html += '<span style="flex:1;font-weight:500">' + l.nom + '</span>';
     html += '<span style="color:var(--gray-text)">' + l.quantite + ' × ' + fmtMon(l.prixUnitaire) + '</span>';
     html += '<span style="font-weight:600;min-width:60px;text-align:right">' + fmtMon(l.quantite * l.prixUnitaire) + '</span>';
-    html += '<button class="icon-btn delete" onclick="retirerLigneStockPending(' + i + ')" title="Retirer" style="font-size:12px">🗑️</button>';
+    html += '<button class="icon-btn delete" onclick="retirerLigneStockPending(' + i + (')" title="Retirer" style="font-size:12px">' + lk('trash') + '</button>');
     html += '</div>';
   }
   var total = _pendingStockLignes.reduce(function(s,l){ return s + l.quantite * l.prixUnitaire; }, 0);
@@ -1151,7 +1361,7 @@ async function prendreEnChargeIntervention(id) {
     try {
       await apiRequest('prise_en_charge_intervention', 'POST', {}, id);
       toast('Intervention prise en charge.', 'success');
-      renderInterventions();
+      _intervRafraichir();
     } catch(e) { toast(e.message, 'error'); }
   }, 'Prendre en charge');
 }
@@ -1194,7 +1404,7 @@ async function deleguerIntervention(id) {
     })
     .join('');
 
-  openModal('🔄 Déléguer l\'intervention', `
+  openModal('Déléguer l\'intervention', `
     <div style="margin-bottom:16px;background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px;font-size:12px;color:#1e40af">
       <strong>Agent actuel :</strong> ${escHtml(agentActuel)}
       ${inv.AgentEmail ? ' (' + escHtml(inv.AgentEmail) + ')' : ''}
@@ -1206,7 +1416,7 @@ async function deleguerIntervention(id) {
         <select class="form-control" id="del_user" onchange="_delFillFromUser(this)">
           <option value="">— Sélectionner un agent —</option>
           ${optsUsers}
-          <option value="__manual__">✏️ Autre (saisir manuellement)</option>
+          <option value="__manual__">Autre (saisir manuellement)</option>
         </select>
       </div>
       <div class="form-group" id="del_grp_nom" style="display:none">
@@ -1261,7 +1471,7 @@ async function deleguerIntervention(id) {
       }, id);
       toast('Intervention déléguée à ' + (prenom ? prenom + ' ' : '') + nom + '.', 'success');
       closeModal();
-      renderInterventions();
+      _intervRafraichir();
     } catch(e) { toast(e.message, 'error'); }
   }, 'Déléguer');
 }
@@ -1282,7 +1492,7 @@ async function delaissserIntervention(id) {
     try {
       await apiRequest('delaisser_intervention', 'POST', {}, id);
       toast('Intervention délaissée — agent retiré, statut conservé.', 'success');
-      renderInterventions();
+      _intervRafraichir();
     } catch(e) { toast(e.message, 'error'); }
   }, 'Délaisser');
 }
@@ -1342,20 +1552,20 @@ async function cloturerIntervention(id) {
       <div style="font-size:13px;color:var(--text-mid);line-height:1.5">
         L'intervention sera marquée comme <strong>terminée</strong>.
         ${aUneDemande
-          ? `<br><br>📝 Elle est liée à la demande : <strong>${escapeHtml(titreDemande || 'Demande liée')}</strong>`
+          ? `<br><br>${lk('file-pen-line')} Elle est liée à la demande : <strong>${escapeHtml(titreDemande || 'Demande liée')}</strong>`
           : ''}
       </div>
 
       <!-- Rappel des bons (lecture seule) : on confirme ce qui a été saisi -->
       <div style="padding:12px 14px;background:var(--gray-bg);border-radius:8px;border-left:3px solid ${sansSuiviAdmin?'var(--gray-border)':'var(--teal)'};font-size:12.5px;line-height:1.7">
-        <div style="font-weight:600;color:var(--navy);margin-bottom:4px">📄 Suivi administratif</div>
+        <div style="font-weight:600;color:var(--navy);margin-bottom:4px">${lk('file-text')} Suivi administratif</div>
         ${sansSuiviAdmin
-          ? `<div style="color:var(--gray-text)">🚫 Intervention marquée « sans suivi administratif » — pas de CBDC/CHMA ni de dates requis.</div>
+          ? `<div style="color:var(--gray-text)">${lk('ban', 'ko')} Intervention marquée « sans suivi administratif » — pas de CBDC/CHMA ni de dates requis.</div>
              ${inv.TypeBudget ? `<div>Saisi malgré tout : <strong>${escapeHtml(inv.TypeBudget)}</strong></div>` : ''}
              ${inv.DateRealisation ? `<div>Réalisée le <strong>${fmtD(inv.DateRealisation)}</strong></div>` : ''}`
           : `<div><strong>${escapeHtml(inv.TypeBudget)}</strong> · envoyé le <strong>${fmtD(inv.DateEnvoiMail)}</strong></div>
              <div>Réalisée le <strong>${fmtD(inv.DateRealisation)}</strong></div>`}
-        ${inv.CodeNumeroDemande ? `<div>Code n° demande : <strong>${escapeHtml(inv.CodeNumeroDemande)}</strong></div>` : ''}
+        ${inv.CodeNumeroDemande ? `<div>Code / n° de demande : <strong>${escapeHtml(inv.CodeNumeroDemande)}</strong></div>` : ''}
         ${(parseFloat(inv.MontantHT)||0)>0 ? `<div>Prix HT : <strong>${fmtMon(inv.MontantHT)}</strong></div>` : ''}
       </div>
 
@@ -1376,7 +1586,7 @@ async function cloturerIntervention(id) {
     </div>
   `;
 
-  const titre = aUneDemande ? '🏁 Clôturer l’intervention et la demande' : '🏁 Clôturer l’intervention';
+  const titre = aUneDemande ? 'Clôturer l’intervention et la demande' : 'Clôturer l’intervention';
   openModal(titre, html, async () => {
     const commentaire = (document.getElementById('cl_commentaire')?.value || '').trim();
     const cloturerDemande = aUneDemande
@@ -1393,7 +1603,7 @@ async function cloturerIntervention(id) {
         : 'Intervention clôturée. Archivable dans 7 jours.';
       toast(msg, 'success');
       closeModal();
-      renderInterventions();
+      _intervRafraichir();
     } catch(e) {
       toast(e.message || 'Erreur de clôture', 'error');
     }
@@ -1411,7 +1621,7 @@ async function archiverIntervention(id, manuel = false) {
     try {
       await InterventionActionsApi.archiver(id);
       toast('Archivée.', 'success');
-      renderInterventions();
+      _intervRafraichir();
     } catch(e) { toast(e.message, 'error'); }
   }, 'Archiver');
 }
@@ -1433,8 +1643,8 @@ async function deleteInterv(id) {
         Cette action est irréversible.
       </div>
       <div style="font-size:12px;color:var(--gray-text);line-height:1.5;padding:10px 12px;background:var(--gray-bg);border-radius:6px">
-        💡 Supprimer ≠ « problème résolu ». Si l'intervention a bien été réalisée,
-        utilisez plutôt le bouton <strong>🏁 Clôturer</strong>. La suppression sert
+        ${lk('lightbulb')} Supprimer ≠ « problème résolu ». Si l'intervention a bien été réalisée,
+        utilisez plutôt le bouton <strong>${lk('flag')} Clôturer</strong>. La suppression sert
         aux interventions abandonnées (devis trop cher, doublon, erreur de saisie…).
       </div>
       <div>
@@ -1447,13 +1657,13 @@ async function deleteInterv(id) {
       </div>
     </div>
   `;
-  openModal('🗑️ Supprimer l\'intervention', html, async () => {
+  openModal('Supprimer l\'intervention', html, async () => {
     const raison = (document.getElementById('del_raison')?.value || '').trim();
     try {
       await InterventionsApi.delete(id, raison);
       toast('Intervention supprimée.', 'success');
       closeModal();
-      renderInterventions();
+      _intervRafraichir();
     } catch(e) {
       toast(e.message || 'Erreur de suppression', 'error');
     }

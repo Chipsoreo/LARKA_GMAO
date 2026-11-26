@@ -42,8 +42,8 @@ FiltresEngine.register('historique', {
       label:   'Statut demande',
       type:    'chips',
       options: [
-        { value: 'Traité', label: '✅ Traité' },
-        { value: 'Refusé', label: '❌ Refusé' },
+        { value: 'Traité', label: 'Traité' },
+        { value: 'Refusé', label: 'Refusé' },
       ],
     },
     {

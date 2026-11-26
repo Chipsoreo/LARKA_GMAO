@@ -50,31 +50,31 @@
 // ── Facteurs de repli — instantané du référentiel Impact CO2 ────────────────
 const TRANSPORTS_DEFAUT = [
   // co2Acv / co2HorsConstr : référentiel ADEME. co2Combustion / co2Seul : dérivés.
-  { id:'voiture_thermique',   label:'🚗 Voiture thermique',              co2Acv:0.14225, co2HorsConstr:0.11056, co2Combustion:0.08955, co2Seul:0.08866, cat:'Individuel' },
-  { id:'voiture_hybride',     label:'🔋 Voiture hybride',                co2Acv:0.14658, co2HorsConstr:0.11342, co2Combustion:0.09187, co2Seul:0.09095, cat:'Individuel' },
-  { id:'voiture_electrique',  label:'🔌 Voiture électrique',             co2Acv:0.06737, co2HorsConstr:0.01209, co2Combustion:0.00000, co2Seul:0.00000, cat:'Individuel' },
-  { id:'covoiturage_2',       label:'👥 Covoiturage (2 pers.)',          co2Acv:0.07113, co2HorsConstr:0.05528, co2Combustion:0.04478, co2Seul:0.04433, cat:'Individuel' },
-  { id:'covoiturage_3',       label:'👥 Covoiturage (3 pers.)',          co2Acv:0.04742, co2HorsConstr:0.03685, co2Combustion:0.02985, co2Seul:0.02955, cat:'Individuel' },
-  { id:'moto',                label:'🏍️ Moto (> 250 cm³)',               co2Acv:0.21470, co2HorsConstr:0.14000, co2Combustion:0.11340, co2Seul:0.11227, cat:'Individuel' },
-  { id:'scooter_thermique',   label:'🛵 Scooter / moto légère',          co2Acv:0.07630, co2HorsConstr:0.06040, co2Combustion:0.04892, co2Seul:0.04843, cat:'Individuel' },
-  { id:'scooter_elec',        label:'🛵 Scooter électrique',             co2Acv:0.05930, co2HorsConstr:0.02070, co2Combustion:0.00000, co2Seul:0.00000, cat:'Individuel' },
-  { id:'velo',                label:'🚲 Vélo',                           co2Acv:0.00017, co2HorsConstr:0.00000, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
-  { id:'velo_elec',           label:'🔋 Vélo électrique (VAE)',          co2Acv:0.01095, co2HorsConstr:0.00223, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
-  { id:'trottinette_elec',    label:'🛴 Trottinette électrique',         co2Acv:0.02490, co2HorsConstr:0.00200, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
-  { id:'marche',              label:'🚶 Marche à pied',                  co2Acv:0.00000, co2HorsConstr:0.00000, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
-  { id:'bus_thermique',       label:'🚌 Bus (thermique)',                co2Acv:0.12242, co2HorsConstr:0.11350, co2Combustion:0.09194, co2Seul:0.09102, cat:'Transport en commun' },
-  { id:'bus_electrique',      label:'🚎 Bus électrique',                 co2Acv:0.02170, co2HorsConstr:0.00950, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
-  { id:'autocar',             label:'🚍 Autocar',                        co2Acv:0.03756, co2HorsConstr:0.03314, co2Combustion:0.02684, co2Seul:0.02657, cat:'Transport en commun' },
-  { id:'tramway',             label:'🚊 Tramway',                        co2Acv:0.00428, co2HorsConstr:0.00380, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
-  { id:'metro',               label:'🚇 Métro',                          co2Acv:0.00444, co2HorsConstr:0.00420, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
-  { id:'rer',                 label:'🚆 RER / Transilien',               co2Acv:0.00978, co2HorsConstr:0.00660, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
-  { id:'ter',                 label:'🚈 TER',                            co2Acv:0.02769, co2HorsConstr:0.02290, co2Combustion:0.01030, co2Seul:0.01020, cat:'Transport en commun' },
-  { id:'intercites',          label:'🚂 Intercités',                     co2Acv:0.00898, co2HorsConstr:0.00580, co2Combustion:0.00116, co2Seul:0.00115, cat:'Transport en commun' },
-  { id:'tgv',                 label:'🚅 TGV',                            co2Acv:0.00293, co2HorsConstr:0.00230, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
-  { id:'avion_court',         label:'✈️ Avion court-courrier (<1000 km)', co2Acv:0.22457, co2HorsConstr:0.22420, co2Combustion:0.09979, co2Seul:0.09879, cat:'Aérien' },
-  { id:'avion_moyen',         label:'✈️ Avion moyen-courrier',           co2Acv:0.18466, co2HorsConstr:0.18430, co2Combustion:0.08205, co2Seul:0.08123, cat:'Aérien' },
-  { id:'avion_long',          label:'✈️ Avion long-courrier',            co2Acv:0.16679, co2HorsConstr:0.16650, co2Combustion:0.07412, co2Seul:0.07337, cat:'Aérien' },
-  { id:'personnalise',        label:'✏️ Personnalisé',                   co2Acv:0, co2HorsConstr:0, co2Combustion:0, co2Seul:0, cat:'Autre' },
+  { id:'voiture_thermique',   label:(lk('car') + ' Voiture thermique'),              co2Acv:0.14225, co2HorsConstr:0.11056, co2Combustion:0.08955, co2Seul:0.08866, cat:'Individuel' },
+  { id:'voiture_hybride',     label:(lk('battery') + ' Voiture hybride'),                co2Acv:0.14658, co2HorsConstr:0.11342, co2Combustion:0.09187, co2Seul:0.09095, cat:'Individuel' },
+  { id:'voiture_electrique',  label:(lk('plug') + ' Voiture électrique'),             co2Acv:0.06737, co2HorsConstr:0.01209, co2Combustion:0.00000, co2Seul:0.00000, cat:'Individuel' },
+  { id:'covoiturage_2',       label:(lk('users') + ' Covoiturage (2 pers.)'),          co2Acv:0.07113, co2HorsConstr:0.05528, co2Combustion:0.04478, co2Seul:0.04433, cat:'Individuel' },
+  { id:'covoiturage_3',       label:(lk('users') + ' Covoiturage (3 pers.)'),          co2Acv:0.04742, co2HorsConstr:0.03685, co2Combustion:0.02985, co2Seul:0.02955, cat:'Individuel' },
+  { id:'moto',                label:(lk('bike') + ' Moto (> 250 cm³)'),               co2Acv:0.21470, co2HorsConstr:0.14000, co2Combustion:0.11340, co2Seul:0.11227, cat:'Individuel' },
+  { id:'scooter_thermique',   label:(lk('bike') + ' Scooter / moto légère'),          co2Acv:0.07630, co2HorsConstr:0.06040, co2Combustion:0.04892, co2Seul:0.04843, cat:'Individuel' },
+  { id:'scooter_elec',        label:(lk('bike') + ' Scooter électrique'),             co2Acv:0.05930, co2HorsConstr:0.02070, co2Combustion:0.00000, co2Seul:0.00000, cat:'Individuel' },
+  { id:'velo',                label:(lk('bike') + ' Vélo'),                           co2Acv:0.00017, co2HorsConstr:0.00000, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
+  { id:'velo_elec',           label:(lk('battery') + ' Vélo électrique (VAE)'),          co2Acv:0.01095, co2HorsConstr:0.00223, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
+  { id:'trottinette_elec',    label:(lk('bike') + ' Trottinette électrique'),         co2Acv:0.02490, co2HorsConstr:0.00200, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
+  { id:'marche',              label:(lk('footprints') + ' Marche à pied'),                  co2Acv:0.00000, co2HorsConstr:0.00000, co2Combustion:0.00000, co2Seul:0.00000, cat:'Mobilité douce' },
+  { id:'bus_thermique',       label:(lk('bus') + ' Bus (thermique)'),                co2Acv:0.12242, co2HorsConstr:0.11350, co2Combustion:0.09194, co2Seul:0.09102, cat:'Transport en commun' },
+  { id:'bus_electrique',      label:(lk('bus') + ' Bus électrique'),                 co2Acv:0.02170, co2HorsConstr:0.00950, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
+  { id:'autocar',             label:(lk('bus-front') + ' Autocar'),                        co2Acv:0.03756, co2HorsConstr:0.03314, co2Combustion:0.02684, co2Seul:0.02657, cat:'Transport en commun' },
+  { id:'tramway',             label:(lk('tram-front') + ' Tramway'),                        co2Acv:0.00428, co2HorsConstr:0.00380, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
+  { id:'metro',               label:(lk('train-front-tunnel') + ' Métro'),                          co2Acv:0.00444, co2HorsConstr:0.00420, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
+  { id:'rer',                 label:(lk('train-front') + ' RER / Transilien'),               co2Acv:0.00978, co2HorsConstr:0.00660, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
+  { id:'ter',                 label:(lk('tram-front') + ' TER'),                            co2Acv:0.02769, co2HorsConstr:0.02290, co2Combustion:0.01030, co2Seul:0.01020, cat:'Transport en commun' },
+  { id:'intercites',          label:(lk('train-front') + ' Intercités'),                     co2Acv:0.00898, co2HorsConstr:0.00580, co2Combustion:0.00116, co2Seul:0.00115, cat:'Transport en commun' },
+  { id:'tgv',                 label:(lk('train-front') + ' TGV'),                            co2Acv:0.00293, co2HorsConstr:0.00230, co2Combustion:0.00000, co2Seul:0.00000, cat:'Transport en commun' },
+  { id:'avion_court',         label:(lk('plane') + ' Avion court-courrier (<1000 km)'), co2Acv:0.22457, co2HorsConstr:0.22420, co2Combustion:0.09979, co2Seul:0.09879, cat:'Aérien' },
+  { id:'avion_moyen',         label:(lk('plane') + ' Avion moyen-courrier'),           co2Acv:0.18466, co2HorsConstr:0.18430, co2Combustion:0.08205, co2Seul:0.08123, cat:'Aérien' },
+  { id:'avion_long',          label:(lk('plane') + ' Avion long-courrier'),            co2Acv:0.16679, co2HorsConstr:0.16650, co2Combustion:0.07412, co2Seul:0.07337, cat:'Aérien' },
+  { id:'personnalise',        label:(lk('pencil') + ' Personnalisé'),                   co2Acv:0, co2HorsConstr:0, co2Combustion:0, co2Seul:0, cat:'Autre' },
 ];
 
 // Table active — remplacée/complétée par la route facteurs_carbone si disponible.
@@ -398,7 +398,7 @@ async function renderMobiliteCarbone() {
     // Hero
     html += '<div class="card" style="padding:20px 24px;background:linear-gradient(135deg,#065f46,#047857);color:white;border:none;margin-bottom:16px;border-radius:10px">';
     html += '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">';
-    html += '<span style="font-size:28px">🚗</span>';
+    html += ('<span style="font-size:28px">' + lk('car') + '</span>');
     html += '<div><div style="font-size:16px;font-weight:700">Mon bilan carbone mobilité ' + annee + '</div>';
     html += '<div style="font-size:12px;opacity:.75;margin-top:2px">Renseignez vos trajets pour estimer votre empreinte carbone liée aux déplacements</div>';
     html += '</div>';
@@ -431,18 +431,18 @@ async function renderMobiliteCarbone() {
     // basé sur une autre année serait indéfendable dans un bilan.
     if (FACTEURS_SOURCE.origine === 'report_avant' && FACTEURS_SOURCE.anneeFacteurs) {
       html += '<div style="margin-bottom:16px;padding:10px 14px;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;font-size:12px;color:#991b1b">';
-      html += '⛔ Aucun millésime pour ' + annee + ' ni pour une année antérieure. Le calcul applique le millésime <strong>'
+      html += (lk('octagon-x', 'ko') + ' Aucun millésime pour ') + annee + ' ni pour une année antérieure. Le calcul applique le millésime <strong>'
            + FACTEURS_SOURCE.anneeFacteurs + '</strong>, <strong>postérieur</strong> à l\'exercice : ce bilan n\'est pas défendable en l\'état. '
            + 'Un administrateur doit saisir les facteurs de ' + annee + ' dans la configuration serveur.';
       html += '</div>';
     } else if (FACTEURS_SOURCE.origine === 'report' && FACTEURS_SOURCE.anneeFacteurs) {
       html += '<div style="margin-bottom:16px;padding:10px 14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;font-size:12px;color:#92400e">';
-      html += '⚠️ Aucun facteur n\'a été figé pour ' + annee + '. Le calcul utilise le millésime <strong>'
+      html += (lk('triangle-exclamation-point', 'warn') + ' Aucun facteur n\'a été figé pour ') + annee + '. Le calcul utilise le millésime <strong>'
            + FACTEURS_SOURCE.anneeFacteurs + '</strong>.';
       html += '</div>';
     } else if (FACTEURS_SOURCE.origine === 'local') {
       html += '<div style="margin-bottom:16px;padding:10px 14px;background:var(--gray-bg);border:1px solid var(--gray-border);border-radius:8px;font-size:12px;color:var(--gray-text)">';
-      html += 'ℹ️ Calcul basé sur les valeurs de référence intégrées à Larka'
+      html += (lk('info') + ' Calcul basé sur les valeurs de référence intégrées à Larka')
            + (FACTEURS_SOURCE.message ? ' — ' + FACTEURS_SOURCE.message : '') + '.';
       html += '</div>';
     }
@@ -450,7 +450,7 @@ async function renderMobiliteCarbone() {
     // Barre d'actions
     html += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">';
     html += FiltresEngine.renderButton('mobilite_carbone');
-    html += '<button class="btn" onclick="refreshFacteursCarbone()" title="Recharger les facteurs d\'émission">🔄 Facteurs</button>';
+    html += ('<button class="btn" onclick="refreshFacteursCarbone()" title="Recharger les facteurs d\'émission">' + lk('refresh-cw') + ' Facteurs</button>');
     html += '<button class="btn btn-primary" onclick="editMobiliteLigne(0)">+ Ajouter un trajet</button>';
     html += '</div>';
 
@@ -458,7 +458,7 @@ async function renderMobiliteCarbone() {
 
     if (!lignes.length) {
       html += '<div class="card" style="padding:48px;text-align:center;color:var(--gray-text)">';
-      html += '<div style="font-size:36px;margin-bottom:12px">🌱</div>';
+      html += ('<div style="font-size:36px;margin-bottom:12px">' + lk('sprout') + '</div>');
       html += '<div style="font-size:14px;font-weight:600;margin-bottom:6px">Aucun trajet renseigné pour ' + annee + '</div>';
       html += '<div style="font-size:12px">Ajoutez vos moyens de déplacement pour calculer votre bilan carbone.</div>';
       html += '</div>';
@@ -494,7 +494,7 @@ async function renderMobiliteCarbone() {
       html += ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:var(--gray-bg);border:1px solid var(--gray-border);font-size:10px;font-weight:600">'
            + _anneeLigne(l) + '</span>';
       html += '</div>';
-      if (l.Commentaire) html += '<div style="font-size:11px;color:var(--gray-text);margin-top:2px;font-style:italic">' + l.Commentaire + '</div>';
+      if (l.Commentaire) html += '<div style="font-size:11px;color:var(--gray-text);margin-top:2px;font-style:italic">' + escHtml(l.Commentaire) + '</div>';
       html += '</div>';
       // Facteur du périmètre affiché, avec le détail des quatre en infobulle.
       html += '<div style="text-align:center;min-width:110px" title="' + detail.replace(/"/g,'&quot;') + '">';
@@ -509,8 +509,8 @@ async function renderMobiliteCarbone() {
       html += '</div>';
       // Actions
       html += '<div style="display:flex;gap:6px">';
-      html += '<button class="icon-btn" onclick="editMobiliteLigne(' + l.Id + ')" title="Modifier">✏️</button>';
-      html += '<button class="icon-btn delete" onclick="deleteMobiliteLigne(' + l.Id + ')" title="Supprimer">🗑️</button>';
+      html += '<button class="icon-btn" onclick="editMobiliteLigne(' + l.Id + (')" title="Modifier">' + lk('pencil') + '</button>');
+      html += '<button class="icon-btn delete" onclick="deleteMobiliteLigne(' + l.Id + (')" title="Supprimer">' + lk('trash') + '</button>');
       html += '</div>';
       html += '</div></div>';
     });
@@ -518,7 +518,7 @@ async function renderMobiliteCarbone() {
 
     // Répartition par catégorie
     html += '<div class="card" style="margin-top:16px;padding:18px 22px">';
-    html += '<div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:12px">📊 Répartition par catégorie <span style="font-size:11px;font-weight:500;color:var(--gray-text)">— bilan ' + annee + ', ' + meth.label + '</span></div>';
+    html += ('<div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:12px">' + lk('chart-column') + ' Répartition par catégorie <span style="font-size:11px;font-weight:500;color:var(--gray-text)">— bilan ') + annee + ', ' + meth.label + '</span></div>';
     var catColors = {'Individuel':'#ef4444','Mobilité douce':'#22c55e','Transport en commun':'#3b82f6','Aérien':'#f59e0b','Autre':'#6b7280'};
     Object.keys(byCat).forEach(function(cat) {
       var items = byCat[cat];
@@ -538,7 +538,7 @@ async function renderMobiliteCarbone() {
 
     // Comparatif des quatre périmètres, en cascade décroissante
     html += '<div class="card" style="margin-top:16px;padding:18px 22px">';
-    html += '<div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:4px">⚖️ Les quatre périmètres — bilan ' + annee + '</div>';
+    html += ('<div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:4px">' + lk('scale') + ' Les quatre périmètres — bilan ') + annee + '</div>';
     html += '<div style="font-size:11px;color:var(--gray-text);margin-bottom:14px">Les mêmes trajets, chaque périmètre étant contenu dans le précédent.</div>';
     var totaux = METHODES.map(function(m) {
       return { m: m, total: lignes.reduce(function(s,l){ return s + _co2Annuel(l, m.id); }, 0) };
@@ -572,12 +572,12 @@ async function renderMobiliteCarbone() {
         + (FACTEURS_SOURCE.origine === 'cache' ? ' (cache)' : '')
         + (FACTEURS_SOURCE.origine === 'cache_perime' ? ' (cache périmé — source momentanément injoignable)' : '');
     html += '<div style="margin-top:12px;padding:12px 16px;background:var(--gray-bg);border-radius:8px;border:1px solid var(--gray-border);font-size:11px;color:var(--gray-text);line-height:1.6">';
-    html += '📋 <strong>Millésime :</strong> facteurs ' + (FACTEURS_SOURCE.anneeFacteurs || annee)
+    html += (lk('clipboard-list') + ' <strong>Millésime :</strong> facteurs ') + (FACTEURS_SOURCE.anneeFacteurs || annee)
          + ', figés et non recalculés rétroactivement. <strong>Source :</strong> ' + srcLibelle + '. ';
     html += 'Quatre périmètres emboîtés : <strong>ACV complet</strong> (tout), <strong>hors construction</strong> (sans la fabrication du véhicule), ';
     html += '<strong>combustion</strong> (à bord seule, périmètre scope 1) et <strong>CO₂ seul</strong> (sans CH₄ ni N₂O). ';
     html += 'Estimations indicatives basées sur des moyennes nationales. Jours ouvrés/an : 228.';
-    if (FACTEURS_SOURCE.message) html += '<br>⚠️ ' + FACTEURS_SOURCE.message;
+    if (FACTEURS_SOURCE.message) html += ('<br>' + lk('triangle-exclamation-point', 'warn') + ' ') + FACTEURS_SOURCE.message;
     html += '</div>';
 
     c.innerHTML = html;
@@ -629,7 +629,7 @@ async function editMobiliteLigne(id) {
   var currentComb = ligne.FacteurCO2Combustion || tRef.co2Combustion;
   var currentSeul = ligne.FacteurCO2Seul       || tRef.co2Seul;
 
-  openModal(isNew ? '➕ Ajouter un trajet' : '✏️ Modifier le trajet', '\
+  openModal(isNew ? 'Ajouter un trajet' : 'Modifier le trajet', '\
     <div style="display:flex;flex-direction:column;gap:16px">\
       <div class="form-grid">\
         <div class="form-group span-2">\
@@ -778,7 +778,7 @@ function mobRecalcPreview() {
       '</div></div>';
   }
 
-  prev.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">📊 Estimation par périmètre</div>' +
+  prev.innerHTML = ('<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">' + lk('chart-column') + ' Estimation par périmètre</div>') +
     '<div style="display:flex;flex-direction:column;gap:8px">' +
     METHODES.map(function(m) { return bloc(saisies[m.id], m.label + (m.source === 'derive' ? ' *' : '')); }).join('') +
     '</div>';
